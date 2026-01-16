@@ -13,6 +13,9 @@ from PIL import Image as PILImage # For direct image loading
 from iiif_downloader.ui.components import inject_premium_styles, interactive_viewer
 from iiif_downloader.resolvers.discovery import resolve_shelfmark, search_gallica, search_oxford
 from iiif_downloader.core import IIIFDownloader
+from iiif_downloader.logger import get_logger
+
+logger = get_logger(__name__)
 
 # Load environment variables
 load_dotenv()
@@ -219,11 +222,20 @@ elif app_mode == "🏛️ Studio":
         
         st.sidebar.markdown("---")
         st.sidebar.subheader("OCR Settings")
-        ocr_engine = st.sidebar.selectbox("Motore", ["kraken", "openai", "anthropic", "google", "huggingface"])
+        ocr_engine = st.sidebar.selectbox("Motore", ["openai", "kraken", "anthropic", "google", "huggingface"])
+        
+        # Model selection based on engine
         current_model = None
         if ocr_engine == "kraken":
             installed = manager.list_installed_models()
-            current_model = st.sidebar.selectbox("Modello HTR", installed)
+            current_model = st.sidebar.selectbox("Modello HTR", installed) if installed else None
+        elif ocr_engine == "openai":
+            current_model = st.sidebar.selectbox("Modello", ["gpt-5", "gpt-5.2", "o3", "o4-mini", "gpt-5-mini"], index=0)
+        elif ocr_engine == "anthropic":
+            current_model = st.sidebar.selectbox("Modello", ["claude-4-sonnet", "claude-4-opus", "claude-3.5-sonnet"], index=0)
+        elif ocr_engine == "huggingface":
+            current_model = st.sidebar.text_input("Model ID", value="microsoft/trocr-base-handwritten")
+        
         force_ocr = st.sidebar.checkbox("Riesegui OCR", value=False)
         api_key_env = {"openai": os.getenv("OPENAI_API_KEY", ""), "anthropic": os.getenv("ANTHROPIC_API_KEY", ""), "google": os.getenv("GOOGLE_APPLICATION_CREDENTIALS", ""), "huggingface": os.getenv("HF_TOKEN", "")}
         user_key = st.sidebar.text_input(f"Chiave {ocr_engine.capitalize()}", value=api_key_env.get(ocr_engine, ""), type="password") if ocr_engine != "kraken" else ""
@@ -232,42 +244,99 @@ elif app_mode == "🏛️ Studio":
         st.title(f"🏛️ Studio: {selected_doc_id}")
         meta = storage.load_metadata(selected_doc_id, selected_lib)
         total_pages = int(meta.get("pages", 100)) if meta else 100
-        page_default = st.session_state.pop("page_idx_override") if "page_idx_override" in st.session_state else 1
         
-        col_p1, col_p2 = st.columns([4, 1])
-        page = col_p1.slider("Navigazione Pagine", 1, total_pages, page_default)
-        col_p2.metric("Pagina", f"{page} / {total_pages}")
+        # Consistent navigation state
+        if "current_page" not in st.session_state:
+            st.session_state["current_page"] = 1
+        
+        # Navigation controls Layout
+        col_prev, col_slider, col_next, col_metric = st.columns([1, 6, 1, 2])
+        
+        # Handle Buttons FIRST (to avoid session state modification errors)
+        if col_prev.button("◀️ Prev", use_container_width=True, disabled=(st.session_state["current_page"] <= 1)):
+            st.session_state["current_page"] -= 1
+            st.rerun()
+            
+        if col_next.button("Next ▶️", use_container_width=True, disabled=(st.session_state["current_page"] >= total_pages)):
+            st.session_state["current_page"] += 1
+            st.rerun()
+            
+        # Slider (synced with session_state, NO KEY linked to session state to allow manual updates)
+        page = col_slider.slider("Navigazione Pagine", 1, total_pages, value=st.session_state["current_page"], label_visibility="collapsed")
+        if page != st.session_state["current_page"]:
+            st.session_state["current_page"] = page
+            st.rerun()
+        
+        # Page counter
+        col_metric.metric("Pagina", f"{st.session_state['current_page']} / {total_pages}")
         
         st.markdown("---")
         col_img, col_txt = st.columns([1, 1])
         with col_img:
-            page_img_path = os.path.join(paths["root"], "pages", f"pag_{page-1:04d}.jpg")
-            page_image, page_err = (PILImage.open(page_img_path), None) if os.path.exists(page_img_path) else load_pdf_page(paths["pdf"], page)
+            page_current = st.session_state["current_page"]
+            page_img_path = os.path.join(paths["root"], "pages", f"pag_{page_current-1:04d}.jpg")
+            page_image, page_err = (PILImage.open(page_img_path), None) if os.path.exists(page_img_path) else load_pdf_page(paths["pdf"], page_current)
+            
+            # Zoom logic in sidebar
+            zoom_val = st.sidebar.slider("Zoom Immagine (%)", 10, 500, 100, step=10)
+            
             if page_image:
-                interactive_viewer(page_image, zoom_percent=100)
-                st.caption("Usa lo slider (se presente) o il mouse per navigare i dettagli.")
+                interactive_viewer(page_image, zoom_percent=zoom_val)
+                st.caption("Trascina l'immagine per spostarti (Pan).")
             else: st.error(page_err or "Impossibile caricare la pagina.")
         
         with col_txt:
             st.subheader("Trascrizione & Analisi")
-            cached_trans = storage.load_transcription(selected_doc_id, page, library=selected_lib)
-            if cached_trans and not force_ocr: st.session_state["ocr_result"] = cached_trans
-            elif (st.session_state["last_ocr_page"] != (selected_doc_id, page)) or force_ocr:
-                if page_image:
-                    with st.spinner(f"Elaborazione OCR ({ocr_engine})..."):
-                        proc = get_ocr_processor(model_path=manager.get_model_path(current_model) if ocr_engine == "kraken" else None, openai_api_key=user_key if ocr_engine == "openai" else None, anthropic_api_key=user_key if ocr_engine == "anthropic" else None, hf_token=user_key if ocr_engine == "huggingface" else None)
-                        result = proc.process_page(page_image, engine=ocr_engine)
-                        if "error" not in result:
-                            result["engine"] = ocr_engine
-                            storage.save_transcription(selected_doc_id, page, result, library=selected_lib)
-                            st.session_state["ocr_result"] = result
-                            st.session_state["last_ocr_page"] = (selected_doc_id, page)
-                        else: st.error(f"Errore OCR: {result['error']}")
             
-            if st.session_state["ocr_result"]:
+            # Check for cached transcription
+            cached_trans = storage.load_transcription(selected_doc_id, page_current, library=selected_lib)
+            
+            # Display cached if available and not forcing re-run
+            if cached_trans and not force_ocr:
+                st.session_state["ocr_result"] = cached_trans
+                st.info("📝 Trascrizione caricata dalla cache")
+            else:
+                st.session_state["ocr_result"] = None
+            
+            # Manual OCR button
+            if st.button("🔍 Esegui OCR", use_container_width=True, type="primary"):
+                if page_image:
+                    with st.spinner(f"Elaborazione OCR ({ocr_engine} - {current_model or 'default'})..."):
+                        try:
+                            logger.info(f"User triggered OCR for {selected_doc_id}, page {page_current} using {ocr_engine} ({current_model})")
+                            proc = get_ocr_processor(
+                                model_path=manager.get_model_path(current_model) if ocr_engine == "kraken" else None,
+                                openai_api_key=user_key if ocr_engine == "openai" else None,
+                                anthropic_api_key=user_key if ocr_engine == "anthropic" else None,
+                                hf_token=user_key if ocr_engine == "huggingface" else None
+                            )
+                            # Pass model parameter to process_page
+                            result = proc.process_page(page_image, engine=ocr_engine, model=current_model)
+                            
+                            if result and not result.get("error"):
+                                logger.info(f"OCR Success for {selected_doc_id} p{page_current}")
+                                result["engine"] = ocr_engine
+                                storage.save_transcription(selected_doc_id, page_current, result, library=selected_lib)
+                                st.session_state["ocr_result"] = result
+                                st.session_state["last_ocr_page"] = (selected_doc_id, page_current)
+                                st.success("✅ OCR completato!")
+                            else:
+                                error_msg = result.get('error', 'Errore sconosciuto') if result else 'Nessun risultato ricevuto'
+                                logger.error(f"OCR Failure for {selected_doc_id} p{page_current}: {error_msg}")
+                                st.error(f"Errore OCR: {error_msg}")
+                        except Exception as e:
+                            logger.exception(f"Unexpected error during OCR for {selected_doc_id}")
+                            st.error(f"Errore durante l'elaborazione: {str(e)}")
+                else:
+                    st.warning("Immagine non disponibile per l'OCR")
+            
+            # Display result if available
+            if st.session_state.get("ocr_result"):
                 res = st.session_state["ocr_result"]
                 st.text_area("Testo Estratto", res.get("full_text", ""), height=500)
                 st.caption(f"Motore: {res.get('engine', 'N/D')} | Aggiornato: {res.get('timestamp', 'N/D')}")
+            else:
+                st.info("👆 Clicca 'Esegui OCR' per trascrivere questa pagina")
 
 # --- AREA 3: RICERCA GLOBALE ---
 elif app_mode == "🔍 Ricerca Globale":

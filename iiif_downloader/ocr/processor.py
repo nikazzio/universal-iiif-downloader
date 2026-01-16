@@ -2,11 +2,15 @@ import warnings
 import base64
 import json
 import time
+from io import BytesIO
 from typing import Any, Dict, List, Optional, Union, Protocol
 from dataclasses import dataclass, asdict
 
 import requests
 from PIL import Image
+from iiif_downloader.logger import get_logger
+
+logger = get_logger(__name__)
 
 # --- Kraken Setup ---
 try:
@@ -67,8 +71,11 @@ class KrakenProvider:
             self.error = "Kraken non disponibile o modello non specificato"
 
     def process(self, image: Image.Image) -> OCRResult:
+        logger.info("Starting Kraken OCR process")
         if not KRAKEN_AVAILABLE or not self.model:
-            return OCRResult("", [], "Kraken", error=getattr(self, "error", "Kraken non pronto"))
+            error_msg = getattr(self, "error", "Kraken non pronto")
+            logger.error(f"Kraken failure: {error_msg}")
+            return OCRResult("", [], "Kraken", error=error_msg)
         
         try:
             bw_im = binarization.nlbin(image)
@@ -101,7 +108,9 @@ class GoogleVisionProvider:
         self.api_key = api_key
 
     def process(self, image: Image.Image) -> OCRResult:
+        logger.info("Starting Google Vision OCR process")
         if not self.api_key:
+            logger.error("Google Vision API Key missing")
             return OCRResult("", [], "Google Vision", error="API Key mancante")
         
         try:
@@ -140,7 +149,9 @@ class HFInferenceProvider:
         self.model_id = model_id
 
     def process(self, image: Image.Image) -> OCRResult:
+        logger.info(f"Starting Hugging Face OCR process using model: {self.model_id}")
         if not self.token:
+            logger.error("Hugging Face Token missing")
             return OCRResult("", [], "Hugging Face", error="Token mancante")
 
         # Use Kraken for segmentation if available
@@ -208,12 +219,14 @@ class HFInferenceProvider:
         return {"error": "Timeout"}
 
 class OpenAIProvider:
-    def __init__(self, api_key: str, model: str = "gpt-4o-mini"):
+    def __init__(self, api_key: str, model: str = "gpt-5"):
         self.api_key = api_key
         self.model = model
 
     def process(self, image: Image.Image) -> OCRResult:
+        logger.info(f"Starting OpenAI OCR process using model: {self.model}")
         if not self.api_key:
+            logger.error("OpenAI API Key missing")
             return OCRResult("", [], "OpenAI", error="API Key mancante")
         
         try:
@@ -224,6 +237,9 @@ class OpenAIProvider:
             
             prompt = "Trascrivi accuratamente il testo contenuto in questa immagine di un manoscritto latino. Mantieni l'ortografia originale, inclusi eventuali errori o abbreviazioni. Fornisci solo la trascrizione del testo, riga per riga, senza commenti."
             
+            # 2026 Reasoning models (o-series) might need specific token limits
+            is_reasoning = self.model.startswith("o")
+            
             response = client.chat.completions.create(
                 model=self.model,
                 messages=[
@@ -231,11 +247,17 @@ class OpenAIProvider:
                         "role": "user",
                         "content": [
                             {"type": "text", "text": prompt},
-                            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}
+                            {
+                                "type": "image_url", 
+                                "image_url": {
+                                    "url": f"data:image/jpeg;base64,{base64_image}",
+                                    "detail": "high"
+                                }
+                            }
                         ],
                     }
                 ],
-                max_completion_tokens=4096,
+                max_completion_tokens=4096 if is_reasoning else 16384,
             )
             
             text = response.choices[0].message.content
@@ -248,12 +270,14 @@ class OpenAIProvider:
             return OCRResult("", [], "OpenAI", error=str(e))
 
 class AnthropicProvider:
-    def __init__(self, api_key: str, model: str = "claude-3-5-sonnet-20241022"):
+    def __init__(self, api_key: str, model: str = "claude-4-sonnet"):
         self.api_key = api_key
         self.model = model
 
     def process(self, image: Image.Image) -> OCRResult:
+        logger.info(f"Starting Anthropic OCR process using model: {self.model}")
         if not self.api_key:
+            logger.error("Anthropic API Key missing")
             return OCRResult("", [], "Anthropic", error="API Key mancante")
         
         try:
@@ -333,12 +357,12 @@ class OCRProcessor:
         model_id = model_id or "magistermilitum/tridis_v2_HTR_historical_manuscripts"
         return HFInferenceProvider(self.hf_token, model_id).process(im).to_dict()
 
-    def process_image_openai(self, image_input: Union[str, Any, Image.Image], model="gpt-4o-mini") -> Dict[str, Any]:
+    def process_image_openai(self, image_input: Union[str, Any, Image.Image], model="gpt-5") -> Dict[str, Any]:
         im = self._load_im(image_input)
         if isinstance(im, dict) and "error" in im: return im
         return OpenAIProvider(self.openai_api_key, model).process(im).to_dict()
 
-    def process_image_anthropic(self, image_input: Union[str, Any, Image.Image], model="claude-3-5-sonnet-20241022") -> Dict[str, Any]:
+    def process_image_anthropic(self, image_input: Union[str, Any, Image.Image], model="claude-4-sonnet") -> Dict[str, Any]:
         im = self._load_im(image_input)
         if isinstance(im, dict) and "error" in im: return im
         return AnthropicProvider(self.anthropic_api_key, model).process(im).to_dict()
@@ -350,9 +374,9 @@ class OCRProcessor:
         elif engine == "google":
             return self.process_image_google_vision(image)
         elif engine == "openai":
-            return self.process_image_openai(image, model=model or "gpt-4o-mini")
+            return self.process_image_openai(image, model=model or "gpt-5")
         elif engine == "anthropic":
-            return self.process_image_anthropic(image, model=model or "claude-3-5-sonnet-20241022")
+            return self.process_image_anthropic(image, model=model or "claude-4-sonnet")
         elif engine == "huggingface":
             return self.process_image_huggingface(image, model_id=model)
         else:

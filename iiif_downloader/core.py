@@ -218,13 +218,15 @@ class IIIFDownloader:
                 val = resource.get('@id') or resource.get('id') or ''
                 base_url = val.split('/full/')[0] if '/full/' in val else val
 
-            # 2. Prioritize Resolutions (Smaller first for speed, then Max)
-            # 1740px is a sweet spot for readability and file size.
+            # 2. Prioritize Resolutions (Higher is better for OCR)
+            # 3000px is better for detailed manuscripts.
             priorities = [
-                (1740, "native"),
-                (1740, "default"),
                 ("max", "native"),
                 ("max", "default"),
+                (3000, "native"),
+                (3000, "default"),
+                (1740, "native"),
+                (1740, "default"),
             ]
 
             urls_to_try = []
