@@ -14,6 +14,8 @@ temp_images/
 downloads/
 *.pdf
 *.log
+models/
+.streamlit/
 
 # OS
 .DS_Store

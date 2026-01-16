@@ -1,82 +1,71 @@
-# Universal IIIF Downloader
+# 📜 Universal IIIF Downloader & Studio (Professional)
 
-Uno strumento **universale** e modulare per scaricare manoscritti da qualsiasi biblioteca che supporti lo standard IIIF (Vaticana, Bodleian, Gallica, ecc.).
+Uno strumento **professionale** e modulare per scaricare e studiare manoscritti da qualsiasi biblioteca IIIF (Vaticana, Bodleian, Gallica, ecc.). 
+Il sistema organizza automaticamente i download in una libreria strutturata e offre un'interfaccia di studio avanzata.
 
-## 🚀 Funzionalità
+## 🚀 Funzionalità Principali
 
-- **Universalità**: Copia e incolla l'URL di un Manifest IIIF (o di un visualizzatore Vaticano) e lui scarica tutto.
-- **Wizard Interattivo**: Se lanci lo script senza argomenti, ti guida passo passo.
-- **Download Parallelo & Resume**: Veloce, robusto e capace di riprendere da dove si era interrotto.
-- **PDF Nativo (Novità!)**: Se il manoscritto ha già un PDF ufficiale, lo scarica direttamente (molto più veloce).
-- **PDF Ottimizzato**: Altrimenti usa `img2pdf` per creare PDF leggeri.
-- **Metadati**: Scarica automaticamente le info del manoscritto.
+- **Architettura Modulare**: Codice pulito e separato (PDF, Storage, UI, OCR).
+- **Storage Document-Centric**: Organizzazione automatica in `downloads/<ID_Manoscritto>/`.
+- **Interactive Viewer 2.0**: Zoom 400%, Drag-to-Pan e interfaccia moderna.
+- **Discovery & Search**: Cerca direttamente nei cataloghi di **Gallica** e **Oxford** o risolvi segnature **Vaticana**.
+- **Multi-Engine OCR/HTR**: Integrazione con Claude 3.5, GPT-5, Hugging Face e Kraken.
 
 ## 📋 Requisiti
 
-- Python 3.7+
-- Pip
+- **Python 3.10+**
+- **Poppler**: `sudo apt-get install poppler-utils` (necessario per estrazione PDF)
+- **Dipendenze**: `pip install -r requirements.txt`
 
-## 🛠️ Installazione
+## 💻 Utilizzo CLI (Command Line)
 
-1. Clona il repository.
-2. Crea un virtual environment (consigliato).
-3. Installa le dipendenze:
-   ```bash
-   pip install -r requirements.txt
-   ```
+Lo script `main.py` è il motore principale. Può essere usato in modalità interattiva o con argomenti.
 
-## 💻 Utilizzo
-
-### Modalità "Magica" (Wizard)
-Lancia semplicemente:
+### Esempi di Comandi
 ```bash
+# 1. Download semplice via URL
+python3 main.py https://digi.vatlib.it/view/MSS_Urb.lat.1779
+
+# 2. Download via Segnatura (Vaticana)
+# Il sistema normalizza automaticamente spazi e maiuscole
+python3 main.py "Urb. Lat. 1779"
+
+# 3. Download con Batch OCR (modello TRIDIS su Hugging Face)
+python3 main.py [URL] --ocr "magistermilitum/tridis_v2_HTR_historical_manuscripts"
+
+# 4. Modalità Wizard (Interattiva)
+# Basta lanciare lo script senza argomenti
 python3 main.py
 ```
-Ti chiederà di incollare l'URL e sceglierà il nome migliore per te.
 
-### Modalità Riga di Comando (CLI)
+### Opzioni Principali
+- `-o, --output`: Nome della cartella/PDF (auto-generato se omesso).
+- `-w, --workers`: Numero di thread per il download (default: 4).
+- `--prefer-images`: Forza il download delle immagini anche se esiste un PDF ufficiale.
 
-Per utenti esperti o script automatici:
+## 🖥️ Universal IIIF Studio (Web UI)
+
+L'interfaccia Streamlit per la ricerca, la visualizzazione e la trascrizione:
 
 ```bash
-python3 main.py [URL] [OPZIONI]
+streamlit run app.py
 ```
 
-**Esempio Vaticano:**
-```bash
-python3 main.py https://digi.vatlib.it/view/MSS_Urb.lat.1779
+### Funzioni dello Studio:
+- **Scopri e Scarica**: Cerca nei cataloghi Gallica/Oxford o scarica via segnatura.
+- **Trascrizione**: Esegui OCR pagina per pagina con i migliori modelli AI.
+- **Ricerca Globale**: Cerca parole chiave in tutti i manoscritti già scaricati e trascritti.
+
+## 📁 Struttura della Libreria
+
+Ogni download crea una struttura pulita:
+```text
+downloads/
+└── Urb.lat.1779/
+    ├── Urb.lat.1779.pdf    # Il documento finale
+    ├── metadata.json       # Metadati IIIF
+    └── transcription.json  # Trascrizioni e coordinate OCR
 ```
 
-**Esempio Bodleian Library (Oxford):**
-```bash
-# Con URL del viewer (consigliato)
-python3 main.py https://digital.bodleian.ox.ac.uk/objects/080f88f5-7586-4b8a-8064-63ab3495393c/
-
-# Oppure con URL del manifest diretto
-python3 main.py https://iiif.bodleian.ox.ac.uk/iiif/manifest/080f88f5-7586-4b8a-8064-63ab3495393c.json
-```
-
-**Esempio Gallica (BnF - Francia):**
-```bash
-# Con ARK del viewer
-python3 main.py https://gallica.bnf.fr/ark:/12148/bpt6k9604118j
-
-# Oppure con URL del manifest diretto
-python3 main.py https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9604118j/manifest.json
-```
-
-> **Nota per Gallica**: A volte Gallica blocca connessioni da server cloud. Se hai problemi, prova da un PC locale.
-
-| Opzione | Descrizione |
-|---|---|
-| `-o`, `--output` | Nome specifico del PDF (default: automatico dal titolo) |
-| `-w`, `--workers` | Thread simultanei (default: 4) |
-| `--clean-cache` | Pulisce i file temporanei prima di iniziare |
-| `--prefer-images` | Forza il download delle immagini anche se esiste un PDF ufficiale |
-
-## 🏗️ Struttura del Progetto per Sviluppatori
-
-Il progetto è modulare:
-- `iiif_downloader/core.py`: Motore di download universale.
-- `iiif_downloader/resolvers/`: Plugin per riconoscere diversi siti (Vaticano, Generic, ecc.).
-- `main.py`: Punto di ingresso.
+---
+*Ottimizzato per Digital Humanities e Paleografia.*
