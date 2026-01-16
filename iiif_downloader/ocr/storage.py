@@ -94,10 +94,11 @@ class OCRStorage:
         }
 
         # Preserve backup if exists (when updating an already manual page)
-        existing_page = next((p for p in pages if p.get("page_index") == page_idx), None)
-        if existing_page and "original_ocr_text" in existing_page:
-             new_entry["original_ocr_text"] = existing_page["original_ocr_text"]
-             new_entry["original_engine"] = existing_page.get("original_engine", "unknown")
+        if is_manual:
+             existing_page = next((p for p in pages if p.get("page_index") == page_idx), None)
+             if existing_page and "original_ocr_text" in existing_page:
+                 new_entry["original_ocr_text"] = existing_page["original_ocr_text"]
+                 new_entry["original_engine"] = existing_page.get("original_engine", "unknown")
 
         # Update existing or add new
         updated = False

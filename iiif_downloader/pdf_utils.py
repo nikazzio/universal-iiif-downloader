@@ -1,6 +1,10 @@
 from pathlib import Path
 from pdf2image import convert_from_path, convert_from_bytes
 import logging
+from pathlib import Path
+from pdf2image import convert_from_path, convert_from_bytes
+from PIL import Image as PILImage
+import logging
 
 logger = logging.getLogger(__name__)
 
@@ -22,3 +26,25 @@ def load_pdf_page(pdf_source, page_idx, dpi=300):
     except Exception as e:
         logger.error(f"Error loading PDF page: {e}")
         return None, str(e)
+
+def generate_pdf_from_images(image_paths, output_path):
+    """
+    Combine a list of image paths into a single PDF.
+    """
+    try:
+        images = []
+        for p in image_paths:
+            if Path(p).exists():
+                img = PILImage.open(p)
+                if img.mode != 'RGB':
+                    img = img.convert('RGB')
+                images.append(img)
+        
+        if images:
+            images[0].save(output_path, save_all=True, append_images=images[1:])
+            return True, f"PDF creato con successo: {output_path}"
+        else:
+            return False, "Nessuna immagine valida trovata."
+    except Exception as e:
+        logger.error(f"Error creating PDF: {e}")
+        return False, str(e)

@@ -3,7 +3,7 @@ import streamlit as st
 import time
 from PIL import Image as PILImage
 
-from iiif_downloader.pdf_utils import load_pdf_page
+from iiif_downloader.pdf_utils import load_pdf_page, generate_pdf_from_images
 from iiif_downloader.ui.components import interactive_viewer
 from iiif_downloader.ui.state import get_storage, get_model_manager
 from iiif_downloader.ui.styling import render_gallery_card
@@ -89,16 +89,39 @@ def render_studio_page():
         for jid, job in active_job.items():
             st.sidebar.info(f"⚙️ {job['message']} ({int(job['progress']*100)}%)")
     
+    # --- EXPORT ACTIONS ---
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("Esportazione")
+    if st.sidebar.button("📄 Crea PDF Completo", use_container_width=True):
+         with st.spinner("Generazione PDF in corso..."):
+             # Gather all images
+             pages_dir = paths["pages"]
+             if os.path.exists(pages_dir):
+                 imgs = sorted([os.path.join(pages_dir, f) for f in os.listdir(pages_dir) if f.endswith(".jpg")])
+                 if imgs:
+                     pdf_out = os.path.join(paths["root"], f"{doc_id}.pdf")
+                     success, msg = generate_pdf_from_images(imgs, pdf_out)
+                     if success:
+                         st.toast("PDF Creato!", icon="✅")
+                         st.sidebar.success(f"PDF salvato in: {pdf_out}")
+                     else:
+                         st.sidebar.error(msg)
+                 else:
+                     st.sidebar.error("Nessuna immagine trovata.")
+             else:
+                 st.sidebar.error("Directory pagine non trovata.")
+
     # --- OCR CONTROLS ---
     st.sidebar.markdown("---")
-    render_ocr_controls(doc_id, library)
+    ocr_engine, current_model = render_ocr_controls(doc_id, library)
     
     # --- MAIN CANVAS ---
-    render_main_canvas(doc_id, library, paths, stats)
+    render_main_canvas(doc_id, library, paths, stats, ocr_engine, current_model)
 
 def render_ocr_controls(doc_id, library):
     st.sidebar.subheader("Strumenti OCR")
     
+    storage = get_storage()
     manager = get_model_manager()
     default_engine = config.get("defaults", "preferred_ocr_engine", "openai")
     
@@ -116,26 +139,40 @@ def render_ocr_controls(doc_id, library):
     
     # API Keys are loaded from env, but user can override in session (not impl for now to keep clean)
     
-    if st.sidebar.button("⚡ OCR Pagina Corrente", use_container_width=True):
-        # Trigger Sync OCR (fast)
-        page_idx = st.session_state.get("current_page", 1)
-        run_ocr_sync(doc_id, library, page_idx, ocr_engine, current_model)
-        
     if st.sidebar.button("📚 OCR Intero Manoscritto (Background)", use_container_width=True):
-        # Trigger Async Job
-        job_id = job_manager.submit_job(
-            task_func=run_ocr_batch_task,
-            kwargs={
-                "doc_id": doc_id, 
-                "library": library, 
-                "engine": ocr_engine, 
-                "model": current_model
-            },
-            job_type="ocr_batch"
-        )
-        st.toast(f"Job avviato! ID: {job_id}", icon="⚙️")
+        # Check if any pages exist
+        full_data = storage.load_transcription(doc_id, None, library)
+        has_data = full_data and len(full_data.get("pages", [])) > 0
+        
+        if has_data:
+            st.session_state["confirm_ocr_batch"] = True
+        else:
+            # Trigger directly
+            job_id = job_manager.submit_job(
+                task_func=run_ocr_batch_task,
+                kwargs={"doc_id": doc_id, "library": library, "engine": ocr_engine, "model": current_model},
+                job_type="ocr_batch"
+            )
+            st.toast(f"Job avviato! ID: {job_id}", icon="⚙️")
 
-def render_main_canvas(doc_id, library, paths, stats=None):
+    if st.session_state.get("confirm_ocr_batch"):
+        st.sidebar.warning("⚠️ Ci sono trascrizioni esistenti! Sovrascrivere TUTTO?", icon="🔥")
+        c1, c2 = st.sidebar.columns(2)
+        if c1.button("Sì, Esegui", use_container_width=True, type="primary"):
+             job_id = job_manager.submit_job(
+                task_func=run_ocr_batch_task,
+                kwargs={"doc_id": doc_id, "library": library, "engine": ocr_engine, "model": current_model},
+                job_type="ocr_batch"
+            )
+             st.toast(f"Job avviato! ID: {job_id}", icon="⚙️")
+             st.session_state["confirm_ocr_batch"] = False
+        if c2.button("Annulla", use_container_width=True):
+            st.session_state["confirm_ocr_batch"] = False
+            st.rerun()
+
+    return ocr_engine, current_model
+
+def render_main_canvas(doc_id, library, paths, stats=None, ocr_engine="openai", current_model="gpt-5"):
     st.title(f"🏛️ {doc_id}")
     
     storage = get_storage()
@@ -185,6 +222,7 @@ def render_main_canvas(doc_id, library, paths, stats=None):
     current_p = st.session_state["current_page"]
     
     with col_img:
+        st.markdown(f"### Scansione ({current_p}/{total_pages})")
         page_img_path = os.path.join(paths["root"], "pages", f"pag_{current_p-1:04d}.jpg")
         
         # Fallback to pdf load if jpg not found (legacy support)
@@ -227,8 +265,20 @@ def render_main_canvas(doc_id, library, paths, stats=None):
         # Load Transcription
         trans = storage.load_transcription(doc_id, current_p, library)
         
-        st.markdown("### Trascrizione")
+        st.markdown(f"### Trascrizione")
         
+        # Confirmation Dialog (Inline)
+        if st.session_state.get("confirm_ocr_sync") == st.session_state.get("current_page", 1):
+             st.warning("⚠️ Testo esistente! Sovrascrivere?", icon="⚠️")
+             c1, c2 = st.columns(2)
+             if c1.button("Sì, Sovrascrivi", use_container_width=True, type="primary"):
+                 page_idx = st.session_state["confirm_ocr_sync"]
+                 run_ocr_sync(doc_id, library, page_idx, ocr_engine, current_model)
+                 st.session_state["confirm_ocr_sync"] = None
+             if c2.button("No, Annulla", use_container_width=True):
+                 st.session_state["confirm_ocr_sync"] = None
+                 st.rerun()
+
         # Prepare initial values
         initial_text = ""
         current_status = "draft"
@@ -254,19 +304,20 @@ def render_main_canvas(doc_id, library, paths, stats=None):
         text_val = st.text_area(
             "Editor", 
             value=initial_text, 
-            height=600, 
+            height=700, 
             key=edit_key,
             label_visibility="collapsed"
         )
         
         # Toolbar
-        bar_c1, bar_c2, bar_c3 = st.columns([2, 1, 1])
+        # Row 1: Save | Verify | OCR | Revert
+        t_c1, t_c2, t_c3, t_c4 = st.columns([2, 2, 2, 1])
         
         # Dirty Check
         is_dirty = text_val != initial_text
         
-        with bar_c1:
-            if st.button("💾 Salva Modifiche", use_container_width=True, type="primary" if is_dirty else "secondary"):
+        with t_c1:
+            if st.button("💾 Salva", use_container_width=True, type="primary" if is_dirty else "secondary"):
                 new_data = {
                     "full_text": text_val,
                     "engine": trans.get("engine", "manual") if trans else "manual",
@@ -279,34 +330,54 @@ def render_main_canvas(doc_id, library, paths, stats=None):
                 time.sleep(0.5)
                 st.rerun()
 
-        with bar_c2:
-            # Verified Toggle (Visual Checkbox style but as button for now or actual checkbox)
+        with t_c2:
+            # Verified Toggle
             is_verified = current_status == "verified"
             btn_label = "✅ Verificato" if is_verified else "⚪ Da Verificare"
             if st.button(btn_label, use_container_width=True):
                 new_status = "draft" if is_verified else "verified"
-                # Check if we need to verify null text? Allow it.
                 data_to_save = trans if trans else {"full_text": "", "lines": [], "engine": "manual"}
                 data_to_save["status"] = new_status
-                data_to_save["is_manual"] = True # Status change implies manual touch
+                data_to_save["is_manual"] = True 
                 storage.save_transcription(doc_id, current_p, data_to_save, library)
                 st.rerun()
                 
-        with bar_c3:
-            # Revert Button (Only if manual happened)
+        with t_c3:
+            # OCR Button
+            if st.button(f"⚡ {ocr_engine}", use_container_width=True, help="Esegui OCR su questa pagina"):
+                 page_idx = st.session_state.get("current_page", 1)
+                 existing = storage.load_transcription(doc_id, page_idx, library)
+                 if existing:
+                     st.session_state["confirm_ocr_sync"] = page_idx
+                 else:
+                     run_ocr_sync(doc_id, library, page_idx, ocr_engine, current_model)
+
+        with t_c4:
+            # Revert Button
             if is_manual and original_ocr:
-                if st.button("↩ Revert", use_container_width=True, help="Ripristina il testo OCR originale"):
+                if st.button("↩", use_container_width=True, help="Revert all'OCR originale"):
                     revert_data = {
                         "full_text": original_ocr,
                         "engine": trans.get("original_engine", "unknown"),
-                        "is_manual": False, # Reset to machine state? Or keep manual flag but machine text?
-                                            # Usually revert means "undo my work", so not manual anymore.
+                        "is_manual": False, 
                         "status": "draft",
-                        "average_confidence": 0.0 # Reset confidence or unknown
+                        "average_confidence": 0.0
                     }
                     storage.save_transcription(doc_id, current_p, revert_data, library)
                     st.toast("Revert completato!", icon="↩")
                     st.rerun()
+
+        # Confirmation Dialog (Inline below toolbar)
+        if st.session_state.get("confirm_ocr_sync") == st.session_state.get("current_page", 1):
+             st.warning("⚠️ Testo esistente! Sovrascrivere?", icon="⚠️")
+             c1, c2 = st.columns(2)
+             if c1.button("Sì, Sovrascrivi", use_container_width=True, type="primary"):
+                 page_idx = st.session_state["confirm_ocr_sync"]
+                 run_ocr_sync(doc_id, library, page_idx, ocr_engine, current_model)
+                 st.session_state["confirm_ocr_sync"] = None
+             if c2.button("No, Annulla", use_container_width=True):
+                 st.session_state["confirm_ocr_sync"] = None
+                 st.rerun()
 
         # Metadata Footer
         if trans:
