@@ -121,7 +121,8 @@ if app_mode == "🛰️ Discovery":
                                 "viewer_url": viewer_url
                             }
                         except Exception as e: st.error(f"Errore analisi: {e}")
-                    else: st.warning(doc_id_hint or "ID non risolvibile.")
+                    else:
+                        st.warning(doc_id_hint or "ID non risolvibile.")
 
     else:
         search_query = st.sidebar.text_input("Parola chiave", placeholder="es. Dante")
