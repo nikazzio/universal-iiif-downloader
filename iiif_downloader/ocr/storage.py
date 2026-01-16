@@ -69,14 +69,36 @@ class OCRStorage:
         data = load_json(paths["transcription"]) or {"pages": [], "doc_id": doc_id}
         
         pages = data.get("pages", [])
+        # Handle Manual Edit Logic
+        is_manual = ocr_data.get("is_manual", False)
+        
+        # Check if we need to backup original OCR
+        if is_manual:
+            existing_page = next((p for p in pages if p.get("page_index") == page_idx), None)
+            if existing_page and "original_ocr_text" not in existing_page:
+                # First manual edit: timestamp the backup
+                existing_page["original_ocr_text"] = existing_page.get("full_text", "")
+                existing_page["original_engine"] = existing_page.get("engine", "unknown")
+            
+            # If creating new page manually (rare but possible), no backup needed yet
+            
         new_entry = {
             "page_index": page_idx,
             "full_text": ocr_data.get("full_text", ""),
             "lines": ocr_data.get("lines", []),
-            "engine": ocr_data.get("engine", "unknown"),
-            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
+            "engine": "manual" if is_manual else ocr_data.get("engine", "unknown"),
+            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "is_manual": is_manual,
+            "status": ocr_data.get("status", "draft"), # draft, verified
+            "average_confidence": ocr_data.get("average_confidence", 1.0 if is_manual else 0.0)
         }
-        
+
+        # Preserve backup if exists (when updating an already manual page)
+        existing_page = next((p for p in pages if p.get("page_index") == page_idx), None)
+        if existing_page and "original_ocr_text" in existing_page:
+             new_entry["original_ocr_text"] = existing_page["original_ocr_text"]
+             new_entry["original_engine"] = existing_page.get("original_engine", "unknown")
+
         # Update existing or add new
         updated = False
         for i, p in enumerate(pages):

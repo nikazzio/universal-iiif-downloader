@@ -224,14 +224,97 @@ def render_main_canvas(doc_id, library, paths, stats=None):
 
     with col_txt:
         # Load Transcription
+        # Load Transcription
         trans = storage.load_transcription(doc_id, current_p, library)
         
         st.markdown("### Trascrizione")
+        
+        # Prepare initial values
+        initial_text = ""
+        current_status = "draft"
+        is_manual = False
+        original_ocr = None
+        
         if trans:
-            st.text_area("Testo", trans.get("full_text", ""), height=600)
-            st.caption(f"Engine: {trans.get('engine')} | Conf: {trans.get('average_confidence', 'N/A')}")
+            initial_text = trans.get("full_text", "")
+            current_status = trans.get("status", "draft")
+            is_manual = trans.get("is_manual", False)
+            original_ocr = trans.get("original_ocr_text")
+        
+        # --- EDITOR CONTROLS ---
+        # We use session state to track dirty status if possible, 
+        # but Streamlit re-runs on every interaction, so we rely on comparing text.
+        
+        edit_key = f"trans_editor_{doc_id}_{current_p}"
+        
+        # Text Area with on_change is tricky, so we just check value on button press 
+        # or use a form. Using a form prevents "dirty" detection live easily without rerun.
+        # Let's use a standard area and check logic on button.
+        
+        text_val = st.text_area(
+            "Editor", 
+            value=initial_text, 
+            height=600, 
+            key=edit_key,
+            label_visibility="collapsed"
+        )
+        
+        # Toolbar
+        bar_c1, bar_c2, bar_c3 = st.columns([2, 1, 1])
+        
+        # Dirty Check
+        is_dirty = text_val != initial_text
+        
+        with bar_c1:
+            if st.button("💾 Salva Modifiche", use_container_width=True, type="primary" if is_dirty else "secondary"):
+                new_data = {
+                    "full_text": text_val,
+                    "engine": trans.get("engine", "manual") if trans else "manual",
+                    "is_manual": True,
+                    "status": current_status,
+                    "average_confidence": 1.0
+                }
+                storage.save_transcription(doc_id, current_p, new_data, library)
+                st.toast("✅ Modifiche salvate!", icon="💾")
+                time.sleep(0.5)
+                st.rerun()
+
+        with bar_c2:
+            # Verified Toggle (Visual Checkbox style but as button for now or actual checkbox)
+            is_verified = current_status == "verified"
+            btn_label = "✅ Verificato" if is_verified else "⚪ Da Verificare"
+            if st.button(btn_label, use_container_width=True):
+                new_status = "draft" if is_verified else "verified"
+                # Check if we need to verify null text? Allow it.
+                data_to_save = trans if trans else {"full_text": "", "lines": [], "engine": "manual"}
+                data_to_save["status"] = new_status
+                data_to_save["is_manual"] = True # Status change implies manual touch
+                storage.save_transcription(doc_id, current_p, data_to_save, library)
+                st.rerun()
+                
+        with bar_c3:
+            # Revert Button (Only if manual happened)
+            if is_manual and original_ocr:
+                if st.button("↩ Revert", use_container_width=True, help="Ripristina il testo OCR originale"):
+                    revert_data = {
+                        "full_text": original_ocr,
+                        "engine": trans.get("original_engine", "unknown"),
+                        "is_manual": False, # Reset to machine state? Or keep manual flag but machine text?
+                                            # Usually revert means "undo my work", so not manual anymore.
+                        "status": "draft",
+                        "average_confidence": 0.0 # Reset confidence or unknown
+                    }
+                    storage.save_transcription(doc_id, current_p, revert_data, library)
+                    st.toast("Revert completato!", icon="↩")
+                    st.rerun()
+
+        # Metadata Footer
+        if trans:
+            st.caption(f"Engine: {trans.get('engine')} | Conf: {trans.get('average_confidence', 'N/A')} | 🕒 {trans.get('timestamp', '-')}")
+            if is_manual:
+                st.caption("✍️ Modificato Manualmente")
         else:
-            st.info("Nessuna trascrizione disponibile per questa pagina.")
+            st.info("Nessuna trascrizione (scrivi e salva per creare).")
 
 def run_ocr_sync(doc_id, library, page_idx, engine, model):
     storage = get_storage()
