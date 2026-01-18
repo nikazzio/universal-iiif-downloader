@@ -5,7 +5,10 @@ from PIL import Image as PILImage
 from iiif_downloader.pdf_utils import load_pdf_page
 from iiif_downloader.ui.components.viewer import interactive_viewer
 from iiif_downloader.ui.state import get_storage
+from iiif_downloader.logger import get_logger
 from .ocr_utils import run_ocr_sync
+
+logger = get_logger(__name__)
 
 @st.cache_data(ttl=3600)
 def get_manifest_thumbnails(manifest_url):
@@ -52,20 +55,28 @@ def render_main_canvas(doc_id, library, paths, stats=None, ocr_engine="openai", 
     
     total_pages = max(1, total_pages)
     
-    # --- PAGE NAVIGATION STATE ---
-    if "current_page" not in st.session_state: st.session_state["current_page"] = 1
+    # --- PAGE NAVIGATION STATE (Document-Specific) ---
+    page_key = f"page_{doc_id}"
     
-    # QUERY PARAM NAVIGATION (Handle before rendering components)
+    # Initialize per-document state if missing
+    if page_key not in st.session_state:
+        # Default to 1 for new documents to prevent "leaking" page from previous doc
+        st.session_state[page_key] = 1
+    
+    # QUERY PARAM NAVIGATION (Handles direct links/bookmarks)
     q_page = st.query_params.get("page_nav")
     if q_page:
         try:
             target_p = int(q_page)
             if 1 <= target_p <= total_pages:
+                st.session_state[page_key] = target_p
                 st.session_state["current_page"] = target_p
-                # Do NOT clear immediately if we want browser's back button to work naturally, 
-                # but for Streamlit state management, we can clear to prevent sticky params.
-                st.query_params.clear()
+                # Clear all query params to prevent sticky behavior on saves/reruns
+                for k in list(st.query_params.keys()):
+                    del st.query_params[k]
         except: pass
+
+    current_p = st.session_state[page_key]
 
     # HOVER SCRUBBER (Below Title)
     has_pages = (stats and stats.get("pages")) or (meta and meta.get("pages")) or (paths.get("pages") and os.path.exists(paths["pages"]))
@@ -112,7 +123,7 @@ def render_main_canvas(doc_id, library, paths, stats=None, ocr_engine="openai", 
 
     # --- CONTENT AREA ---
     col_img, col_txt = st.columns([1, 1])
-    current_p = st.session_state["current_page"]
+    # Use current_p defined above
     
     with col_img:
         page_img_path = os.path.join(paths["root"], "pages", f"pag_{current_p-1:04d}.jpg")
@@ -148,7 +159,8 @@ def render_main_canvas(doc_id, library, paths, stats=None, ocr_engine="openai", 
         c_nav1, c_nav2, c_nav3 = st.columns([1, 2, 1])
         with c_nav1:
             if st.button("PREV ◀", use_container_width=True, key="btn_prev_sub"): 
-                st.session_state["current_page"] = max(1, st.session_state["current_page"] - 1)
+                st.session_state[page_key] = max(1, current_p - 1)
+                st.session_state["current_page"] = st.session_state[page_key]
                 st.rerun()
         with c_nav2:
              st.markdown(f"""
@@ -158,7 +170,8 @@ def render_main_canvas(doc_id, library, paths, stats=None, ocr_engine="openai", 
             """, unsafe_allow_html=True)
         with c_nav3:
             if st.button("▶ NEXT", use_container_width=True, key="btn_next_sub"):
-                st.session_state["current_page"] = min(total_pages, st.session_state["current_page"] + 1)
+                st.session_state[page_key] = min(total_pages, current_p + 1)
+                st.session_state["current_page"] = st.session_state[page_key]
                 st.rerun()
 
     with col_txt:
@@ -166,8 +179,11 @@ def render_main_canvas(doc_id, library, paths, stats=None, ocr_engine="openai", 
 
     # --- NATIVE TIMELINE SLIDER (Bottom) ---
     st.markdown("<br>", unsafe_allow_html=True)
-    c_line = st.slider("Timeline", 1, total_pages, value=st.session_state["current_page"], key="timeline_bottom")
-    if c_line != st.session_state["current_page"]:
+    # Removing 'key' to prevent Streamlit widget state from overriding our manual state (page_key).
+    # This specifically fixes the 'jump back' issue during reruns.
+    c_line = st.slider("Timeline", 1, total_pages, value=current_p)
+    if c_line != current_p:
+        st.session_state[page_key] = c_line
         st.session_state["current_page"] = c_line
         st.rerun()
 
@@ -205,8 +221,14 @@ def render_transcription_editor(doc_id, library, current_p, ocr_engine, current_
     
     with t_c1:
         if st.button("💾 Salva", use_container_width=True, type="primary" if is_dirty else "secondary"):
+            logger.info(f"Save button clicked: doc={doc_id}, page={current_p}, text_len={len(text_val)}, is_dirty={is_dirty}")
             new_data = {"full_text": text_val, "engine": trans.get("engine", "manual") if trans else "manual", "is_manual": True, "status": current_status, "average_confidence": 1.0}
             storage.save_transcription(doc_id, current_p, new_data, library)
+            
+            # UI Sync: Clear session state for the widget to force reload from JSON
+            if edit_key in st.session_state:
+                del st.session_state[edit_key]
+                
             st.toast("✅ Modifiche salvate!", icon="💾")
             time.sleep(0.5)
             st.rerun()

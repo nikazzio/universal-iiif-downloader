@@ -4,6 +4,9 @@ import time
 from pathlib import Path
 from typing import List, Dict, Optional, Any
 from iiif_downloader.utils import save_json, load_json, ensure_dir
+from iiif_downloader.logger import get_logger
+
+logger = get_logger(__name__)
 
 class OCRStorage:
     def __init__(self, base_dir: str = "downloads"):
@@ -65,6 +68,7 @@ class OCRStorage:
 
     def save_transcription(self, doc_id: str, page_idx: int, ocr_data: Dict[str, Any], library: str = "Unknown"):
         """Save OCR result for a specific page in a document."""
+        logger.info(f"Saving transcription to disk: doc={doc_id}, page={page_idx}, engine={ocr_data.get('engine')}")
         paths = self.get_document_paths(doc_id, library)
         data = load_json(paths["transcription"]) or {"pages": [], "doc_id": doc_id}
         

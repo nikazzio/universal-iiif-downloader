@@ -17,18 +17,21 @@ def render_studio_page():
     st.sidebar.subheader("Selezione Documento")
     
     default_idx = 0
-    if "studio_doc_id" in st.session_state and st.session_state["studio_doc_id"]:
+    current_stored_id = st.session_state.get("studio_doc_id")
+    
+    if current_stored_id:
         for i, d in enumerate(docs):
-            if d["id"] == st.session_state["studio_doc_id"]:
+            if d["id"] == current_stored_id:
                 default_idx = i
                 break
-        st.session_state["studio_doc_id"] = None
         
     doc_labels = [f"{d['library']} / {d['id']}" for d in docs]
     selected_label = st.sidebar.selectbox("Manoscritto", doc_labels, index=default_idx)
     selected_doc = next(d for d in docs if f"{d['library']} / {d['id']}" == selected_label)
     
     doc_id, library = selected_doc["id"], selected_doc["library"]
+    # Ensure current selection is stored
+    st.session_state["studio_doc_id"] = doc_id
     paths = storage.get_document_paths(doc_id, library)
     
     # --- METADATA PANEL ---

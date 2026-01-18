@@ -32,11 +32,11 @@ def _get_log_dir():
 
 # Shared formatters
 CONSOLE_FORMAT = logging.Formatter(
-    "%(levelname)-8s | %(name)-20s | %(message)s"
+    "%(levelname)s | %(name)s | %(message)s"
 )
 
 FILE_FORMAT = logging.Formatter(
-    "%(asctime)s [%(levelname)-8s] [%(name)s.%(funcName)s] %(message)s",
+    "%(asctime)s [%(levelname)s] [%(name)s.%(funcName)s] %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S"
 )
 

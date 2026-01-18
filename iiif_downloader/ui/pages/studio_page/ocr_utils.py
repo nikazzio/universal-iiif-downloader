@@ -1,10 +1,14 @@
 import streamlit as st
 import os
+import time
 from PIL import Image as PILImage
 from iiif_downloader.config import config
 from iiif_downloader.ui.state import get_storage, get_model_manager
 from iiif_downloader.ocr.processor import OCRProcessor
 from iiif_downloader.jobs import job_manager
+from iiif_downloader.logger import get_logger
+
+logger = get_logger(__name__)
 
 def render_ocr_controls(doc_id, library):
     st.sidebar.subheader("Strumenti OCR")
@@ -67,19 +71,34 @@ def run_ocr_sync(doc_id, library, page_idx, engine, model):
 
     img = PILImage.open(page_img_path)
     
-    with st.spinner(f"Elaborazione OCR ({engine})..."):
+    with st.status(f"Elaborazione OCR ({engine})...", expanded=True) as status:
+        def update_status(text):
+            status.update(label=text)
+            logger.debug(f"UI Status Update: {text}")
+
         proc = OCRProcessor(
             model_path=get_model_manager().get_model_path(model) if engine == "kraken" else None,
             openai_api_key=os.getenv("OPENAI_API_KEY"),
             anthropic_api_key=os.getenv("ANTHROPIC_API_KEY")
         )
-        res = proc.process_page(img, engine=engine, model=model)
+        res = proc.process_page(img, engine=engine, model=model, status_callback=update_status)
         
         if not res.get("error"):
+            status.update(label="OCR Completato!", state="complete", expanded=False)
             storage.save_transcription(doc_id, page_idx, res, library)
+            
+            # UI Sync Fix: Delete the session state for this widget's key.
+            # This forces Streamlit to reload the value from the JSON (the 'value' parameter
+            # in st.text_area) during the next rerun, avoiding the StreamlitAPIException.
+            edit_key = f"trans_editor_{doc_id}_{page_idx}"
+            if edit_key in st.session_state:
+                del st.session_state[edit_key]
+            
             st.toast("OCR Completato!", icon="✅")
+            time.sleep(0.5)
             st.rerun()
         else:
+            status.update(label=f"Errore: {res.get('error')}", state="error")
             st.error(f"Errore: {res.get('error')}")
 
 def run_ocr_batch_task(doc_id, library, engine, model, progress_callback=None):
