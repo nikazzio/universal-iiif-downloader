@@ -299,6 +299,11 @@ class IIIFDownloader:
             clean_dir(self.temp_dir)
 
         native_pdf = self.get_pdf_url()
+        try:
+            cm = get_config_manager()
+            download_native_pdf = bool(cm.get_setting("defaults.auto_generate_pdf", True))
+        except (OSError, ValueError, TypeError):
+            download_native_pdf = True
 
         canvases = self.get_canvases()
         downloaded = [None] * len(canvases)
@@ -329,8 +334,8 @@ class IIIFDownloader:
         valid = [f for f in downloaded if f]
 
         # Download the native PDF as an additional artifact when available.
-        # (Do not replace the image pipeline with PDF-only behavior.)
-        if native_pdf:
+        # Controlled by config and never replaces the image pipeline.
+        if native_pdf and download_native_pdf:
             self.download_native_pdf(native_pdf)
 
         if valid and self.ocr_model:

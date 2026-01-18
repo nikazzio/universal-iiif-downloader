@@ -56,6 +56,8 @@ streamlit run app.py
 - **Ricerca globale**: ricerca full-text nelle trascrizioni locali.
 - **Gestione risorse**: limite RAM per stitching IIIF, pulizia automatica cache/temporanei.
 
+Nota importante: il download via immagini **non genera PDF automaticamente**. L'export PDF da immagini avviene solo tramite pulsante nello Studio (o via CLI con flag dedicato). Se il manifest IIIF fornisce un PDF ufficiale, l'app può **scaricarlo come file aggiuntivo**.
+
 ## ⚙️ Configurazione (config.json)
 
 L'app usa **una sola fonte di configurazione**: `config.json` (creato automaticamente al primo avvio con valori di default).

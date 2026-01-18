@@ -290,9 +290,12 @@ def render_settings_page(cm: Any) -> None:
             help="Provider OCR suggerito di default nelle schermate OCR.",
         )
         d2.checkbox(
-            "Auto-genera PDF (quando previsto)",
+            "Scarica PDF nativo (se disponibile)",
             key="cfg_auto_generate_pdf",
-            help="Se abilitato, l'app genera automaticamente un PDF quando la fonte lo supporta.",
+            help=(
+                "Se abilitato, quando il manifest IIIF fornisce un PDF ufficiale (rendering), "
+                "l'app lo scarica come file aggiuntivo. Non crea PDF dalle immagini."
+            ),
         )
 
     with tabs[2]:

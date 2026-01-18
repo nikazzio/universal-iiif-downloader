@@ -117,7 +117,7 @@ Documenti importati da PDF:
 - `settings.system.*`
   - `download_workers`, `ocr_concurrency`, `request_timeout`
 - `settings.defaults.*`
-  - `default_library`, `auto_generate_pdf`, `preferred_ocr_engine`
+  - `default_library`, `auto_generate_pdf` (scarica PDF nativo se presente nel manifest), `preferred_ocr_engine`
 - `settings.ui.*`
   - `theme_color`, `items_per_page`, `toast_duration`
 - `settings.images.*`
