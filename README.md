@@ -2,6 +2,10 @@
 
 Uno strumento **professionale** e modulare per scaricare, organizzare e studiare manoscritti digitali. Supporta biblioteche IIIF (Vaticana, Bodleian, Gallica), importazione di PDF locali e offre un ambiente di studio avanzato con **OCR/HTR integrato** e **workflow di correzione manuale**.
 
+## 📚 Documentazione
+
+- Guida/feature (bozza iniziale): [docs/DOCUMENTAZIONE.md](docs/DOCUMENTAZIONE.md)
+
 ## 🚀 Nuove Funzionalità (v0.3.1)
 
 - **🖥️ UI Rimasterizzata**: Nuova navigazione moderna con sidebar "Pro", temi chiari/scuri e layout responsivo.
@@ -43,6 +47,15 @@ Lancia l'applicazione Web (metodo raccomandato):
 streamlit run app.py
 ```
 
+## 🧭 Funzionalità principali
+
+- **Discovery & Download**: risoluzione segnature/URL → anteprima manifest → download in parallelo.
+- **Import PDF locale**: salva PDF nella libreria, con estrazione opzionale delle immagini pagina-per-pagina.
+- **Studio**: viewer interattivo, editor trascrizione, stato “verificato”, cronologia e ripristino.
+- **OCR/HTR**: Kraken (locale) + provider API (OpenAI/Anthropic/Google/HuggingFace) su singola pagina o batch in background.
+- **Ricerca globale**: ricerca full-text nelle trascrizioni locali.
+- **Gestione risorse**: limite RAM per stitching IIIF, pulizia automatica cache/temporanei.
+
 ## ⚙️ Configurazione (config.json)
 
 L'app usa **una sola fonte di configurazione**: `config.json` (creato automaticamente al primo avvio con valori di default).
@@ -67,8 +80,10 @@ cp config.example.json config.json
 Per automazioni batch:
 
 ```bash
-python3 main.py "Urb.lat.1779" --ocr "gpt-4o"
+python3 main.py "Urb.lat.1779" --ocr "kraken"
 ```
+
+> Nota: la CLI usa `--ocr` per Kraken post-download. I provider OpenAI/Anthropic/Google/HF sono selezionabili dalla UI nello Studio.
 
 ## 📁 Struttura Cartelle
 
@@ -83,9 +98,9 @@ downloads/
 
 ## 🛠️ Stack Tecnologico
 
-- **Frontend**: Streamlit + `streamlit-antd-components` + `st-theme`.
-- **Backend IO**: `requests`, `iiif-prezi`, `pdf2image`.
-- **OCR/AI**: `kraken` (locale), `openai`, `anthropic`.
+- **Frontend**: Streamlit + `streamlit-antd-components`.
+- **Backend IO**: `requests`, `pdf2image`, Pillow.
+- **OCR/AI**: `kraken` (locale), `openai`, `anthropic`, Google Vision, HuggingFace.
 
 ## 🤝 Contribuire
 
