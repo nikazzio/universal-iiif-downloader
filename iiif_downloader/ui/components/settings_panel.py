@@ -436,7 +436,7 @@ def render_settings_page(cm: Any) -> None:
         c1, c2, c3 = st.columns(3)
         c1.slider(
             "Dimensione (max lato lungo, px)",
-            min_value=160,
+            min_value=64,
             max_value=1024,
             step=16,
             key="cfg_thumb_max_edge",

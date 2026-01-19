@@ -6,6 +6,30 @@ from typing import List, Optional
 from PIL import Image as PILImage
 
 
+def _cached_image_matches_target(*, img_path: Path, target_long_edge: int) -> bool:
+    """Return True if cached image is plausibly produced with target settings.
+
+    We don't encode settings in filenames; instead we validate dimensions.
+    Regenerate if the cached image is clearly too small or too large.
+    """
+
+    if target_long_edge <= 0:
+        return True
+    try:
+        with PILImage.open(str(img_path)) as img:
+            w, h = img.size
+        long_edge = max(int(w), int(h))
+    except (OSError, ValueError):
+        return False
+
+    # Accept small rounding differences and small originals.
+    if long_edge <= target_long_edge and long_edge >= int(target_long_edge * 0.85):
+        return True
+    if abs(long_edge - target_long_edge) <= 2:
+        return True
+    return False
+
+
 def guess_available_pages(scans_dir: Path) -> List[int]:
     """Return available 1-based page numbers from pag_XXXX.jpg files."""
 
@@ -45,8 +69,15 @@ def ensure_thumbnail(
     try:
         thumbnails_dir.mkdir(parents=True, exist_ok=True)
         out_path = thumbnail_path(thumbnails_dir, page_num_1_based)
-        if out_path.exists():
+        if out_path.exists() and _cached_image_matches_target(
+            img_path=out_path, target_long_edge=int(max_long_edge_px)
+        ):
             return out_path
+        if out_path.exists():
+            try:
+                out_path.unlink()
+            except OSError:
+                pass
 
         scan_path = scans_dir / f"pag_{page_num_1_based - 1:04d}.jpg"
         if not scan_path.exists():
@@ -86,8 +117,15 @@ def ensure_hover_preview(
     try:
         thumbnails_dir.mkdir(parents=True, exist_ok=True)
         out_path = hover_preview_path(thumbnails_dir, page_num_1_based)
-        if out_path.exists():
+        if out_path.exists() and _cached_image_matches_target(
+            img_path=out_path, target_long_edge=int(max_long_edge_px)
+        ):
             return out_path
+        if out_path.exists():
+            try:
+                out_path.unlink()
+            except OSError:
+                pass
 
         scan_path = scans_dir / f"pag_{page_num_1_based - 1:04d}.jpg"
         if not scan_path.exists():

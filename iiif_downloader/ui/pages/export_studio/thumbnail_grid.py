@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import base64
-import html
-import textwrap
 from pathlib import Path
 from typing import List, Optional
 
@@ -11,141 +9,8 @@ import streamlit as st
 from iiif_downloader.thumbnail_utils import ensure_hover_preview, ensure_thumbnail
 
 
-def _build_css(*, columns: int, hover_preview_delay_ms: int) -> str:
-    tile_w_pct = max(10, min(100, int(100 / max(1, columns))))
-    delay_ms = max(0, int(hover_preview_delay_ms or 0))
-
-    css = textwrap.dedent(
-        f"""
-<style>
-  .uidl-grid {{
-    display: flex;
-    flex-wrap: wrap;
-    gap: 10px;
-    align-items: flex-start;
-  }}
-  .uidl-tile {{
-    width: calc({tile_w_pct}% - 10px);
-    min-width: 120px;
-    max-width: 240px;
-  }}
-  .uidl-a {{
-    display: block;
-    text-decoration: none;
-    color: inherit;
-    border: 1px solid rgba(0,0,0,0.10);
-    border-radius: 8px;
-    overflow: visible;
-    position: relative;
-    background: rgba(255,255,255,0.78);
-  }}
-  .uidl-a.selected {{
-    border-color: rgba(255, 75, 75, 0.92);
-    box-shadow: 0 0 0 1px rgba(255, 75, 75, 0.22) inset;
-  }}
-  .uidl-img {{
-    width: 100%;
-    height: auto;
-    display: block;
-    border-radius: 8px 8px 0 0;
-  }}
-  .uidl-label {{
-    padding: 5px 8px;
-    font-size: 0.9rem;
-    color: rgba(0,0,0,0.75);
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    background: rgba(255,255,255,0.85);
-    border-top: 1px solid rgba(0,0,0,0.06);
-    border-radius: 0 0 8px 8px;
-  }}
-  .uidl-badge {{
-    font-size: 0.8rem;
-    padding: 1px 8px;
-    border-radius: 999px;
-    border: 1px solid rgba(0,0,0,0.10);
-    background: rgba(0,0,0,0.03);
-    white-space: nowrap;
-  }}
-
-  /* Hover preview: anchored to each tile (no fullscreen), sized proportionally */
-  .uidl-preview {{
-    position: absolute;
-    left: 50%;
-    top: calc(100% + 8px);
-    transform: translateX(-50%);
-    z-index: 50;
-    width: min(42vw, 420px);
-    max-width: 420px;
-    background: rgba(255,255,255,0.98);
-    border: 1px solid rgba(0,0,0,0.18);
-    border-radius: 10px;
-    box-shadow: 0 12px 40px rgba(0,0,0,0.22);
-    padding: 6px;
-    opacity: 0;
-    visibility: hidden;
-    transition: opacity 140ms ease;
-    transition-delay: {delay_ms}ms;
-    pointer-events: none;
-  }}
-  .uidl-preview img {{
-    width: 100%;
-    height: auto;
-    max-height: 60vh;
-    object-fit: contain;
-    display: block;
-    border-radius: 8px;
-  }}
-  .uidl-a:hover .uidl-preview {{
-    opacity: 1;
-    visibility: visible;
-  }}
-  @media (prefers-reduced-motion: reduce) {{
-    .uidl-preview {{ transition: none; }}
-  }}
-</style>
-"""
-    ).strip()
-
-    # IMPORTANT: css must not start with indentation/newlines.
-    return css
-
-
-def _build_tile_html(
-    *,
-    href: str,
-    thumb_url: str,
-    preview_url: Optional[str],
-    page_num: int,
-    is_selected: bool,
-) -> str:
-    selected_cls = " selected" if is_selected else ""
-    badge = "Selez." if is_selected else ""
-    check = "✅" if is_selected else "⬜"
-
-    safe_href = html.escape(href, quote=True)
-
-    preview_html = ""
-    if preview_url:
-        # Keep HTML flat: leading indentation/newlines can make Streamlit render
-        # HTML as Markdown code blocks.
-        preview_html = f'<div class="uidl-preview"><img src="{preview_url}" alt="preview"/></div>'
-
-    tile_html = (
-        '<div class="uidl-tile">'
-        f'<a class="uidl-a{selected_cls}" href="{safe_href}">'
-        f'<img class="uidl-img" src="{thumb_url}" alt="thumb"/>'
-        f"{preview_html}"
-        '<div class="uidl-label">'
-        f"<div>Pag. {page_num}</div>"
-        f'<div class="uidl-badge">{check} {badge}</div>'
-        "</div>"
-        "</a>"
-        "</div>"
-    )
-
-    return tile_html
+def _selection_key(doc_key: str, page_num_1_based: int) -> str:
+    return f"export_page_{doc_key}_{page_num_1_based}"
 
 
 def render_thumbnail_grid(
@@ -164,7 +29,13 @@ def render_thumbnail_grid(
     hover_preview_delay_ms: int = 550,
     disabled: bool = False,
 ) -> List[int]:
-    st.caption("Seleziona le pagine (griglia thumbnails).")
+    """Render a reliable Streamlit-native thumbnail grid.
+
+    This intentionally avoids injected HTML/JS and URL query-params toggling.
+    Click behavior stays stable across Streamlit versions.
+    """
+
+    st.caption("Seleziona le pagine (click sull'immagine).")
 
     c1, c2, c3 = st.columns([1, 1, 1])
     if c1.button("✅ Tutte", disabled=disabled, use_container_width=True):
@@ -177,9 +48,26 @@ def render_thumbnail_grid(
         st.rerun()
     if c3.button("🔄 Inverti", disabled=disabled, use_container_width=True):
         for p in action_pages:
-            k = f"export_page_{doc_key}_{p}"
+            k = _selection_key(doc_key, p)
             st.session_state[k] = not bool(st.session_state.get(k, False))
         st.rerun()
+
+    def _thumb_path(page_num_1_based: int) -> Path:
+        return thumbnails_dir / f"thumb_{page_num_1_based - 1:04d}.jpg"
+
+    def _hover_path(page_num_1_based: int) -> Path:
+        return thumbnails_dir / f"hover_{page_num_1_based - 1:04d}.jpg"
+
+    missing_thumbs = sum(1 for p in pages if not _thumb_path(p).exists())
+    missing_hovers = 0
+    if hover_preview_enabled:
+        missing_hovers = sum(1 for p in pages if not _hover_path(p).exists())
+
+    show_progress = (missing_thumbs + missing_hovers) > 0
+    status_ph = st.empty() if show_progress else None
+    progress_ph = st.empty() if show_progress else None
+
+    cols_n = max(1, int(columns or 1))
 
     def _b64_data_url(img_path: Path) -> Optional[str]:
         try:
@@ -188,10 +76,41 @@ def render_thumbnail_grid(
         except OSError:
             return None
 
-    css = _build_css(columns=columns, hover_preview_delay_ms=hover_preview_delay_ms)
+    # Streamlit-native layout
+    grid_cols = st.columns(cols_n)
 
-    tiles_html: List[str] = []
-    for p in pages:
+    # Global CSS specific for the grid behavior, z-index management
+    st.markdown(
+        """
+        <style>
+        /* CRITICAL: Ensure the column containing the hovered button is raised above subsequent columns (z-index trap) */
+        div[data-testid="column"]:has(button:hover) {
+            z-index: 10000 !important;
+        }
+        div.element-container:has(button:hover) {
+            z-index: 10001 !important;
+        }
+        /* Ensure the button itself is high */
+        div.stButton button:hover {
+            z-index: 10002 !important;
+        }
+        </style>
+    """,
+        unsafe_allow_html=True,
+    )
+
+    # We collect all per-tile styles to inject them in a batch if possible,
+    # but Streamlit columns are rendered imperatively. We will inject one style block per tile.
+    # It's not the most efficient but it's reliable for correct targeting.
+
+    total = max(1, len(pages))
+    for i, p in enumerate(pages, start=1):
+        if show_progress and status_ph is not None and progress_ph is not None:
+            status_ph.info(
+                f"Generazione thumbnails… {i}/{total} (mancanti: thumb={missing_thumbs}, preview={missing_hovers})"
+            )
+            progress_ph.progress(min(1.0, i / float(total)))
+
         thumb = ensure_thumbnail(
             scans_dir=scans_dir,
             thumbnails_dir=thumbnails_dir,
@@ -202,7 +121,7 @@ def render_thumbnail_grid(
         if thumb is None:
             continue
 
-        preview_path = None
+        preview_path: Optional[Path] = None
         if hover_preview_enabled:
             preview_path = ensure_hover_preview(
                 scans_dir=scans_dir,
@@ -211,31 +130,99 @@ def render_thumbnail_grid(
                 max_long_edge_px=hover_preview_max_long_edge_px,
                 jpeg_quality=hover_preview_jpeg_quality,
             )
-        if preview_path is None:
-            preview_path = thumb
+
+        sel_key = _selection_key(doc_key, p)
+        is_selected = bool(st.session_state.get(sel_key, False))
 
         thumb_url = _b64_data_url(thumb)
-        preview_url = _b64_data_url(preview_path)
         if not thumb_url:
             continue
 
-        href = f"?export_toggle={doc_key}:{p}"
-        k = f"export_page_{doc_key}_{p}"
-        is_selected = bool(st.session_state.get(k, False))
+        preview_url = _b64_data_url(preview_path) if preview_path is not None else None
+        if not preview_url:
+            preview_url = thumb_url
 
-        tile_html = _build_tile_html(
-            href=href,
-            thumb_url=thumb_url,
-            preview_url=preview_url,
-            page_num=p,
-            is_selected=is_selected,
-        )
-        tiles_html.append(tile_html)
+        def _on_toggle(doc_key: str = doc_key, p: int = p) -> None:
+            k = _selection_key(doc_key, p)
+            st.session_state[k] = not bool(st.session_state.get(k, False))
 
-    if tiles_html:
-        st.markdown(
-            css + '<div class="uidl-grid">' + "\n".join(tiles_html) + "</div>",
-            unsafe_allow_html=True,
-        )
+        # Sanitize the doc_key for use in CSS class names (replace dots, spaces, etc.)
+        safe_key = doc_key.replace(".", "_").replace(" ", "_").replace("/", "_")
+        tile_id = f"tile-{safe_key}-{p}"
 
-    return [p for p in action_pages if bool(st.session_state.get(f"export_page_{doc_key}_{p}", False))]
+        # CSS to style the SPECIFIC button following our marker.
+        # We use :has() to locate the container of the marker, then + div to get the button's container.
+        # Note: In Streamlit, markdown and button are usually wrapped in stVerticalBlock > div.element-container
+        selected_style = ""
+        if is_selected:
+            selected_style = """
+                border-color: rgba(255, 75, 75, 0.95) !important;
+                box-shadow: 0 0 0 2px rgba(255, 75, 75, 0.18) inset, 0 10px 28px rgba(0,0,0,0.14);
+            """
+
+        tile_css = f"""
+        <style>
+        div:has(span.{tile_id}) + div button {{
+            background-image: url("{thumb_url}");
+            background-repeat: no-repeat;
+            background-position: center;
+            background-size: cover;
+            color: transparent !important;
+            height: 240px; /* fallback height */
+            aspect-ratio: 3/4 !important;
+            border: 1px solid rgba(0,0,0,0.1) !important;
+            border-radius: 8px;
+            transition: transform 0.1s, box-shadow 0.1s;
+            {selected_style}
+        }}
+        div:has(span.{tile_id}) + div button:hover {{
+            transform: scale(1.02);
+            border-color: rgba(0,0,0,0.3) !important;
+            z-index: 10;
+        }}
+        div:has(span.{tile_id}) + div button:active {{
+            transform: scale(0.98);
+        }}
+        /* Hover Preview */
+        div:has(span.{tile_id}) + div button:hover::after {{
+            content: "";
+            position: absolute;
+            left: 50%;
+            bottom: 100%;
+            transform: translate(-50%, -10px);
+            width: 400px;
+            height: 560px;
+            background-image: url("{preview_url}");
+            background-size: contain;
+            background-repeat: no-repeat;
+            background-position: center;
+            background-color: white;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.35);
+            z-index: 99999;
+            pointer-events: none;
+        }}
+        </style>
+        <span class="{tile_id}" style="display:none"></span>
+        """
+
+        with grid_cols[(i - 1) % cols_n]:
+            st.markdown(tile_css, unsafe_allow_html=True)
+            # The button is the interactive surface.
+            st.button(
+                "Select",  # Text hidden by color: transparent
+                key=f"btn_{doc_key}_{p}",
+                on_click=_on_toggle,
+                use_container_width=True,
+            )
+
+            # Badge / Label below
+            badge_icon = "✅" if is_selected else "⬜"
+            st.caption(f"{badge_icon} Pag. {p}")
+
+    if show_progress and status_ph is not None and progress_ph is not None:
+        status_ph.empty()
+        progress_ph.empty()
+
+    return [p for p in action_pages if bool(st.session_state.get(_selection_key(doc_key, p), False))]

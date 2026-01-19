@@ -46,3 +46,37 @@ def test_ensure_thumbnail_resizes_and_caches(tmp_path: Path) -> None:
         jpeg_quality=70,
     )
     assert thumb2 == thumb1
+
+
+def test_ensure_thumbnail_regenerates_when_size_changes(tmp_path: Path) -> None:
+    scans = tmp_path / "scans"
+    thumbs = tmp_path / "data" / "thumbnails"
+    scans.mkdir(parents=True)
+
+    # Create a large scan so different target sizes are meaningful.
+    PILImage.new("RGB", (2000, 1000), color=(0, 255, 0)).save(scans / "pag_0000.jpg")
+
+    thumb_small = ensure_thumbnail(
+        scans_dir=scans,
+        thumbnails_dir=thumbs,
+        page_num_1_based=1,
+        max_long_edge_px=320,
+        jpeg_quality=70,
+    )
+    assert thumb_small is not None
+
+    with PILImage.open(str(thumb_small)) as img:
+        assert max(img.size) <= 320
+
+    # Ask for a bigger thumbnail: should regenerate from scan, not keep the old cached one.
+    thumb_big = ensure_thumbnail(
+        scans_dir=scans,
+        thumbnails_dir=thumbs,
+        page_num_1_based=1,
+        max_long_edge_px=640,
+        jpeg_quality=70,
+    )
+    assert thumb_big == thumb_small
+    with PILImage.open(str(thumb_big)) as img:
+        assert max(img.size) <= 640
+        assert max(img.size) > 320

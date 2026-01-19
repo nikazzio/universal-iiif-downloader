@@ -32,29 +32,6 @@ def _get_bool_setting(key: str, default: bool) -> bool:
     return bool(cm.get_setting(key, default))
 
 
-def _toggle_from_query_params(*, doc_key: str) -> None:
-    toggle = st.query_params.get("export_toggle")
-    if toggle and isinstance(toggle, str) and not st.session_state.get(f"_export_toggle_done_{doc_key}", False):
-        try:
-            target_doc, target_p_s = toggle.split(":", 1)
-            if target_doc == doc_key:
-                target_p = int(target_p_s)
-                k = f"export_page_{doc_key}_{target_p}"
-                st.session_state[k] = not bool(st.session_state.get(k, False))
-        except (ValueError, TypeError):
-            pass
-
-        try:
-            del st.query_params["export_toggle"]
-        except (KeyError, TypeError, AttributeError):
-            pass
-
-        st.session_state[f"_export_toggle_done_{doc_key}"] = True
-        st.rerun()
-    else:
-        st.session_state[f"_export_toggle_done_{doc_key}"] = False
-
-
 def _paginate(*, items: List[int], enabled: bool, page_size: int) -> List[int]:
     if not enabled:
         return items
@@ -74,7 +51,7 @@ def render_export_studio_page() -> None:
     st.title("Export Studio")
     st.caption("Crea un PDF professionale (frontespizio + pagine selezionate + colophon).")
 
-    thumb_max_edge = _get_int_setting("thumbnails.max_long_edge_px", 320, min_v=120, max_v=900)
+    thumb_max_edge = _get_int_setting("thumbnails.max_long_edge_px", 320, min_v=64, max_v=900)
     thumb_jpeg_quality = _get_int_setting("thumbnails.jpeg_quality", 70, min_v=30, max_v=95)
     thumb_columns = _get_int_setting("thumbnails.columns", 6, min_v=3, max_v=10)
 
@@ -88,7 +65,6 @@ def render_export_studio_page() -> None:
     hover_preview_jpeg_quality = _get_int_setting("thumbnails.hover_preview_jpeg_quality", 82, min_v=30, max_v=95)
     hover_preview_delay_ms = _get_int_setting("thumbnails.hover_preview_delay_ms", 550, min_v=0, max_v=3000)
 
-    inline_base64_max_tiles = _get_int_setting("thumbnails.inline_base64_max_tiles", 120, min_v=24, max_v=500)
     hover_preview_max_tiles = _get_int_setting("thumbnails.hover_preview_max_tiles", 72, min_v=12, max_v=200)
 
     storage = OCRStorage()
@@ -145,8 +121,6 @@ def render_export_studio_page() -> None:
     doc_key = f"{doc_opt.library}_{doc_opt.doc_id}".replace(" ", "_")
     thumbnails_dir = paths.get("thumbnails") or (paths["data"] / "thumbnails")
 
-    _toggle_from_query_params(doc_key=doc_key)
-
     export_all_key = f"export_all_{doc_key}"
     export_all = st.checkbox(
         "📄 Esporta tutto il PDF",
@@ -158,14 +132,8 @@ def render_export_studio_page() -> None:
     action_pages = list(available_pages)
     total_tiles = len(action_pages)
 
-    inline_enabled = total_tiles <= inline_base64_max_tiles
-    if not inline_enabled:
-        st.info(
-            "Documento molto lungo: per performance si attiva la paginazione (limitando base64 inline). "
-            f"Totale pagine: {total_tiles}"
-        )
-
-    effective_paginate = paginate_enabled or (not inline_enabled)
+    # Rendering many images/widgets is expensive: force pagination for long documents.
+    effective_paginate = paginate_enabled or (total_tiles > page_size)
     visible_pages = _paginate(items=action_pages, enabled=effective_paginate, page_size=page_size)
 
     init_key = f"_export_init_{doc_key}"
@@ -174,7 +142,10 @@ def render_export_studio_page() -> None:
             st.session_state[f"export_page_{doc_key}_{p}"] = True
         st.session_state[init_key] = True
 
-    effective_hover = hover_preview_enabled and (total_tiles <= hover_preview_max_tiles)
+    # Enable hover previews when the rendered grid is reasonably small.
+    # For long documents we paginate; in that case we should base the decision on
+    # visible tiles, otherwise hover previews would be disabled forever.
+    effective_hover = hover_preview_enabled and (len(visible_pages) <= hover_preview_max_tiles)
 
     if export_all:
         selected_pages = action_pages
