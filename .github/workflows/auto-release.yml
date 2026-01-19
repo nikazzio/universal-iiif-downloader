@@ -1,0 +1,50 @@
+name: Auto Release
+
+on:
+  pull_request:
+    types: [closed]
+    branches:
+      - main
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  release:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: '0'
+
+      - name: Determine Version Bump
+        id: bump
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const labels = context.payload.pull_request.labels.map(l => l.name);
+            if (labels.includes('major')) return 'major';
+            if (labels.includes('minor')) return 'minor';
+            if (labels.includes('patch')) return 'patch';
+            // Default check, though pr-label-checker works to prevent this, safe fallback is patch
+            return 'patch';
+          result-encoding: string
+
+      - name: Generate New Tag
+        id: tag
+        uses: anothrNick/github-tag-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DEFAULT_BUMP: ${{ steps.bump.outputs.result }}
+          WITH_V: true
+          
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.tag.outputs.new_tag }}
+          name: Release ${{ steps.tag.outputs.new_tag }}
+          generate_release_notes: true
+          token: ${{ secrets.GITHUB_TOKEN }}
