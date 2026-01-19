@@ -509,6 +509,11 @@ def render_history_sidebar(doc_id, library, current_p, current_data=None, curren
                     if edit_key in st.session_state:
                         del st.session_state[edit_key]
 
+                    # Update Quill editor state to match the restored content
+                    restored_rich = entry.get("rich_text")
+                    restored_plain = entry.get("full_text", "")
+                    st.session_state[edit_key] = restored_rich if restored_rich is not None else restored_plain
+
                     toast("Versione ripristinata!")
                     st.rerun()
 
