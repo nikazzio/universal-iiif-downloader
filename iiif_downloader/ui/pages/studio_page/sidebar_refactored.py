@@ -102,7 +102,7 @@ def _render_quick_navigation(doc_id: str, paths: dict):
         )
 
     with col2:
-        if st.button("→", use_container_width=True, help="Vai"):
+        if st.button("→", width="stretch", help="Vai"):
             StudioState.set_current_page(doc_id, jump_page)
             st.rerun()
 
@@ -112,12 +112,12 @@ def _render_quick_navigation(doc_id: str, paths: dict):
     qcol1, qcol2, qcol3 = st.sidebar.columns(3)
 
     with qcol1:
-        if st.button("⏮️ Prima", use_container_width=True, help="Prima pagina"):
+        if st.button("⏮️ Prima", width="stretch", help="Prima pagina"):
             StudioState.set_current_page(doc_id, 1)
             st.rerun()
 
     with qcol2:
-        if st.button("🔖 Metà", use_container_width=True, help="Pagina centrale"):
+        if st.button("🔖 Metà", width="stretch", help="Pagina centrale"):
             # Calculate middle page
             scans_dir = paths.get("scans")
             if scans_dir:
@@ -127,7 +127,7 @@ def _render_quick_navigation(doc_id: str, paths: dict):
                 st.rerun()
 
     with qcol3:
-        if st.button("⏭️ Ultima", use_container_width=True, help="Ultima pagina"):
+        if st.button("⏭️ Ultima", width="stretch", help="Ultima pagina"):
             # Find last page
             scans_dir = paths.get("scans")
             if scans_dir:
@@ -199,7 +199,7 @@ def _render_export_panel(doc_id: str, paths: dict):
 
     st.sidebar.subheader("📤 Esportazione")
 
-    if st.sidebar.button("📄 Genera PDF Completo", use_container_width=True):
+    if st.sidebar.button("📄 Genera PDF Completo", width="stretch"):
         with st.spinner("Generazione PDF in corso..."):
             scans_dir = Path(paths["scans"])
 

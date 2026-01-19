@@ -81,27 +81,82 @@ def render_image_viewer(
     # Get current adjustments
     adjustments = StudioState.get_image_adjustments(doc_id, current_page)
 
-    # Apply adjustments
-    display_img = ImageProcessor.apply_adjustments(
-        img_obj.copy(), brightness=adjustments["brightness"], contrast=adjustments["contrast"]
-    )
-
     # Check if in crop mode
     crop_mode = StudioState.get(StudioState.CROP_MODE, False)
 
-    # Floating Toolbar SOPRA l'immagine
-    tool_col1, tool_col2, tool_col3 = st.columns([1, 1, 3])
+    # TOOLBAR CLASSICA sopra l'immagine (compatta)
+    toolbar_cols = st.columns([1, 1, 3, 1, 3, 4], gap="small")
     
-    with tool_col1:
-        with st.popover("⚙️ Regolazioni"):
-            _render_image_adjustments(doc_id, current_page, adjustments)
+    # Callback per reset che aggiorna direttamente i widget
+    def reset_adjustments_callback():
+        StudioState.reset_image_adjustments(doc_id, current_page)
+        # Forza gli slider a aggiornarsi
+        st.session_state[f"brightness_{doc_id}_{current_page}"] = 1.0
+        st.session_state[f"contrast_{doc_id}_{current_page}"] = 1.0
     
-    with tool_col2:
-        with st.popover("✂️ Ritaglio"):
-            _render_crop_tools(doc_id, current_page, crop_mode)
+    # Pulsante Reset
+    with toolbar_cols[0]:
+        st.button(
+            "🔄", 
+            key=f"reset_adjustments_{doc_id}_{current_page}", 
+            help="Ripristina valori originali",
+            use_container_width=True,
+            type="secondary",
+            on_click=reset_adjustments_callback
+        )
     
-    with tool_col3:
-        st.empty()  # Spazio vuoto
+    with toolbar_cols[1]:
+        st.markdown("☀️", help="Luminosità")
+    
+    with toolbar_cols[2]:
+        # Inizializza slider se non esiste
+        brightness_key = f"brightness_{doc_id}_{current_page}"
+        if brightness_key not in st.session_state:
+            st.session_state[brightness_key] = adjustments["brightness"]
+        
+        brightness = st.slider(
+            "Luminosità",
+            min_value=0.0,
+            max_value=2.0,
+            step=0.1,
+            key=brightness_key,
+            label_visibility="collapsed"
+        )
+        StudioState.set_image_adjustments(doc_id, current_page, brightness, adjustments["contrast"])
+    
+    with toolbar_cols[3]:
+        st.markdown("🎭", help="Contrasto")
+    
+    with toolbar_cols[4]:
+        # Inizializza slider se non esiste
+        contrast_key = f"contrast_{doc_id}_{current_page}"
+        if contrast_key not in st.session_state:
+            st.session_state[contrast_key] = adjustments["contrast"]
+        
+        contrast = st.slider(
+            "Contrasto",
+            min_value=0.0,
+            max_value=2.0,
+            step=0.1,
+            key=contrast_key,
+            label_visibility="collapsed"
+        )
+        StudioState.set_image_adjustments(doc_id, current_page, adjustments["brightness"], contrast)
+    
+    with toolbar_cols[5]:
+        if not crop_mode:
+            if st.button("✂️ Taglia", width="stretch", type="secondary", key=f"crop_activate_{doc_id}_{current_page}"):
+                StudioState.set(StudioState.CROP_MODE, True)
+                st.rerun()
+        else:
+            if st.button("❌ Annulla", width="stretch", key=f"crop_deactivate_{doc_id}_{current_page}"):
+                StudioState.set(StudioState.CROP_MODE, False)
+                st.rerun()
+    
+    # Apply adjustments
+    display_img = ImageProcessor.apply_adjustments(
+        img_obj.copy(), brightness=brightness, contrast=contrast
+    )
 
     # Visualizzazione immagine
     if crop_mode:
@@ -144,7 +199,7 @@ def _render_image_adjustments(doc_id: str, current_page: int, current_adjustment
     StudioState.set_image_adjustments(doc_id, current_page, brightness, contrast)
 
     # Reset button
-    if st.button("🔄 Ripristina Valori Originali", use_container_width=True):
+    if st.button("🔄 Ripristina Valori Originali", width="stretch"):
         StudioState.reset_image_adjustments(doc_id, current_page)
         st.rerun()
 
@@ -155,12 +210,12 @@ def _render_crop_tools(doc_id: str, current_page: int, crop_mode: bool):
     """Render cropping tools interface."""
 
     if not crop_mode:
-        if st.button("✂️ Attiva Modalità Ritaglio", use_container_width=True, type="primary"):
+        if st.button("✂️ Attiva Modalità Ritaglio", width="stretch", type="primary"):
             StudioState.set(StudioState.CROP_MODE, True)
             st.rerun()
         st.caption("Attiva la modalità ritaglio per selezionare un'area dell'immagine e salvarla.")
     else:
-        if st.button("❌ Disattiva Modalità Ritaglio", use_container_width=True):
+        if st.button("❌ Disattiva Modalità Ritaglio", width="stretch"):
             StudioState.set(StudioState.CROP_MODE, False)
             st.rerun()
         st.info("🔧 Modalità ritaglio attiva. Seleziona un'area nell'immagine sopra.")
@@ -217,7 +272,7 @@ def _render_crop_interface(display_img: PILImage.Image, doc_id: str, library: st
         )
 
         # Salva snippet
-        if st.button("💾 Salva Snippet nel Database", use_container_width=True, type="primary"):
+        if st.button("💾 Salva Snippet nel Database", width="stretch", type="primary"):
             logger.debug(f"Salvataggio snippet: {category}")
             _save_crop(cropped_img, doc_id, library, current_page, category, transcription, notes, paths)
 

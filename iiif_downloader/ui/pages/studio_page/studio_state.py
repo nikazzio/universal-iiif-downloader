@@ -50,7 +50,8 @@ class StudioState:
         """Set the current page number for a document."""
         page_key = StudioState.get_page_key(doc_id)
         st.session_state[page_key] = page_num
-        st.session_state["current_page"] = page_num  # Legacy compatibility
+        # Sincronizza il widget dello slider per mantenere UI coerente
+        st.session_state[f"timeline_{doc_id}"] = page_num
 
     @staticmethod
     def get_image_adjustments(doc_id: str, page_num: int) -> dict:

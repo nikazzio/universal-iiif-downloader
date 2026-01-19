@@ -48,22 +48,18 @@ def render_main_canvas(
     # Page title
     st.title(f"🏛️ {doc_id}")
 
-    # TWO COLUMN LAYOUT (Editor-Centric)
-    col_img, col_work = st.columns([1.3, 0.7])
+    # TWO COLUMN LAYOUT (45% Image - 55% Editor)
+    col_img, col_work = st.columns([0.45, 0.55], gap="small")
 
     # LEFT COLUMN: Image Viewer
     with col_img:
         img_obj, page_stats = render_image_viewer(doc_id, library, paths, current_page, stats)
-        # Navigation buttons below image
-        _render_navigation_buttons(doc_id, current_page, total_pages)
+        # Page counter below image
+        _render_page_counter(current_page, total_pages)
 
     # RIGHT COLUMN: Work Area with Tabs
     with col_work:
-        trans, text_val = render_transcription_editor(doc_id, library, current_page, ocr_engine, current_model, paths)
-
-    # Bottom timeline slider
-    st.markdown("<br>", unsafe_allow_html=True)
-    _render_timeline_slider(doc_id, current_page, total_pages)
+        trans, text_val = render_transcription_editor(doc_id, library, current_page, ocr_engine, current_model, paths, total_pages=total_pages)
 
 
 def _calculate_total_pages(meta: dict, paths: dict) -> int:
@@ -116,48 +112,18 @@ def _handle_page_navigation(doc_id: str, total_pages: int) -> int:
     return StudioState.get_current_page(doc_id)
 
 
-def _render_navigation_buttons(doc_id: str, current_page: int, total_pages: int):
-    """Render previous/next navigation buttons."""
-
-    st.markdown("---")
-
-    c_nav1, c_nav2, c_nav3 = st.columns([1, 2, 1])
-
-    with c_nav1:
-        if st.button("◀ PREV", use_container_width=True, key="btn_prev_sub", disabled=current_page <= 1):
-            StudioState.set_current_page(doc_id, max(1, current_page - 1))
-            st.rerun()
-
-    with c_nav2:
-        st.markdown(
-            f"""
-            <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%;">
-                <span style="font-size: 1.4rem; font-weight: 800; color: #FF4B4B; line-height: 1;">
-                    {current_page} <span style="color: #444; font-weight: 300;">/ {total_pages}</span>
-                </span>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-    with c_nav3:
-        if st.button("NEXT ▶", use_container_width=True, key="btn_next_sub", disabled=current_page >= total_pages):
-            StudioState.set_current_page(doc_id, min(total_pages, current_page + 1))
-            st.rerun()
-
-
-def _render_timeline_slider(doc_id: str, current_page: int, total_pages: int):
-    """Render the bottom timeline slider."""
-
-    timeline_value = st.slider(
-        "📍 Timeline",
-        min_value=1,
-        max_value=total_pages,
-        value=current_page,
-        key=f"timeline_{doc_id}",
-        help="Naviga rapidamente tra le pagine",
+def _render_page_counter(current_page: int, total_pages: int):
+    """Render page counter below image."""
+    st.markdown(
+        f"""
+        <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; margin-top: 10px;">
+            <span style="font-size: 1.4rem; font-weight: 800; color: #FF4B4B; line-height: 1;">
+                {current_page} <span style="color: #444; font-weight: 300;">/ {total_pages}</span>
+            </span>
+        </div>
+        """,
+        unsafe_allow_html=True,
     )
 
-    if timeline_value != current_page:
-        StudioState.set_current_page(doc_id, timeline_value)
-        st.rerun()
+
+# Timeline slider removed - now integrated in navigation widget
