@@ -167,7 +167,11 @@ def render_export_studio_page() -> None:
 
     st.divider()
 
-    out_dir = get_config_manager().get_downloads_dir() / "exports"
+    out_dir = paths.get("exports")
+    if not out_dir:
+        # Fallback nel caso in cui la chiave exports non sia presente (versioni vecchie di storage)
+        out_dir = (paths.get("data") or paths["root"] / "data") / "exports"
+
     out_dir.mkdir(parents=True, exist_ok=True)
 
     default_name = clean_filename(f"{doc_opt.library}_{doc_opt.doc_id}_{compression}_{mode}.pdf")
