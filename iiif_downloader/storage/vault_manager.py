@@ -3,6 +3,10 @@ from pathlib import Path
 
 import fitz  # PyMuPDF
 
+from iiif_downloader.logger import get_logger
+
+logger = get_logger(__name__)
+
 
 class VaultManager:
     def __init__(self, db_path: str = "data/vault.db"):
@@ -30,19 +34,18 @@ class VaultManager:
             )
         """)
 
-        # Table for snippets (image crops)
+        # Table for snippets (image crops) - NUOVA VERSIONE
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS snippets (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                manuscript_id TEXT,
-                page_index INTEGER,
-                label TEXT,
-                tags TEXT,  -- Comma-separated tags
-                coordinates TEXT,  -- Saved as JSON string "[x0, y0, x1, y1]"
-                image_path TEXT,  -- Path to saved crop image
-                image_data BLOB,  -- Optional: raw image bytes
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (manuscript_id) REFERENCES manuscripts (id)
+                ms_name TEXT NOT NULL,
+                page_num INTEGER NOT NULL,
+                image_path TEXT NOT NULL,
+                category TEXT,
+                transcription TEXT,
+                notes TEXT,
+                coords_json TEXT,
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
 
@@ -82,97 +85,103 @@ class VaultManager:
 
     def save_snippet(
         self,
-        manuscript_id: str,
-        page_index: int,
-        label: str,
-        coordinates: list,
-        image_bytes: bytes,
-        tags: str = "",
-        image_path: str = None,
+        ms_name: str,
+        page_num: int,
+        image_path: str,
+        category: str = None,
+        transcription: str = None,
+        notes: str = None,
+        coords: list = None,
     ):
         """
         Saves the snippet to the database.
 
         Args:
-            manuscript_id: ID of the manuscript
-            page_index: Page number (0-indexed)
-            label: Description/label for the snippet
-            coordinates: List of [x0, y0, x1, y1]
-            image_bytes: Raw PNG image bytes
-            tags: Comma-separated tags
-            image_path: Optional path to saved image file
+            ms_name: Nome del manoscritto
+            page_num: Numero pagina (1-indexed)
+            image_path: Path del file immagine salvato
+            category: Categoria (Capolettera, Glossa, etc)
+            transcription: Trascrizione rapida
+            notes: Note/commenti
+            coords: Coordinate [x, y, width, height]
         """
         import json
 
-        self.register_manuscript(manuscript_id)
+        logger.debug(f"💾 SAVE_SNIPPET - ms_name='{ms_name}', page_num={page_num}, category='{category}'")
 
         conn = self._get_conn()
         cursor = conn.cursor()
         try:
+            coords_json = json.dumps(coords) if coords else None
             cursor.execute(
                 """
-                INSERT INTO snippets (manuscript_id, page_index, label, tags, coordinates, image_path, image_data)
+                INSERT INTO snippets (ms_name, page_num, image_path, category, transcription, notes, coords_json)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
-                (manuscript_id, page_index, label, tags, json.dumps(coordinates), image_path, image_bytes),
+                (ms_name, page_num, image_path, category, transcription, notes, coords_json),
             )
             conn.commit()
-            return cursor.lastrowid
+            snippet_id = cursor.lastrowid
+            logger.info(f"✅ Snippet ID {snippet_id} salvato: {category} - p.{page_num}")
+            
+            return snippet_id
         finally:
             conn.close()
 
-    def get_snippets(self, manuscript_id: str, page_index: int = None):
+    def get_snippets(self, ms_name: str, page_num: int = None):
         """
         Retrieve snippets for a manuscript, optionally filtered by page.
 
         Args:
-            manuscript_id: ID of the manuscript
-            page_index: Optional page number to filter (0-indexed)
+            ms_name: Nome del manoscritto
+            page_num: Numero pagina opzionale (1-indexed)
 
         Returns:
             List of snippet dictionaries
         """
         import json
 
+        logger.debug(f"🔍 GET_SNIPPETS - ms_name='{ms_name}', page_num={page_num}")
+
         conn = self._get_conn()
         cursor = conn.cursor()
         try:
-            if page_index is not None:
-                cursor.execute(
-                    """
-                    SELECT id, manuscript_id, page_index, label, tags, coordinates, 
-                           image_path, created_at
+            if page_num is not None:
+                query = """
+                    SELECT id, ms_name, page_num, image_path, category, transcription, 
+                           notes, coords_json, timestamp
                     FROM snippets
-                    WHERE manuscript_id = ? AND page_index = ?
-                    ORDER BY created_at DESC
-                """,
-                    (manuscript_id, page_index),
-                )
+                    WHERE ms_name = ? AND page_num = ?
+                    ORDER BY timestamp DESC
+                """
+                params = (ms_name, page_num)
+                cursor.execute(query, params)
             else:
-                cursor.execute(
-                    """
-                    SELECT id, manuscript_id, page_index, label, tags, coordinates, 
-                           image_path, created_at
+                query = """
+                    SELECT id, ms_name, page_num, image_path, category, transcription, 
+                           notes, coords_json, timestamp
                     FROM snippets
-                    WHERE manuscript_id = ?
-                    ORDER BY page_index, created_at DESC
-                """,
-                    (manuscript_id,),
-                )
+                    WHERE ms_name = ?
+                    ORDER BY page_num, timestamp DESC
+                """
+                params = (ms_name,)
+                cursor.execute(query, params)
 
             rows = cursor.fetchall()
+            logger.debug(f"Query eseguita: trovati {len(rows)} snippet")
             snippets = []
             for row in rows:
                 snippets.append(
                     {
                         "id": row[0],
-                        "manuscript_id": row[1],
-                        "page_index": row[2],
-                        "label": row[3],
-                        "tags": row[4],
-                        "coordinates": json.loads(row[5]) if row[5] else [],
-                        "image_path": row[6],
-                        "created_at": row[7],
+                        "ms_name": row[1],
+                        "page_num": row[2],
+                        "image_path": row[3],
+                        "category": row[4],
+                        "transcription": row[5],
+                        "notes": row[6],
+                        "coords_json": json.loads(row[7]) if row[7] else None,
+                        "timestamp": row[8],
                     }
                 )
             return snippets
@@ -180,10 +189,22 @@ class VaultManager:
             conn.close()
 
     def delete_snippet(self, snippet_id: int):
-        """Delete a snippet by ID."""
+        """Delete a snippet by ID and remove the physical file."""
+        import os
+        
         conn = self._get_conn()
         cursor = conn.cursor()
         try:
+            # Get image path before deleting
+            cursor.execute("SELECT image_path FROM snippets WHERE id = ?", (snippet_id,))
+            result = cursor.fetchone()
+            
+            if result and result[0]:
+                image_path = Path(result[0])
+                if image_path.exists():
+                    os.remove(image_path)
+            
+            # Delete from DB
             cursor.execute("DELETE FROM snippets WHERE id = ?", (snippet_id,))
             conn.commit()
         finally:

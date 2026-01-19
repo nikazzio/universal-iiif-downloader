@@ -46,19 +46,6 @@ def render_studio_sidebar(docs: list, doc_id: str, library: str, paths: dict):
 
     st.sidebar.markdown("---")
 
-    # Quick navigation
-    _render_quick_navigation(new_doc_id, paths)
-
-    st.sidebar.markdown("---")
-
-    # Metadata panel
-    storage = get_storage()
-    stats = storage.load_image_stats(new_doc_id, new_library)
-    meta = storage.load_metadata(new_doc_id, new_library)
-    _render_metadata_panel(meta, stats)
-
-    st.sidebar.markdown("---")
-
     # Active jobs
     _render_active_jobs()
 
@@ -195,6 +182,8 @@ def _render_metadata_panel(meta: dict, stats: dict):
 
 def _render_active_jobs():
     """Display active background jobs."""
+
+    st.sidebar.subheader("📤 Job Attivi")
 
     active_jobs = job_manager.list_jobs(active_only=True)
 

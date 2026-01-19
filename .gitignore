@@ -18,6 +18,8 @@ models/
 .streamlit/
 config.json
 config.yaml
+data/vault.db
+assets/snippets/
 
 # OS
 .DS_Store

@@ -11,13 +11,16 @@ import streamlit as st
 from PIL import Image as PILImage
 
 from iiif_downloader.config_manager import get_config_manager
-from iiif_downloader.database_manager import VaultManager
+from iiif_downloader.logger import get_logger
 from iiif_downloader.pdf_utils import load_pdf_page
+from iiif_downloader.storage import VaultManager
 from iiif_downloader.ui.components.viewer import interactive_viewer
 from iiif_downloader.ui.notifications import toast
 
 from .image_processing import ImageProcessor
 from .studio_state import StudioState
+
+logger = get_logger(__name__)
 
 
 def render_image_viewer(
@@ -86,22 +89,26 @@ def render_image_viewer(
     # Check if in crop mode
     crop_mode = StudioState.get(StudioState.CROP_MODE, False)
 
-    if crop_mode:
-        _render_crop_interface(display_img, doc_id, library, current_page, paths)
-    else:
-        # Normal viewer
-        interactive_viewer(display_img, zoom_percent=100)
-
-    # Toolbar compatta con icone
+    # Floating Toolbar SOPRA l'immagine
     tool_col1, tool_col2, tool_col3 = st.columns([1, 1, 3])
     
     with tool_col1:
-        with st.popover("🎨 Regolazioni"):
+        with st.popover("⚙️ Regolazioni"):
             _render_image_adjustments(doc_id, current_page, adjustments)
     
     with tool_col2:
         with st.popover("✂️ Ritaglio"):
             _render_crop_tools(doc_id, current_page, crop_mode)
+    
+    with tool_col3:
+        st.empty()  # Spazio vuoto
+
+    # Visualizzazione immagine
+    if crop_mode:
+        _render_crop_interface(display_img, doc_id, library, current_page, paths)
+    else:
+        # Normal viewer
+        interactive_viewer(display_img, zoom_percent=100)
 
     return img_obj, p_stat or {}
 
@@ -158,9 +165,6 @@ def _render_crop_tools(doc_id: str, current_page: int, crop_mode: bool):
             st.rerun()
         st.info("🔧 Modalità ritaglio attiva. Seleziona un'area nell'immagine sopra.")
 
-        # Show saved crops for this page
-        _render_saved_crops(doc_id, current_page)
-
 
 def _render_crop_interface(display_img: PILImage.Image, doc_id: str, library: str, current_page: int, paths: dict):
     """Render the cropping interface using streamlit-cropper."""
@@ -179,28 +183,43 @@ def _render_crop_interface(display_img: PILImage.Image, doc_id: str, library: st
 
         # Crop save interface
         st.markdown("---")
+        st.markdown("### 📋 Informazioni Ritaglio")
 
-        col1, col2 = st.columns([3, 1])
-
-        with col1:
-            crop_label = st.text_input(
-                "📝 Etichetta",
-                placeholder="Es: Iniziale decorata, Nota marginale...",
-                key=f"crop_label_{doc_id}_{current_page}",
-            )
-
-        crop_tags = st.text_input(
-            "🏷️ Tags (separati da virgola)",
-            placeholder="Es: decorazione, miniatura, rubrica",
-            key=f"crop_tags_{doc_id}_{current_page}",
+        # Categoria
+        category = st.selectbox(
+            "🎯 Categoria",
+            [
+                "Capolettera",
+                "Glossa",
+                "Abbreviazione",
+                "Dubbio",
+                "Illustrazione",
+                "Decorazione",
+                "Nota Marginale",
+                "Altro",
+            ],
+            key=f"crop_category_{doc_id}_{current_page}",
         )
 
-        with col2:
-            if st.button("💾 Salva Ritaglio", use_container_width=True, type="primary"):
-                if not crop_label.strip():
-                    st.error("Inserisci un'etichetta per il ritaglio!")
-                else:
-                    _save_crop(cropped_img, doc_id, library, current_page, crop_label, crop_tags, paths)
+        # Trascrizione rapida
+        transcription = st.text_input(
+            "✍️ Trascrizione Rapida",
+            placeholder="Testo presente nel ritaglio...",
+            key=f"crop_transcription_{doc_id}_{current_page}",
+        )
+
+        # Note/Commenti
+        notes = st.text_area(
+            "📝 Note/Commenti",
+            placeholder="Annotazioni, dubbi, osservazioni...",
+            height=80,
+            key=f"crop_notes_{doc_id}_{current_page}",
+        )
+
+        # Salva snippet
+        if st.button("💾 Salva Snippet nel Database", use_container_width=True, type="primary"):
+            logger.debug(f"Salvataggio snippet: {category}")
+            _save_crop(cropped_img, doc_id, library, current_page, category, transcription, notes, paths)
 
     except ImportError:
         st.error("📦 streamlit-cropper non installato. Installa con: `pip install streamlit-cropper`")
@@ -208,94 +227,47 @@ def _render_crop_interface(display_img: PILImage.Image, doc_id: str, library: st
 
 
 def _save_crop(
-    cropped_img: PILImage.Image, doc_id: str, library: str, current_page: int, label: str, tags: str, paths: dict
+    cropped_img: PILImage.Image, doc_id: str, library: str, current_page: int, category: str, transcription: str, notes: str, paths: dict
 ):
     """Save a cropped image to the database and disk."""
 
+    logger.debug(f"Salvataggio snippet - doc={doc_id}, page={current_page}, category={category}")
+    
     try:
-        # Create crops directory
-        crops_dir = Path(paths["root"]) / "crops"
-        crops_dir.mkdir(exist_ok=True)
+        # Create assets/snippets directory
+        assets_dir = Path("assets/snippets")
+        assets_dir.mkdir(parents=True, exist_ok=True)
 
-        # Generate filename
-        timestamp = st.session_state.get("_last_crop_id", 0) + 1
-        st.session_state["_last_crop_id"] = timestamp
-
-        crop_filename = f"crop_p{current_page:04d}_{timestamp:04d}.png"
-        crop_path = crops_dir / crop_filename
+        # Generate filename with timestamp
+        import time
+        timestamp = int(time.time() * 1000)
+        crop_filename = f"{doc_id}_p{current_page:04d}_{timestamp}.png"
+        crop_path = assets_dir / crop_filename
 
         # Save image to disk
         cropped_img.save(str(crop_path), "PNG")
+        logger.debug(f"Immagine salvata: {crop_path.name}")
 
-        # Convert to bytes for database
-        img_bytes = ImageProcessor.save_crop_to_bytes(cropped_img)
-
-        # Get crop coordinates (if available from cropper state)
-        # For now, we'll use placeholder coordinates
-        coordinates = [0, 0, cropped_img.width, cropped_img.height]
+        # Get crop dimensions for coords
+        coords = [0, 0, cropped_img.width, cropped_img.height]
 
         # Save to database
         vault = VaultManager()
         snippet_id = vault.save_snippet(
-            manuscript_id=doc_id,
-            page_index=current_page - 1,  # 0-indexed in DB
-            label=label,
-            coordinates=coordinates,
-            image_bytes=img_bytes,
-            tags=tags.strip(),
+            ms_name=doc_id,
+            page_num=current_page,
             image_path=str(crop_path),
+            category=category,
+            transcription=transcription.strip() if transcription else None,
+            notes=notes.strip() if notes else None,
+            coords=coords,
         )
 
-        toast(f"✅ Ritaglio salvato! ID: {snippet_id}", icon="💾")
-        st.success(f"Ritaglio salvato: {crop_path.name}")
+        toast(f"✅ Snippet salvato! ID: {snippet_id}", icon="💾")
 
-        # Clear form inputs
-        st.session_state[f"crop_label_{doc_id}_{current_page}"] = ""
-        st.session_state[f"crop_tags_{doc_id}_{current_page}"] = ""
+        # Il rerun resetterà automaticamente i widget
+        st.rerun()
 
     except Exception as e:
-        st.error(f"Errore nel salvataggio: {e}")
-
-
-def _render_saved_crops(doc_id: str, current_page: int):
-    """Display saved crops for the current page."""
-
-    try:
-        vault = VaultManager()
-        snippets = vault.get_snippets(doc_id, page_index=current_page - 1)
-
-        if not snippets:
-            st.caption("Nessun ritaglio salvato per questa pagina.")
-            return
-
-        st.markdown(f"**Ritagli Salvati ({len(snippets)})**")
-
-        for snippet in snippets:
-            with st.container():
-                col1, col2, col3 = st.columns([3, 2, 1])
-
-                with col1:
-                    st.markdown(f"**{snippet['label']}**")
-                    if snippet["tags"]:
-                        tags_display = " · ".join([f"#{t.strip()}" for t in snippet["tags"].split(",")])
-                        st.caption(tags_display)
-
-                with col2:
-                    st.caption(f"🕒 {snippet['created_at']}")
-
-                with col3:
-                    if st.button("🗑️", key=f"del_crop_{snippet['id']}", help="Elimina ritaglio"):
-                        vault.delete_snippet(snippet["id"])
-                        # Delete file if exists
-                        if snippet["image_path"] and os.path.exists(snippet["image_path"]):
-                            try:
-                                os.remove(snippet["image_path"])
-                            except:
-                                pass
-                        toast("Ritaglio eliminato", icon="🗑️")
-                        st.rerun()
-
-                st.divider()
-
-    except Exception as e:
-        st.error(f"Errore caricamento ritagli: {e}")
+        logger.error(f"Errore salvataggio snippet: {e}", exc_info=True)
+        st.error(f"❌ Errore nel salvataggio: {e}")

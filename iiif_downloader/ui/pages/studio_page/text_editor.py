@@ -10,15 +10,20 @@ import streamlit as st
 from bs4 import BeautifulSoup
 from streamlit_quill import st_quill
 
+from pathlib import Path
+
+from iiif_downloader.logger import get_logger
 from iiif_downloader.ui.notifications import toast
 from iiif_downloader.ui.state import get_storage
+
+logger = get_logger(__name__)
 
 from .ocr_utils import run_ocr_sync
 from .studio_state import StudioState
 
 
 def render_transcription_editor(
-    doc_id: str, library: str, current_page: int, ocr_engine: str, current_model: str
+    doc_id: str, library: str, current_page: int, ocr_engine: str, current_model: str, paths: dict = None
 ) -> tuple:
     """
     Render the transcription editor with all controls.
@@ -29,6 +34,7 @@ def render_transcription_editor(
         current_page: Current page number (1-indexed)
         ocr_engine: OCR engine name
         current_model: OCR model name
+        paths: Document paths dictionary
 
     Returns:
         Tuple of (transcription_data, current_text_value)
@@ -40,8 +46,13 @@ def render_transcription_editor(
     current_status = trans.get("status", "draft") if trans else "draft"
     is_manual = trans.get("is_manual", False) if trans else False
 
-    # TAB SYSTEM: Trascrizione, Cronologia, Snippet
-    tabs = st.tabs(["📝 Trascrizione", "📜 Cronologia", "✂️ Snippet"])
+    # NAVIGAZIONE RAPIDA (spostata dalla sidebar)
+    _render_quick_navigation(doc_id, paths)
+    
+    st.markdown("---")
+
+    # TAB SYSTEM: Trascrizione, Cronologia, Snippet, Info
+    tabs = st.tabs(["📝 Trascrizione", "📜 Cronologia", "✂️ Snippet", "ℹ️ Info Manoscritto"])
     
     # TAB 1: TRASCRIZIONE
     with tabs[0]:
@@ -54,6 +65,10 @@ def render_transcription_editor(
     # TAB 3: SNIPPET (ritagli della pagina)
     with tabs[2]:
         _render_snippets_tab(doc_id, current_page)
+    
+    # TAB 4: INFO MANOSCRITTO
+    with tabs[3]:
+        _render_manuscript_info(doc_id, library)
     
     return trans, ""  # Return empty text for now
 
@@ -148,56 +163,92 @@ def _render_transcription_tab(
 def _render_snippets_tab(doc_id: str, current_page: int):
     """Render the snippets tab showing image crops for current page."""
     
+    logger.debug(f"Render tab snippet - doc={doc_id}, page={current_page}")
+    
     try:
-        from iiif_downloader.database_manager import VaultManager
+        from iiif_downloader.storage import VaultManager
         
         vault = VaultManager()
-        snippets = vault.get_snippets(doc_id, page_index=current_page - 1)
+        snippets = vault.get_snippets(doc_id, page_num=current_page)
         
         if not snippets:
-            st.info("📭 Nessun ritaglio salvato per questa pagina.")
-            st.caption("Usa gli strumenti di ritaglio nella colonna Scansione per creare snippet.")
+            logger.debug(f"Nessuno snippet trovato per {doc_id} pagina {current_page}")
+            st.info("📭 Nessun snippet salvato per questa pagina.")
+            st.caption("✂️ Usa il popover 'Ritaglio' nella colonna Scansione per creare snippet.")
             return
         
-        st.markdown(f"**{len(snippets)} ritagli salvati**")
+        st.markdown(f"### 🖼️ Galleria Snippet ({len(snippets)})")
+        st.caption(f"Pagina {current_page} - {doc_id}")
         st.markdown("---")
         
+        # Mostra ogni snippet
         for snippet in snippets:
             with st.container():
-                col1, col2 = st.columns([4, 1])
+                # Colonne per layout
+                img_col, info_col = st.columns([1, 2])
                 
-                with col1:
-                    st.markdown(f"**{snippet['label']}**")
-                    if snippet['tags']:
-                        tags_display = " · ".join([f"#{t.strip()}" for t in snippet['tags'].split(',')])
-                        st.caption(tags_display)
-                    st.caption(f"🕒 {snippet['created_at']}")
+                with img_col:
+                    # Mostra miniatura
+                    img_path = Path(snippet['image_path'])
+                    
+                    if img_path.exists():
+                        st.image(snippet['image_path'], use_container_width=True)
+                    else:
+                        st.warning("⚠️ File non trovato")
+                        logger.warning(f"File snippet non trovato: {img_path}")
                 
-                with col2:
-                    if st.button("🗑️", key=f"del_snip_{snippet['id']}", help="Elimina"):
+                with info_col:
+                    # Tag categoria
+                    category_colors = {
+                        "Capolettera": "#FF6B6B",
+                        "Glossa": "#4ECDC4",
+                        "Abbreviazione": "#95E1D3",
+                        "Dubbio": "#FFE66D",
+                        "Illustrazione": "#A8E6CF",
+                        "Decorazione": "#FF8B94",
+                        "Nota Marginale": "#C7CEEA",
+                        "Altro": "#B0B0B0",
+                    }
+                    
+                    cat_color = category_colors.get(snippet.get('category'), "#999")
+                    st.markdown(
+                        f"<span style='background: {cat_color}; padding: 4px 12px; border-radius: 12px; color: white; font-weight: bold; font-size: 0.85rem;'>{snippet.get('category', 'N/A')}</span>",
+                        unsafe_allow_html=True
+                    )
+                    
+                    st.caption(f"🕖 {snippet['timestamp']}")
+                    
+                    # Espandi per vedere dettagli
+                    with st.expander("🔍 Espandi dettagli"):
+                        if snippet.get('transcription'):
+                            st.markdown(f"**✍️ Trascrizione:**")
+                            st.text(snippet['transcription'])
+                        
+                        if snippet.get('notes'):
+                            st.markdown(f"**📝 Note:**")
+                            st.text_area(
+                                "Note",
+                                value=snippet['notes'],
+                                disabled=True,
+                                key=f"notes_view_{snippet['id']}",
+                                label_visibility="collapsed",
+                                height=100,
+                            )
+                        
+                        if snippet.get('coords_json'):
+                            coords = snippet['coords_json']
+                            st.caption(f"📐 Dimensioni: {coords[2]}x{coords[3]} px")
+                    
+                    # Pulsante elimina
+                    if st.button("🗑️ Elimina", key=f"del_snippet_{snippet['id']}", type="secondary"):
                         vault.delete_snippet(snippet['id'])
-                        # Delete file if exists
-                        if snippet.get('image_path'):
-                            import os
-                            if os.path.exists(snippet['image_path']):
-                                try:
-                                    os.remove(snippet['image_path'])
-                                except:
-                                    pass
-                        toast("Ritaglio eliminato", icon="🗑️")
+                        toast("✅ Snippet eliminato!", icon="🗑️")
                         st.rerun()
                 
-                # Show image if available
-                if snippet.get('image_path'):
-                    import os
-                    from pathlib import Path
-                    if os.path.exists(snippet['image_path']):
-                        st.image(snippet['image_path'], use_container_width=True)
-                
-                st.markdown("---")
-                
+                st.markdown("<hr style='margin: 1rem 0; opacity: 0.2;'>", unsafe_allow_html=True)
+        
     except Exception as e:
-        st.error(f"Errore caricamento snippet: {e}")
+        st.error(f"❌ Errore nel caricamento snippet: {e}")
 
 
 def _handle_ocr_triggers(doc_id, library, current_page, ocr_engine, current_model, storage):
@@ -239,9 +290,9 @@ def _save_transcription(text_val, doc_id, library, current_page, trans, current_
     }
     storage.save_transcription(doc_id, current_page, new_data, library)
 
+    # Feedback senza rerun completo
     toast("✅ Modifiche salvate!", icon="💾")
-    time.sleep(0.5)
-    st.rerun()
+    # Non facciamo più rerun per migliorare UX
 
 
 def _render_verification_button(doc_id, library, current_page, current_status, trans, storage):
@@ -432,3 +483,100 @@ def _restore_history_version(entry, current_text, current_data, doc_id, library,
 
     toast("Versione ripristinata!")
     st.rerun()
+
+
+def _render_quick_navigation(doc_id: str, paths: dict):
+    """Render quick page navigation controls at top of right column."""
+    
+    current_page = StudioState.get_current_page(doc_id)
+    
+    # Calcola total pages
+    total_pages = 100
+    if paths:
+        scans_dir = paths.get("scans")
+        if scans_dir and Path(scans_dir).exists():
+            files = [f for f in Path(scans_dir).iterdir() if f.suffix == ".jpg"]
+            total_pages = len(files) if files else 100
+    
+    st.markdown("#### 🧭 Navigazione")
+    
+    nav_col1, nav_col2, nav_col3, nav_col4 = st.columns([2, 1, 1, 1])
+    
+    with nav_col1:
+        jump_page = st.number_input(
+            f"Pagina (1-{total_pages})",
+            min_value=1,
+            max_value=total_pages,
+            value=current_page,
+            step=1,
+            key=f"jump_nav_{doc_id}",
+        )
+        if jump_page != current_page:
+            StudioState.set_current_page(doc_id, jump_page)
+            st.rerun()
+    
+    with nav_col2:
+        if st.button("⏮️", use_container_width=True, help="Prima", key=f"nav_first_{doc_id}"):
+            StudioState.set_current_page(doc_id, 1)
+            st.rerun()
+    
+    with nav_col3:
+        if st.button("🔖", use_container_width=True, help="Metà", key=f"nav_mid_{doc_id}"):
+            mid_page = total_pages // 2
+            StudioState.set_current_page(doc_id, mid_page)
+            st.rerun()
+    
+    with nav_col4:
+        if st.button("⏭️", use_container_width=True, help="Ultima", key=f"nav_last_{doc_id}"):
+            StudioState.set_current_page(doc_id, total_pages)
+            st.rerun()
+    
+    # Mini progress bar
+    progress = (current_page - 1) / max(total_pages - 1, 1)
+    st.progress(progress, text=f"Pagina {current_page} di {total_pages}")
+
+
+def _render_manuscript_info(doc_id: str, library: str):
+    """Render manuscript metadata and details in Info tab."""
+    
+    storage = get_storage()
+    meta = storage.load_metadata(doc_id, library)
+    stats = storage.load_image_stats(doc_id, library)
+    
+    st.markdown("### 📜 Informazioni Manoscritto")
+    
+    if meta:
+        st.markdown(f"**Titolo**: {meta.get('label', 'Senza Titolo')}")
+        
+        desc = meta.get("description", "-")
+        st.markdown(f"**Descrizione**: {desc}")
+        
+        st.markdown(f"**Attribuzione**: {meta.get('attribution', '-')}")
+        st.markdown(f"**Licenza**: {meta.get('license', '-')}")
+        
+        if "metadata" in meta and isinstance(meta["metadata"], list):
+            st.markdown("---")
+            st.markdown("#### 🏷️ Metadati Aggiuntivi")
+            for item in meta["metadata"]:
+                if isinstance(item, dict):
+                    label = item.get("label", "Campo")
+                    value = item.get("value", "-")
+                    st.markdown(f"**{label}**: {value}")
+    
+    if stats:
+        st.markdown("---")
+        st.markdown("#### 📊 Statistiche Tecniche")
+        
+        pages_s = stats.get("pages", [])
+        if pages_s:
+            avg_w = sum(p["width"] for p in pages_s) // len(pages_s)
+            avg_h = sum(p["height"] for p in pages_s) // len(pages_s)
+            total_mb = sum(p["size_bytes"] for p in pages_s) / (1024 * 1024)
+            
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Pagine", len(pages_s))
+            with col2:
+                st.metric("Risoluzione", f"{avg_w}×{avg_h}")
+            with col3:
+                st.metric("Peso", f"{total_mb:.1f} MB")

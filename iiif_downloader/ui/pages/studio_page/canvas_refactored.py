@@ -59,7 +59,7 @@ def render_main_canvas(
 
     # RIGHT COLUMN: Work Area with Tabs
     with col_work:
-        trans, text_val = render_transcription_editor(doc_id, library, current_page, ocr_engine, current_model)
+        trans, text_val = render_transcription_editor(doc_id, library, current_page, ocr_engine, current_model, paths)
 
     # Bottom timeline slider
     st.markdown("<br>", unsafe_allow_html=True)
