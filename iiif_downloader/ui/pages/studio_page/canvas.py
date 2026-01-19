@@ -378,7 +378,6 @@ def render_transcription_editor(doc_id, library, current_p, ocr_engine, current_
             soup = BeautifulSoup(text_val, "html.parser")
 
             # Using get_text with a newline separator aids in preserving simple line structure
-            # clean_text = soup.get_text(separator="\n").strip()
             # Better approach to avoid too many newlines:
             clean_text = soup.get_text("\n")
 
