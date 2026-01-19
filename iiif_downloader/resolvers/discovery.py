@@ -10,9 +10,7 @@ from iiif_downloader.utils import DEFAULT_HEADERS
 logger = get_logger(__name__)
 
 
-def resolve_shelfmark(
-    library: str, shelfmark: str
-) -> Tuple[Optional[str], Optional[str]]:
+def resolve_shelfmark(library: str, shelfmark: str) -> Tuple[Optional[str], Optional[str]]:
     """
     Resolve a library name and shelfmark/ID into a IIIF Manifest URL.
     Returns (manifest_url, doc_id).
@@ -40,10 +38,7 @@ def resolve_shelfmark(
         clean_s = s.replace(" ", "")
         # 2. Case normalization (BAV often uses 'lat.' instead of 'Lat.')
         clean_s = (
-            clean_s.replace("Lat.", "lat.")
-            .replace("Gr.", "gr.")
-            .replace("Vat.", "vatic.")
-            .replace("Pal.", "pal.")
+            clean_s.replace("Lat.", "lat.").replace("Gr.", "gr.").replace("Vat.", "vatic.").replace("Pal.", "pal.")
         )
 
         clean_id = clean_s if clean_s.startswith("MSS_") else f"MSS_{clean_s}"

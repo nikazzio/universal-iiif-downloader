@@ -2,7 +2,6 @@ import argparse
 import sys
 
 # pylint: disable=broad-exception-caught
-
 from .logger import get_logger, setup_logging
 from .logic import IIIFDownloader
 
@@ -43,9 +42,7 @@ def wizard_mode():
         sys.exit(1)
 
     out_name = input("Output filename (optional, press Enter for auto): ").strip()
-    ocr_model = input(
-        "OCR Model (optional, e.g. 'kraken', press Enter to skip): "
-    ).strip()
+    ocr_model = input("OCR Model (optional, e.g. 'kraken', press Enter to skip): ").strip()
 
     return url, out_name, ocr_model
 
@@ -133,8 +130,6 @@ def main():
     except Exception as e:
         logger.exception("Fatal error during CLI execution")
         print(f"\n❌ Error: {e}")
-        print(
-            "💡 Tip: 'Intelligent Support' tried to guess the Manifest from your URL."
-        )
+        print("💡 Tip: 'Intelligent Support' tried to guess the Manifest from your URL.")
         print("   If this failed, please paste the direct link to the 'manifest.json'.")
         sys.exit(1)

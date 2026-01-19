@@ -41,9 +41,7 @@ class OCRStorage:
                         )
         return docs
 
-    def get_document_paths(
-        self, doc_id: str, library: str = "Unknown"
-    ) -> Dict[str, Path]:
+    def get_document_paths(self, doc_id: str, library: str = "Unknown") -> Dict[str, Path]:
         """Get paths for a specific document, searching if library unknown."""
         doc_path = None
         if library and library != "Unknown":
@@ -74,16 +72,12 @@ class OCRStorage:
             "history": doc_path / "history",
         }
 
-    def load_image_stats(
-        self, doc_id: str, library: str = "Unknown"
-    ) -> Optional[Dict[str, Any]]:
+    def load_image_stats(self, doc_id: str, library: str = "Unknown") -> Optional[Dict[str, Any]]:
         """Load image statistics."""
         paths = self.get_document_paths(doc_id, library)
         return load_json(paths["stats"])
 
-    def load_metadata(
-        self, doc_id: str, library: str = "Unknown"
-    ) -> Optional[Dict[str, Any]]:
+    def load_metadata(self, doc_id: str, library: str = "Unknown") -> Optional[Dict[str, Any]]:
         """Load metadata for a document."""
         paths = self.get_document_paths(doc_id, library)
         return load_json(paths["metadata"])
@@ -117,9 +111,7 @@ class OCRStorage:
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
             "is_manual": is_manual,
             "status": ocr_data.get("status", "draft"),  # draft, verified
-            "average_confidence": ocr_data.get(
-                "average_confidence", 1.0 if is_manual else 0.0
-            ),
+            "average_confidence": ocr_data.get("average_confidence", 1.0 if is_manual else 0.0),
         }
 
         # Update existing or add new
@@ -163,9 +155,9 @@ class OCRStorage:
         # Deduplication: Don't save if the text is identical to the last version
         if history_data:
             last_entry = history_data[-1]
-            if last_entry.get("full_text") == entry.get("full_text") and last_entry.get(
+            if last_entry.get("full_text") == entry.get("full_text") and last_entry.get("status") == entry.get(
                 "status"
-            ) == entry.get("status"):
+            ):
                 logger.debug(
                     "Skipping duplicate history snapshot for page %s",
                     page_idx,
@@ -185,9 +177,7 @@ class OCRStorage:
         save_json(history_file, history_data)
         logger.debug("History snapshot saved for page %s", page_idx)
 
-    def load_history(
-        self, doc_id: str, page_idx: int, library: str = "Unknown"
-    ) -> List[Dict[str, Any]]:
+    def load_history(self, doc_id: str, page_idx: int, library: str = "Unknown") -> List[Dict[str, Any]]:
         """Load the history log for a specific page."""
         paths = self.get_document_paths(doc_id, library)
         history_file = paths["history"] / f"p{page_idx:04d}_history.json"
@@ -207,9 +197,7 @@ class OCRStorage:
             return True
         return False
 
-    def load_transcription(
-        self, doc_id: str, page_idx: Optional[int] = None, library: str = "Unknown"
-    ) -> Any:
+    def load_transcription(self, doc_id: str, page_idx: Optional[int] = None, library: str = "Unknown") -> Any:
         """Load transcription for a document or specific page."""
         paths = self.get_document_paths(doc_id, library)
         data = load_json(paths["transcription"])

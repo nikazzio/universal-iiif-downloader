@@ -1,4 +1,3 @@
-import logging
 import threading
 import time
 import uuid
@@ -22,9 +21,7 @@ class JobManager:
             cls._instance = super(JobManager, cls).__new__(cls)
         return cls._instance
 
-    def submit_job(
-        self, task_func: Callable, args=(), kwargs=None, job_type="generic"
-    ) -> str:
+    def submit_job(self, task_func: Callable, args=(), kwargs=None, job_type="generic") -> str:
         """
         Submits a task to run in a background thread.
         Returns the job_id.
@@ -101,11 +98,7 @@ class JobManager:
     def list_jobs(self, active_only=False):
         with self._lock:
             if active_only:
-                return {
-                    k: v
-                    for k, v in self._jobs.items()
-                    if v["status"] in ["pending", "running"]
-                }
+                return {k: v for k, v in self._jobs.items() if v["status"] in ["pending", "running"]}
             return self._jobs.copy()
 
 

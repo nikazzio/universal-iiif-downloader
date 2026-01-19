@@ -2,10 +2,10 @@ import os
 import time
 
 import streamlit as st
+from bs4 import BeautifulSoup
 from PIL import Image as PILImage
 from requests import RequestException
 from streamlit_quill import st_quill
-from bs4 import BeautifulSoup
 
 from iiif_downloader.logger import get_logger
 from iiif_downloader.pdf_utils import load_pdf_page
@@ -49,9 +49,7 @@ def get_manifest_thumbnails(manifest_url):
         return {}
 
 
-def render_main_canvas(
-    doc_id, library, paths, stats=None, ocr_engine="openai", current_model="gpt-5"
-):
+def render_main_canvas(doc_id, library, paths, stats=None, ocr_engine="openai", current_model="gpt-5"):
     st.title(f"🏛️ {doc_id}")
 
     storage = get_storage()
@@ -176,9 +174,7 @@ def render_main_canvas(
             from iiif_downloader.config_manager import get_config_manager
 
             pdf_dpi = int(get_config_manager().get_setting("pdf.viewer_dpi", 150))
-            img_obj, pdf_err = load_pdf_page(
-                paths["pdf"], current_p, dpi=pdf_dpi, return_error=True
-            )
+            img_obj, pdf_err = load_pdf_page(paths["pdf"], current_p, dpi=pdf_dpi, return_error=True)
             if pdf_err:
                 st.warning(pdf_err)
 
@@ -188,19 +184,13 @@ def render_main_canvas(
             p_stat = None
             if stats:
                 p_stat = next(
-                    (
-                        p
-                        for p in stats.get("pages", [])
-                        if p.get("page_index") == current_p - 1
-                    ),
+                    (p for p in stats.get("pages", []) if p.get("page_index") == current_p - 1),
                     None,
                 )
 
             if not p_stat:
                 w, h = img_obj.size
-                file_size = (
-                    page_img_path.stat().st_size if page_img_path.exists() else 0
-                )
+                file_size = page_img_path.stat().st_size if page_img_path.exists() else 0
                 p_stat = {"width": w, "height": h, "size_bytes": file_size}
 
             mb_size = p_stat["size_bytes"] / (1024 * 1024)
@@ -239,15 +229,11 @@ def render_main_canvas(
                 st.rerun()
 
     with col_txt:
-        trans, text_val = render_transcription_editor(
-            doc_id, library, current_p, ocr_engine, current_model
-        )
+        trans, text_val = render_transcription_editor(doc_id, library, current_p, ocr_engine, current_model)
 
     if col_hist:
         with col_hist:
-            render_history_sidebar(
-                doc_id, library, current_p, current_data=trans, current_text=text_val
-            )
+            render_history_sidebar(doc_id, library, current_p, current_data=trans, current_text=text_val)
 
     # --- NATIVE TIMELINE SLIDER (Bottom) ---
     st.markdown("<br>", unsafe_allow_html=True)
@@ -281,12 +267,8 @@ def render_transcription_editor(doc_id, library, current_p, ocr_engine, current_
         st.markdown(f"### Trascrizione{v_badge}{info_msg}", unsafe_allow_html=True)
     with h_c2:
         btn_hist = "📂" if st.session_state.get("show_history") else "📜"
-        if st.button(
-            btn_hist, help="Apri/Chiudi Cronologia", key=f"toggle_hist_{current_p}"
-        ):
-            st.session_state["show_history"] = not st.session_state.get(
-                "show_history", False
-            )
+        if st.button(btn_hist, help="Apri/Chiudi Cronologia", key=f"toggle_hist_{current_p}"):
+            st.session_state["show_history"] = not st.session_state.get("show_history", False)
             st.rerun()
 
     edit_key = f"trans_editor_{doc_id}_{current_p}"
@@ -319,9 +301,7 @@ def render_transcription_editor(doc_id, library, current_p, ocr_engine, current_
         # Or if we update session_state[edit_key], it might reflect if we are careful.
         # But here we are moving away from st.text_area which binds bi-directionally easily.
         # Let's simplify: if pending update exists, we use it as the value for this render.
-        initial_text = st.session_state[
-            pending_key
-        ]  # This is likely plain text from history restore
+        initial_text = st.session_state[pending_key]  # This is likely plain text from history restore
         del st.session_state[pending_key]
 
     # Prepare Rich Text Content
@@ -333,11 +313,7 @@ def render_transcription_editor(doc_id, library, current_p, ocr_engine, current_
         import html
 
         # simplistic conversion
-        rich_content = "".join(
-            f"<p>{html.escape(line)}</p>"
-            for line in initial_text.splitlines()
-            if line.strip()
-        )
+        rich_content = "".join(f"<p>{html.escape(line)}</p>" for line in initial_text.splitlines() if line.strip())
 
     # --- EDITOR ---
     # We use st_quill instead of st.text_area
@@ -403,16 +379,10 @@ def render_transcription_editor(doc_id, library, current_p, ocr_engine, current_
 
     with t_c1:
         is_verified = current_status == "verified"
-        btn_label = (
-            "⚪ Segna come da Verificare" if is_verified else "✅ Segna come Verificato"
-        )
-        if st.button(
-            btn_label, use_container_width=True, key=f"btn_verify_{current_p}"
-        ):
+        btn_label = "⚪ Segna come da Verificare" if is_verified else "✅ Segna come Verificato"
+        if st.button(btn_label, use_container_width=True, key=f"btn_verify_{current_p}"):
             new_status = "draft" if is_verified else "verified"
-            data_to_save = (
-                trans if trans else {"full_text": "", "lines": [], "engine": "manual"}
-            )
+            data_to_save = trans if trans else {"full_text": "", "lines": [], "engine": "manual"}
 
             # Save a snapshot to history before status change
             storage.save_history(doc_id, current_p, data_to_save, library)
@@ -445,25 +415,19 @@ def render_transcription_editor(doc_id, library, current_p, ocr_engine, current_
     return trans, text_val
 
 
-def render_history_sidebar(
-    doc_id, library, current_p, current_data=None, current_text=""
-):
+def render_history_sidebar(doc_id, library, current_p, current_data=None, current_text=""):
     """Render the history list in a vertical side column."""
     storage = get_storage()
     st.markdown("### 📜 Cronologia")
 
     # Deletion logic
-    if st.button(
-        "🗑️ Svuota Tutto", use_container_width=True, key=f"clear_side_{current_p}"
-    ):
+    if st.button("🗑️ Svuota Tutto", use_container_width=True, key=f"clear_side_{current_p}"):
         st.session_state[f"confirm_clear_{current_p}"] = True
 
     if st.session_state.get(f"confirm_clear_{current_p}"):
         st.warning("Sicuro?")
         cc1, cc2 = st.columns(2)
-        if cc1.button(
-            "Sì", type="primary", use_container_width=True, key=f"c_ok_{current_p}"
-        ):
+        if cc1.button("Sì", type="primary", use_container_width=True, key=f"c_ok_{current_p}"):
             storage.clear_history(doc_id, current_p, library)
             del st.session_state[f"confirm_clear_{current_p}"]
             st.rerun()
@@ -533,13 +497,9 @@ def render_history_sidebar(
                         snap = {
                             "full_text": snap_plain,
                             "rich_text": current_text,
-                            "engine": current_data.get("engine", "manual")
-                            if current_data
-                            else "manual",
+                            "engine": current_data.get("engine", "manual") if current_data else "manual",
                             "is_manual": True,
-                            "status": current_data.get("status", "draft")
-                            if current_data
-                            else "draft",
+                            "status": current_data.get("status", "draft") if current_data else "draft",
                         }
                         storage.save_history(doc_id, current_p, snap, library)
 
