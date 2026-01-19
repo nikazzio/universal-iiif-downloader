@@ -3,15 +3,15 @@ Pillow>=10.0.0
 tqdm>=4.66.0
 img2pdf>=0.5.1
 
-# Required by coremltools (pulled by kraken). Some cattrs builds can break
-# coremltools import; 23.2.3 is known-good here.
-cattrs==23.2.3
+# Optional OCR dependencies (uncomment to convert requirements.txt to full install)
+# cattrs==23.2.3
+# kraken
 
-kraken
 streamlit
 PyMuPDF
 streamlit-antd-components
 openai
 anthropic
 streamlit-quill
+streamlit-cropper
 beautifulsoup4
