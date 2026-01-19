@@ -2,11 +2,14 @@ import argparse
 import sys
 
 # pylint: disable=broad-exception-caught
+from .logger import get_logger, setup_logging
 from .logic import IIIFDownloader
 from .resolvers.gallica import GallicaResolver
 from .resolvers.generic import GenericResolver
 from .resolvers.oxford import OxfordResolver
 from .resolvers.vatican import VaticanResolver
+
+logger = get_logger(__name__)
 
 
 def resolve_url(input_str):
@@ -44,6 +47,7 @@ def wizard_mode():
 
 
 def main():
+    setup_logging()
     parser = argparse.ArgumentParser(description="Universal IIIF Downloader")
     parser.add_argument(
         "url",
@@ -123,6 +127,7 @@ def main():
             downloader.create_pdf()
 
     except Exception as e:
+        logger.exception("Fatal error during CLI execution")
         print(f"\n❌ Error: {e}")
         print("💡 Tip: 'Intelligent Support' tried to guess the Manifest from your URL.")
         print("   If this failed, please paste the direct link to the 'manifest.json'.")

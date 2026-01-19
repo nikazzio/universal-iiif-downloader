@@ -4,7 +4,9 @@ from pathlib import Path
 import pymupdf as fitz  # PyMuPDF
 from PIL import Image as PILImage
 
-logger = logging.getLogger(__name__)
+from iiif_downloader.logger import get_logger
+
+logger = get_logger(__name__)
 
 # PDF parsing/rendering can fail in many ways depending on the environment.
 # pylint: disable=broad-exception-caught

@@ -16,7 +16,9 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-logger = logging.getLogger(__name__)
+from iiif_downloader.logger import get_logger
+
+logger = get_logger(__name__)
 
 
 DEFAULT_CONFIG_JSON: Dict[str, Any] = {
@@ -146,7 +148,9 @@ class ConfigManager:
                 cfg_path.parent.mkdir(parents=True, exist_ok=True)
                 cfg_path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
             except OSError as exc:
-                logger.warning("Unable to create default config.json at %s: %s", cfg_path, exc)
+                logger.warning(
+                    "Unable to create default config.json at %s: %s", cfg_path, exc
+                )
 
         # Back-compat: older configs may have a single `pdf.render_dpi`.
         pdf_cfg = data.get("settings", {}).get("pdf")
@@ -172,10 +176,14 @@ class ConfigManager:
         self.path.write_text(json.dumps(self._data, indent=2, ensure_ascii=False), encoding="utf-8")
 
     def set_downloads_dir(self, value: str) -> None:
-        self._data.setdefault("paths", {})["downloads_dir"] = (value or "downloads").strip()
+        self._data.setdefault("paths", {})["downloads_dir"] = (
+            value or "downloads"
+        ).strip()
 
     def set_temp_dir(self, value: str) -> None:
-        self._data.setdefault("paths", {})["temp_dir"] = (value or "temp_images").strip()
+        self._data.setdefault("paths", {})["temp_dir"] = (
+            value or "temp_images"
+        ).strip()
 
     def set_api_key(self, provider: str, value: str) -> None:
         self._data.setdefault("api_keys", {})[provider] = (value or "").strip()

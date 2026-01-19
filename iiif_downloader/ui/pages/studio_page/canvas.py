@@ -1,9 +1,12 @@
+import html
 import os
 import time
 
 import streamlit as st
+from bs4 import BeautifulSoup
 from PIL import Image as PILImage
 from requests import RequestException
+from streamlit_quill import st_quill
 
 from iiif_downloader.logger import get_logger
 from iiif_downloader.pdf_utils import load_pdf_page
@@ -181,7 +184,10 @@ def render_main_canvas(doc_id, library, paths, stats=None, ocr_engine="openai", 
         if img_obj:
             p_stat = None
             if stats:
-                p_stat = next((p for p in stats.get("pages", []) if p.get("page_index") == current_p - 1), None)
+                p_stat = next(
+                    (p for p in stats.get("pages", []) if p.get("page_index") == current_p - 1),
+                    None,
+                )
 
             if not p_stat:
                 w, h = img_obj.size
@@ -191,7 +197,10 @@ def render_main_canvas(doc_id, library, paths, stats=None, ocr_engine="openai", 
             mb_size = p_stat["size_bytes"] / (1024 * 1024)
             stats_str = f"<span style='color: #888; font-size: 0.9rem; margin-left: 15px;'>📏 {p_stat['width']}×{p_stat['height']} px | 💾 {mb_size:.2f} MB</span>"
 
-        st.markdown(f"### Scansione ({current_p}/{total_pages}) {stats_str}", unsafe_allow_html=True)
+        st.markdown(
+            f"### Scansione ({current_p}/{total_pages}) {stats_str}",
+            unsafe_allow_html=True,
+        )
 
         if img_obj:
             interactive_viewer(img_obj, zoom_percent=100)
@@ -266,11 +275,7 @@ def render_transcription_editor(doc_id, library, current_p, ocr_engine, current_
     edit_key = f"trans_editor_{doc_id}_{current_p}"
 
     # --- STATE INITIALIZATION ---
-    # To avoid the "widget with key ... created with a default value but also had its value set via Session State" warning,
-    # we initialize the session state and call text_area WITHOUT the 'value' parameter.
-    if edit_key not in st.session_state:
-        st.session_state[edit_key] = initial_text
-
+    # We rely on st_quill 'value' parameter for initialization.
     # --- OCR TRIGGERS (Confirmed or Initial) ---
     # We handle OCR calls at the top so the st.status loader is always in a consistent position.
     if st.session_state.get("confirm_ocr_sync") == current_p:
@@ -292,37 +297,81 @@ def render_transcription_editor(doc_id, library, current_p, ocr_engine, current_
     # --- PRE-RENDER STATE SYNC ---
     pending_key = f"pending_update_{edit_key}"
     if pending_key in st.session_state:
-        st.session_state[edit_key] = st.session_state[pending_key]
+        # If we just restored a version, we might want to force update the quill component.
+        # st_quill uses the key to manage state. If we change the key, it resets.
+        # Or if we update session_state[edit_key], it might reflect if we are careful.
+        # But here we are moving away from st.text_area which binds bi-directionally easily.
+        # Let's simplify: if pending update exists, we use it as the value for this render.
+        initial_text = st.session_state[pending_key]  # This is likely plain text from history restore
         del st.session_state[pending_key]
 
-    # --- FORM-BASED EDITOR ---
-    with st.form(key=f"editor_form_{doc_id}_{current_p}", clear_on_submit=False):
-        # We use the session_state key directly, omitting the 'value' argument.
-        text_val = st.text_area("Editor", height=700, key=edit_key, label_visibility="collapsed")
+    # Prepare Rich Text Content
+    rich_content = trans.get("rich_text", "") if trans else ""
 
-        f_c1, f_c2 = st.columns([2, 5])
-        # Compare with the last saved state
-        is_dirty = text_val != initial_text
+    # Fallback: If no rich text but we have plain text (from OCR or History Restore)
+    # We construct basic HTML paragraphs.
+    if not rich_content and initial_text:
+        # simplistic conversion
+        rich_content = "".join(f"<p>{html.escape(line)}</p>" for line in initial_text.splitlines() if line.strip())
 
-        with f_c1:
-            if st.form_submit_button("💾 Salva", width="stretch", type="primary" if is_dirty else "secondary"):
-                new_data = {
-                    "full_text": text_val,
-                    "engine": trans.get("engine", "manual") if trans else "manual",
-                    "is_manual": True,
-                    "status": current_status,
-                    "average_confidence": 1.0,
-                }
-                storage.save_transcription(doc_id, current_p, new_data, library)
+    # --- EDITOR ---
+    # We use st_quill instead of st.text_area
+    # Note: We move out of st.form because st_quill works best standalone
 
-                st.session_state[f"pending_update_{edit_key}"] = text_val
-                toast("✅ Modifiche salvate!", icon="💾")
-                time.sleep(0.5)
-                st.rerun()
+    text_val = st_quill(
+        value=rich_content,
+        key=edit_key,
+        html=True,
+        preserve_whitespace=True,
+        placeholder="Scrivi qui la tua trascrizione...",
+        toolbar=[
+            ["bold", "italic", "underline", "strike"],  # toggled buttons
+            [{"list": "ordered"}, {"list": "bullet"}],
+            [{"script": "sub"}, {"script": "super"}],  # superscript/subscript
+            [{"indent": "-1"}, {"indent": "+1"}],  # outdent/indent
+            [{"header": [1, 2, 3, False]}],
+            [{"color": []}, {"background": []}],  # dropdown with defaults from theme
+            [{"align": []}],
+            ["clean"],  # remove formatting button
+        ],
+    )
 
-        with f_c2:
-            if is_dirty:
-                st.warning("⚠️ Modifiche non salvate", icon="🖋️")
+    f_c1, f_c2 = st.columns([2, 5])
+
+    with f_c1:
+        if st.button(
+            "💾 Salva",
+            use_container_width=True,
+            type="primary",
+            key=f"save_btn_{doc_id}_{current_p}",
+        ):
+            # Conversion: HTML -> Plain Text (for Indexing/PDF)
+            # We use BeautifulSoup to get cleaner text than naive strip tags
+            soup = BeautifulSoup(text_val, "html.parser")
+
+            # Using get_text with a newline separator aids in preserving simple line structure
+            # Better approach to avoid too many newlines:
+            clean_text = soup.get_text("\n")
+
+            new_data = {
+                "full_text": clean_text,
+                "rich_text": text_val,
+                "engine": trans.get("engine", "manual") if trans else "manual",
+                "is_manual": True,
+                "status": current_status,
+                "average_confidence": 1.0,
+            }
+            storage.save_transcription(doc_id, current_p, new_data, library)
+
+            toast("✅ Modifiche salvate!", icon="💾")
+            time.sleep(0.5)
+            st.rerun()
+
+    with f_c2:
+        # Dirty check is harder with HTML, we omit "Unsaved changes" warning for now
+        # or we could compare text_val vs rich_content
+        if text_val != rich_content:
+            st.caption("📝 _Modifiche non salvate_")
 
     # --- OTHER ACTIONS (Outside Form) ---
     t_c1, t_c2 = st.columns([1, 1])
@@ -330,7 +379,7 @@ def render_transcription_editor(doc_id, library, current_p, ocr_engine, current_
     with t_c1:
         is_verified = current_status == "verified"
         btn_label = "⚪ Segna come da Verificare" if is_verified else "✅ Segna come Verificato"
-        if st.button(btn_label, width="stretch", key=f"btn_verify_{current_p}"):
+        if st.button(btn_label, use_container_width=True, key=f"btn_verify_{current_p}"):
             new_status = "draft" if is_verified else "verified"
             data_to_save = trans if trans else {"full_text": "", "lines": [], "engine": "manual"}
 
@@ -343,7 +392,11 @@ def render_transcription_editor(doc_id, library, current_p, ocr_engine, current_
             st.rerun()
 
     with t_c2:
-        if st.button(f"🤖 Nuova Chiamata {ocr_engine}", width="stretch", key=f"btn_ocr_{current_p}"):
+        if st.button(
+            f"🤖 Nuova Chiamata {ocr_engine}",
+            use_container_width=True,
+            key=f"btn_ocr_{current_p}",
+        ):
             existing = storage.load_transcription(doc_id, current_p, library)
             if existing:
                 st.session_state["confirm_ocr_sync"] = current_p
@@ -367,13 +420,13 @@ def render_history_sidebar(doc_id, library, current_p, current_data=None, curren
     st.markdown("### 📜 Cronologia")
 
     # Deletion logic
-    if st.button("🗑️ Svuota Tutto", width="stretch", key=f"clear_side_{current_p}"):
+    if st.button("🗑️ Svuota Tutto", use_container_width=True, key=f"clear_side_{current_p}"):
         st.session_state[f"confirm_clear_{current_p}"] = True
 
     if st.session_state.get(f"confirm_clear_{current_p}"):
         st.warning("Sicuro?")
         cc1, cc2 = st.columns(2)
-        if cc1.button("Sì", type="primary", width="stretch", key=f"c_ok_{current_p}"):
+        if cc1.button("Sì", type="primary", use_container_width=True, key=f"c_ok_{current_p}"):
             storage.clear_history(doc_id, current_p, library)
             del st.session_state[f"confirm_clear_{current_p}"]
             st.rerun()
@@ -428,13 +481,19 @@ def render_history_sidebar(doc_id, library, current_p, current_data=None, curren
                 if c2.button(
                     "↩",
                     key=f"restore_side_{current_p}_{idx}",
-                    width="stretch",
+                    use_container_width=True,
                     help=f"Ripristina versione del {full_ts}",
                 ):
                     # Safety snapshot of current text
                     if current_text:
+                        # Convert HTML to plain text for history snapshot
+                        # We use simple parsing since we just need a backup
+                        soup_snap = BeautifulSoup(current_text, "html.parser")
+                        snap_plain = soup_snap.get_text("\n")
+
                         snap = {
-                            "full_text": current_text,
+                            "full_text": snap_plain,
+                            "rich_text": current_text,
                             "engine": current_data.get("engine", "manual") if current_data else "manual",
                             "is_manual": True,
                             "status": current_data.get("status", "draft") if current_data else "draft",
@@ -442,7 +501,21 @@ def render_history_sidebar(doc_id, library, current_p, current_data=None, curren
                         storage.save_history(doc_id, current_p, snap, library)
 
                     storage.save_transcription(doc_id, current_p, entry, library)
-                    st.session_state[f"pending_update_{edit_key}"] = entry.get("full_text", "")
+
+                    # Force Quill refresh by removing its state key
+                    if edit_key in st.session_state:
+                        del st.session_state[edit_key]
+
+                    # Update Quill editor state to match the restored content
+                    restored_rich = entry.get("rich_text")
+                    restored_plain = entry.get("full_text", "")
+
+                    # Robust fallback: use valid rich text if available, otherwise plain text
+                    if restored_rich:
+                        st.session_state[edit_key] = restored_rich
+                    else:
+                        st.session_state[edit_key] = restored_plain
+
                     toast("Versione ripristinata!")
                     st.rerun()
 

@@ -28,7 +28,10 @@ def resolve_shelfmark(library: str, shelfmark: str) -> Tuple[Optional[str], Opti
         uuid_pattern = r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
         if re.search(uuid_pattern, s.lower()):
             logger.warning("Oxford UUID %r provided to Vaticana resolver", s)
-            return None, "L'ID sembra un UUID Oxford. Seleziona 'Bodleian (Oxford)' come biblioteca."
+            return (
+                None,
+                "L'ID sembra un UUID Oxford. Seleziona 'Bodleian (Oxford)' come biblioteca.",
+            )
 
         # Standardize shelfmark: "Urb. Lat. 1779" -> "MSS_Urb.lat.1779"
         # 1. Remove all spaces
@@ -63,7 +66,10 @@ def resolve_shelfmark(library: str, shelfmark: str) -> Tuple[Optional[str], Opti
         ms_id = s.strip("/").split("/")[-1].replace(".json", "")
         uuid_pattern = r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
         if re.search(uuid_pattern, ms_id.lower()):
-            return f"https://iiif.bodleian.ox.ac.uk/iiif/manifest/{ms_id.lower()}.json", ms_id
+            return (
+                f"https://iiif.bodleian.ox.ac.uk/iiif/manifest/{ms_id.lower()}.json",
+                ms_id,
+            )
 
         return None, "Bodleian richiede un UUID valido (es. 080f88f5...)"
 
@@ -135,13 +141,10 @@ def search_gallica(query: str, max_records: int = 10) -> List[Dict]:
 
     except requests.RequestException as e:
         logger.error("Network error searching Gallica: %s", e)
-        print(f"⚠️ Errore nella ricerca Gallica: {e}")
     except ET.ParseError as e:
         logger.error("XML parsing error from Gallica: %s", e)
-        print(f"⚠️ Errore nel parsing XML da Gallica: {e}")
     except Exception as e:  # pylint: disable=broad-exception-caught
         logger.error("Unexpected error searching Gallica: %s", e)
-        print(f"⚠️ Errore imprevisto nella ricerca Gallica: {e}")
 
     return results
 
@@ -163,8 +166,7 @@ def search_oxford(_query: str) -> List[Dict]:
     Returns:
         Empty list (API no longer available)
     """
-    logger.info("Oxford search API not available, user directed to manual search")
-    print("ℹ️ La ricerca automatica per Oxford/Bodleian non è disponibile.")
-    print("   Cerca manualmente su https://digital.bodleian.ox.ac.uk/")
-    print("   e copia l'UUID o l'URL del manifest nel campo 'ID o URL'.")
+    logger.warning(
+        "Oxford search API not available. Users should search manually at https://digital.bodleian.ox.ac.uk/"
+    )
     return []

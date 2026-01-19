@@ -71,7 +71,6 @@ def get_json(url, headers=None, retries=3):
                             "Response preview: %s",
                             response_text[:200],
                         )
-                        print(f"Response Text (first 200 chars): {response_text[:200]}")
                 raise
 
             logger.warning(
@@ -88,7 +87,6 @@ def get_json(url, headers=None, retries=3):
             try:
                 preview = resp.text[:200]
                 logger.debug("Response preview: %s", preview)
-                print(f"Response preview (first 200 chars): {preview}")
             except Exception:  # pylint: disable=broad-exception-caught
                 logger.debug("Failed to read response preview", exc_info=True)
             raise
@@ -134,7 +132,9 @@ def clean_dir(path: Union[str, os.PathLike]):
         shutil.rmtree(p)
 
 
-def cleanup_old_files(path: Union[str, os.PathLike], *, older_than_days: int = 7) -> dict:
+def cleanup_old_files(
+    path: Union[str, os.PathLike], *, older_than_days: int = 7
+) -> dict:
     """Delete files/dirs under `path` older than `older_than_days`.
 
     Returns stats like {"deleted": X, "errors": Y, "skipped": Z}.

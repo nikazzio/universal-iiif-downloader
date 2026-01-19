@@ -32,7 +32,13 @@ class OCRStorage:
                 if doc_dir.is_dir():
                     # Clean look for metadata in new 'data' folder
                     if (doc_dir / "data" / "metadata.json").exists():
-                        docs.append({"id": doc_dir.name, "library": library_dir.name, "path": str(doc_dir)})
+                        docs.append(
+                            {
+                                "id": doc_dir.name,
+                                "library": library_dir.name,
+                                "path": str(doc_dir),
+                            }
+                        )
         return docs
 
     def get_document_paths(self, doc_id: str, library: str = "Unknown") -> Dict[str, Path]:
@@ -76,7 +82,13 @@ class OCRStorage:
         paths = self.get_document_paths(doc_id, library)
         return load_json(paths["metadata"])
 
-    def save_transcription(self, doc_id: str, page_idx: int, ocr_data: Dict[str, Any], library: str = "Unknown"):
+    def save_transcription(
+        self,
+        doc_id: str,
+        page_idx: int,
+        ocr_data: Dict[str, Any],
+        library: str = "Unknown",
+    ):
         """Save OCR result for a specific page in a document."""
         logger.info(
             "Saving transcription to disk: doc=%s, page=%s, engine=%s",
@@ -93,6 +105,7 @@ class OCRStorage:
         new_entry = {
             "page_index": page_idx,
             "full_text": ocr_data.get("full_text", ""),
+            "rich_text": ocr_data.get("rich_text", ""),
             "lines": ocr_data.get("lines", []),
             "engine": "manual" if is_manual else ocr_data.get("engine", "unknown"),
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
@@ -124,7 +137,13 @@ class OCRStorage:
 
         return True
 
-    def save_history(self, doc_id: str, page_idx: int, entry: Dict[str, Any], library: str = "Unknown"):
+    def save_history(
+        self,
+        doc_id: str,
+        page_idx: int,
+        entry: Dict[str, Any],
+        library: str = "Unknown",
+    ):
         """Save a snapshot to the per-page history log."""
         paths = self.get_document_paths(doc_id, library)
         history_dir = paths["history"]
@@ -186,7 +205,10 @@ class OCRStorage:
             return None
 
         if page_idx is not None:
-            return next((p for p in data.get("pages", []) if p.get("page_index") == page_idx), None)
+            return next(
+                (p for p in data.get("pages", []) if p.get("page_index") == page_idx),
+                None,
+            )
         return data
 
     def search_manuscript(self, query: str) -> List[Dict[str, Any]]:
@@ -203,5 +225,11 @@ class OCRStorage:
                     doc_matches.append(page)
 
             if doc_matches:
-                results.append({"doc_id": doc["id"], "library": doc["library"], "matches": doc_matches})
+                results.append(
+                    {
+                        "doc_id": doc["id"],
+                        "library": doc["library"],
+                        "matches": doc_matches,
+                    }
+                )
         return results

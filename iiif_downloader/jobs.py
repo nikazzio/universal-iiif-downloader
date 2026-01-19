@@ -1,10 +1,11 @@
-import logging
 import threading
 import time
 import uuid
 from typing import Any, Callable, Dict, Optional
 
-logger = logging.getLogger(__name__)
+from iiif_downloader.logger import get_logger
+
+logger = get_logger(__name__)
 
 # This module intentionally shields the UI from unexpected job exceptions.
 # pylint: disable=broad-exception-caught
@@ -46,7 +47,11 @@ class JobManager:
             try:
                 # Progress callback injector
                 def update_progress(current, total, msg=None):
-                    self.update_job(job_id, progress=current / total, message=msg or f"Processing {current}/{total}")
+                    self.update_job(
+                        job_id,
+                        progress=current / total,
+                        message=msg or f"Processing {current}/{total}",
+                    )
 
                 # Inject progress callback if the function accepts it
                 # We assume task_func can accept 'progress_callback' kwarg

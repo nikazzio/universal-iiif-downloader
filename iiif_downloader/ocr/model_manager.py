@@ -6,6 +6,10 @@ from typing import Dict, List, Optional, Tuple
 import requests
 from requests import RequestException
 
+from iiif_downloader.logger import get_logger
+
+logger = get_logger(__name__)
+
 
 @dataclass(frozen=True)
 class AvailableModel:
@@ -117,7 +121,13 @@ class ModelManager:
         url = "https://zenodo.org/api/records"
         # We append 'kraken' to ensure we find models for the right engine
         search_q = f"kraken {query}" if "kraken" not in query.lower() else query
-        params = {"q": search_q, "status": "published", "size": 15, "sort": "bestmatch", "all_versions": "false"}
+        params = {
+            "q": search_q,
+            "status": "published",
+            "size": 15,
+            "sort": "bestmatch",
+            "all_versions": "false",
+        }
         try:
             r = requests.get(url, params=params, timeout=20)
             r.raise_for_status()
@@ -143,7 +153,7 @@ class ModelManager:
                     )
             return results
         except (RequestException, ValueError, OSError) as e:
-            print(f"Zenodo search failed: {e}")
+            logger.error("Zenodo search failed: %s", e)
             return []
 
     def get_model_path(self, model_filename: str) -> Path:
