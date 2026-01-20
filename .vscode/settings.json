@@ -1,9 +1,4 @@
 {
-  "python.linting.enabled": false,
-  "python.linting.flake8Enabled": false,
-  "python.linting.pylintEnabled": false,
-  "flake8.enabled": false,
-  "pylint.enabled": false,
   "python.analysis.exclude": [
     "**/.venv/**",
     "**/venv/**",
@@ -13,12 +8,20 @@
     "**/models/**",
     "**/temp_images/**"
   ],
+  // --- Configurazione Pylance ---
+  "python.languageServer": "Pylance",
+  "python.analysis.typeCheckingMode": "basic",
+  "python.analysis.diagnosticMode": "openFilesOnly",
+  // --- Configurazione specifica per Python ---
   "[python]": {
     "editor.defaultFormatter": "charliermarsh.ruff",
     "editor.formatOnSave": true,
     "editor.codeActionsOnSave": {
       "source.fixAll.ruff": "explicit",
       "source.organizeImports.ruff": "explicit"
-    }
-  }
+    },
+    "editor.rulers": [120]
+  },
+  // --- Configurazione Ruff ---
+  "ruff.nativeServer": true
 }

@@ -2,7 +2,7 @@ name: Check PR Labels
 
 on:
   pull_request:
-    types: [opened, edited, labeled, synchronize, reopened]
+    types: [opened, edited, labeled, unlabeled, synchronize, reopened]
 
 permissions:
   pull-requests: read
@@ -17,12 +17,27 @@ jobs:
         with:
           script: |
             const labels = context.payload.pull_request.labels.map(l => l.name);
-            const required = ['patch', 'minor', 'major'];
-            // Check if at least one of the required labels exists in the PR labels
-            const hasLabel = labels.some(l => required.includes(l));
+            const versionLabels = ['patch', 'minor', 'major'];
+            const foundVersionLabels = labels.filter(l => versionLabels.includes(l));
             
-            if (!hasLabel) {
-              core.setFailed('Per favore, aggiungi una label (patch, minor, major) per determinare il tipo di versione');
+            // Verifica che ci sia esattamente una label di versione
+            if (foundVersionLabels.length === 0) {
+              core.setFailed('❌ Per favore, aggiungi UNA label di versione: patch (fix/bugfix), minor (feature), o major (breaking change)');
+            } else if (foundVersionLabels.length > 1) {
+              core.setFailed(`⚠️ Trovate multiple label di versione: ${foundVersionLabels.join(', ')}. Per favore, mantieni solo UNA label.`);
             } else {
-              console.log('Version label found: ' + labels.find(l => required.includes(l)));
+              const label = foundVersionLabels[0];
+              let emoji = '🐛';
+              let description = 'fix/bugfix';
+              
+              if (label === 'minor') {
+                emoji = '✨';
+                description = 'feature/enhancement';
+              } else if (label === 'major') {
+                emoji = '💥';
+                description = 'breaking change';
+              }
+              
+              console.log(`✅ Label di versione valida: ${emoji} ${label} (${description})`);
+              core.notice(`Version bump: ${label} - ${description}`);
             }

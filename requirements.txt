@@ -1,17 +1,23 @@
-requests>=2.31.0
-Pillow>=10.0.0
-tqdm>=4.66.0
-img2pdf>=0.5.1
-
-# Optional OCR dependencies (uncomment to convert requirements.txt to full install)
-# cattrs==23.2.3
-# kraken
-
+# UI e Framework
+beautifulsoup4
 streamlit
-PyMuPDF
+streamlit-ace
 streamlit-antd-components
+streamlit-cropper
+
+# Gestione Immagini e Dati
+Pillow>=10.0.0
+pandas
+requests>=2.31.0
+beautifulsoup4
+tqdm>=4.66.0
+
+# PDF e OCR Engines
+PyMuPDF
+img2pdf>=0.5.1
 openai
 anthropic
-streamlit-ace
-streamlit-cropper
-beautifulsoup4
+
+# --- Librerie Disabilitate (Mantieni i commenti se il codice le riferisce ancora) ---
+# cattrs==23.2.3
+# kraken
