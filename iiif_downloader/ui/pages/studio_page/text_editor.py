@@ -187,7 +187,7 @@ def _render_transcription_tab(
             font-family: Georgia, serif;
             font-size: 15px;
             line-height: 1.7;
-            height: 650px;
+            height: 800px;
             overflow-y: auto;
             box-shadow: 0 2px 8px rgba(0,0,0,0.4);
         }
@@ -316,13 +316,37 @@ def _render_transcription_tab(
     
     with editor_container:
         if preview_mode:
-            # PREVIEW MODE: Rendering Markdown (renderizza con st.markdown per styling corretto)
-            st.markdown('<div class="markdown-preview">', unsafe_allow_html=True)
+            # PREVIEW MODE: Conversione veloce e leggera
             if markdown_content and markdown_content.strip():
-                st.markdown(markdown_content, unsafe_allow_html=True)
+                # Conversione markdown basilare e veloce senza librerie esterne
+                html_lines = []
+                for line in markdown_content.split('\n'):
+                    line = line.strip()
+                    if not line:
+                        html_lines.append('<br>')
+                    elif line.startswith('### '):
+                        html_lines.append(f'<h3>{html.escape(line[4:])}</h3>')
+                    elif line.startswith('## '):
+                        html_lines.append(f'<h2>{html.escape(line[3:])}</h2>')
+                    elif line.startswith('# '):
+                        html_lines.append(f'<h1>{html.escape(line[2:])}</h1>')
+                    elif line.startswith('- '):
+                        html_lines.append(f'<li>{html.escape(line[2:])}</li>')
+                    elif line.startswith('> '):
+                        html_lines.append(f'<blockquote>{html.escape(line[2:])}</blockquote>')
+                    elif line == '---':
+                        html_lines.append('<hr>')
+                    else:
+                        # Formattazione inline semplice
+                        escaped = html.escape(line)
+                        escaped = escaped.replace('**', '<b>').replace('*', '<i>')
+                        html_lines.append(f'<p>{escaped}</p>')
+                html_content = ''.join(html_lines)
             else:
-                st.markdown("<p style='color: #858585; text-align: center; padding-top: 2rem;'>📄 Nessun contenuto da visualizzare</p>", unsafe_allow_html=True)
-            st.markdown('</div>', unsafe_allow_html=True)
+                html_content = "<p style='color: #858585; text-align: center; padding-top: 2rem;'>📄 Nessun contenuto da visualizzare</p>"
+            
+            # Renderizza tutto dentro il div con altezza fissa come l'editor
+            st.markdown(f'<div class="markdown-preview">{html_content}</div>', unsafe_allow_html=True)
             
             # Mantieni l'ultimo valore dall'editor
             text_val = markdown_content

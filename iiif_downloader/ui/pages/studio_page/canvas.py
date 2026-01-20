@@ -48,16 +48,16 @@ def render_main_canvas(
     # CSS compatto per ridurre spazi
     st.markdown("""
         <style>
-        /* Riduzione padding globale */
-        .block-container { padding-top: 1rem !important; }
-        h1 { margin-top: 0 !important; margin-bottom: 0.5rem !important; }
+        /* Riduzione padding globale - ma non troppo per evitare taglio titolo */
+        .block-container { padding-top: 2rem !important; }
+        h1, h2 { margin-top: 0.3rem !important; margin-bottom: 0.5rem !important; }
         /* Allineamento colonne */
         [data-testid="column"] { height: 100%; }
         </style>
     """, unsafe_allow_html=True)
 
-    # Page title compatto
-    st.markdown(f"<h2 style='margin: 0; padding: 0.5rem 0;'>🏛️ {doc_id}</h2>", unsafe_allow_html=True)
+    # Page title compatto con margin sufficiente
+    st.markdown(f"<h2 style='margin: 0.5rem 0; padding: 0.5rem 0;'>🏛️ {doc_id}</h2>", unsafe_allow_html=True)
 
     # TWO COLUMN LAYOUT (55% Image - 45% Editor)
     col_img, col_work = st.columns([0.55, 0.55], gap="small")
