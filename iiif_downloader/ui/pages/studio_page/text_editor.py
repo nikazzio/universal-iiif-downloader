@@ -8,7 +8,7 @@ import time
 
 import streamlit as st
 from bs4 import BeautifulSoup
-from streamlit_quill import st_quill
+from streamlit_ace import st_ace
 
 from pathlib import Path
 
@@ -46,28 +46,8 @@ def render_transcription_editor(
     current_status = trans.get("status", "draft") if trans else "draft"
     is_manual = trans.get("is_manual", False) if trans else False
 
-    # NAVIGAZIONE CONSOLIDATA (Top-Right) con Timeline integrata
-    _render_consolidated_navigation(doc_id, current_page, total_pages)
+    st.markdown("<div style='margin-bottom: 30px;'></div>", unsafe_allow_html=True)
 
-    # CSS injection per editor Quill (eseguito una volta sola)
-    st.markdown("""
-        <style>
-        /* Editor Quill container */
-        .ql-container {
-            height: calc(100% - 42px) !important;
-            overflow-y: auto !important;
-            border: none !important;
-        }
-        .ql-editor {
-            height: 100% !important;
-            min-height: 650px !important;
-        }
-        .ql-toolbar {
-            border-bottom: 1px solid #ddd !important;
-        }
-        </style>
-    """, unsafe_allow_html=True)
-    
     # TAB SYSTEM: Trascrizione, Cronologia, Snippet, Info
     tabs = st.tabs(["📝 Trascrizione", "📜 Cronologia", "✂️ Snippet", "ℹ️ Info Manoscritto"])
     
@@ -96,67 +76,6 @@ def _render_transcription_tab(
 ) -> str:
     """Render the main transcription editor tab."""
     
-    if not trans:
-        st.caption("Nessuna trascrizione. Scrivi e salva per creare.")
-
-    # Handle OCR triggers
-    _handle_ocr_triggers(doc_id, library, current_page, ocr_engine, current_model, storage)
-
-    # Editor key
-    edit_key = StudioState.get_editor_key(doc_id, current_page)
-
-    # Check for pending updates (from history restore or OCR)
-    pending_text = StudioState.get_pending_update(doc_id, current_page)
-    
-    # Prepare rich text content
-    rich_content = trans.get("rich_text", "") if trans else ""
-
-    # Fallback: convert plain text to HTML
-    if not rich_content:
-        # Use pending text if available, otherwise use full_text from trans
-        text_to_convert = pending_text if pending_text else (trans.get("full_text", "") if trans else "")
-        if text_to_convert:
-            rich_content = "".join(f"<p>{html.escape(line)}</p>" for line in text_to_convert.splitlines() if line.strip())
-    
-    # FORM per isolare l'editor e impedire che INVIO triggeri la navigazione
-    with st.form(key=f"transcription_form_{doc_id}_{current_page}", clear_on_submit=False):
-        text_val = st_quill(
-            value=rich_content,
-            key=edit_key,
-            html=True,
-            preserve_whitespace=True,
-            placeholder="Scrivi qui la tua trascrizione...",
-            toolbar=[
-                ["bold", "italic", "underline", "strike"],
-                [{"list": "ordered"}, {"list": "bullet"}],
-                [{"script": "sub"}, {"script": "super"}],
-                [{"indent": "-1"}, {"indent": "+1"}],
-                [{"header": [1, 2, 3, False]}],
-                [{"color": []}, {"background": []}],
-                [{"align": []}],
-                ["clean"],
-            ],
-        )
-        
-        # Pulsante Salva dentro il form (submit)
-        save_btn = st.form_submit_button(
-            "💾 Salva",
-            use_container_width=True,
-            type="primary",
-        )
-        
-        if save_btn:
-            _save_transcription(text_val, doc_id, library, current_page, trans, current_status, storage)
-
-    # Pulsanti Verifica e OCR FUORI dal form (come bottoni indipendenti)
-    btn_col2, btn_col3 = st.columns(2)
-
-    with btn_col2:
-        _render_verification_button(doc_id, library, current_page, current_status, trans, storage)
-
-    with btn_col3:
-        _render_ocr_button(doc_id, library, current_page, ocr_engine, storage)
-
     # Metadata
     if trans:
         is_manual = trans.get("is_manual", False)
@@ -169,6 +88,282 @@ def _render_transcription_tab(
             meta_parts.append("✍️ Modificato Manualmente")
         
         st.caption(" | ".join(meta_parts))
+        
+    if not trans:
+        st.caption("Nessuna trascrizione. Scrivi e salva per creare.")
+
+    # Handle OCR triggers
+    _handle_ocr_triggers(doc_id, library, current_page, ocr_engine, current_model, storage)
+
+    # Editor key
+    edit_key = StudioState.get_editor_key(doc_id, current_page)
+
+    # Check for pending updates (from history restore or OCR)
+    pending_text = StudioState.get_pending_update(doc_id, current_page)
+    
+    # Prepare markdown content (convert from rich_text if present)
+    markdown_content = trans.get("full_text", "") if trans else ""
+    
+    # If there's a pending text update, use that instead
+    if pending_text:
+        markdown_content = pending_text
+    
+    # Custom CSS for the editor + floating helper (DARK MODE)
+    st.markdown("""
+        <style>
+        /* Streamlit ACE Editor Customization - DARK MODE */
+        .ace_editor {
+            border: 2px solid #3d3d3d !important;
+            border-radius: 8px !important;
+            font-family: 'Georgia', serif !important;
+            font-size: 15px !important;
+            line-height: 1.7 !important;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.4) !important;
+            background: #1e1e1e !important;
+        }
+        .ace_editor.ace_focus {
+            border-color: #4CAF50 !important;
+            box-shadow: 0 0 0 3px rgba(76, 175, 80, 0.2) !important;
+        }
+        .ace_scroller {
+            background-color: #1e1e1e !important;
+        }
+        .ace_gutter {
+            background: #252526 !important;
+            color: #858585 !important;
+        }
+        .ace_marker-layer .ace_active-line {
+            background: rgba(76, 175, 80, 0.1) !important;
+        }
+        /* Text colors for dark theme */
+        .ace_content {
+            color: #d4d4d4 !important;
+        }
+        /* Helper tooltip inline */
+        .md-help-tooltip {
+            position: relative;
+            display: inline-block;
+            cursor: help;
+        }
+        .md-help-tooltip .tooltiptext {
+            visibility: hidden;
+            width: 350px;
+            background-color: #1e1e1e;
+            color: #d4d4d4;
+            text-align: left;
+            border-radius: 6px;
+            padding: 14px;
+            position: absolute;
+            z-index: 9999;
+            bottom: 125%;
+            right: 0;
+            opacity: 0;
+            transition: opacity 0.3s;
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+            font-size: 13px;
+            line-height: 1.6;
+            box-shadow: 0 6px 16px rgba(0,0,0,0.4);
+        }
+        .md-help-tooltip .tooltiptext code {
+            color: #4ec9b0;
+            background: #2d2d2d;
+            padding: 2px 4px;
+            border-radius: 3px;
+        }
+        .md-help-tooltip .tooltiptext strong {
+            color: #569cd6;
+        }
+        .md-help-tooltip:hover .tooltiptext {
+            visibility: visible;
+            opacity: 1;
+        }
+        /* Preview styling - DARK MODE identico all'editor */
+        .markdown-preview {
+            border: 2px solid #3d3d3d;
+            border-radius: 8px;
+            padding: 20px;
+            background: #1e1e1e;
+            color: #d4d4d4;
+            font-family: Georgia, serif;
+            font-size: 15px;
+            line-height: 1.7;
+            height: 650px;
+            overflow-y: auto;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+        }
+        .markdown-preview:focus-within {
+            border-color: #4CAF50;
+            box-shadow: 0 0 0 3px rgba(76, 175, 80, 0.2);
+        }
+        /* Markdown elements styling in preview */
+        .markdown-preview h1, .markdown-preview h2, .markdown-preview h3 {
+            color: #ffffff;
+            margin-top: 1.2em;
+            margin-bottom: 0.6em;
+        }
+        .markdown-preview h1 { border-bottom: 2px solid #3d3d3d; padding-bottom: 0.3em; }
+        .markdown-preview a { color: #4CAF50; text-decoration: none; }
+        .markdown-preview a:hover { text-decoration: underline; }
+        .markdown-preview code {
+            background: #2d2d2d;
+            color: #4ec9b0;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Consolas', monospace;
+        }
+        .markdown-preview pre {
+            background: #2d2d2d;
+            padding: 12px;
+            border-radius: 6px;
+            overflow-x: auto;
+        }
+        .markdown-preview blockquote {
+            border-left: 4px solid #4CAF50;
+            padding-left: 16px;
+            margin-left: 0;
+            color: #b0b0b0;
+        }
+        .markdown-preview ul, .markdown-preview ol {
+            padding-left: 24px;
+        }
+        .markdown-preview hr {
+            border: none;
+            border-top: 1px solid #3d3d3d;
+            margin: 1.5em 0;
+        }
+        /* COMPATTAMENTO AGGRESSIVO - Riduce tutti gli spazi verticali */
+        /* Rimuove padding dalla colonna principale */
+        [data-testid="stVerticalBlock"].st-emotion-cache-tn0cau {
+            gap: 0.2rem !important;
+            padding: 0 !important;
+        }
+        /* Compatta tutti gli stElementContainer nella colonna trascrizione */
+        .stElementContainer.st-emotion-cache-3pwa5w,
+        .stElementContainer.st-emotion-cache-1vo6xi6 {
+            margin-top: 0 !important;
+            margin-bottom: 0.3rem !important;
+            padding-top: 0 !important;
+            padding-bottom: 0 !important;
+        }
+        /* Compatta i layout wrapper */
+        [data-testid="stLayoutWrapper"].st-emotion-cache-18kf3ut {
+            margin-top: 0 !important;
+            margin-bottom: 0.3rem !important;
+            padding: 0 !important;
+        }
+        /* Rimuove gap tra caption e CSS style block */
+        .stElementContainer:has([data-testid="stCaptionContainer"]) {
+            margin-bottom: 0 !important;
+        }
+        /* Rimuove gap tra CSS block e toggle */
+        .stElementContainer:has(style) {
+            margin-bottom: 0 !important;
+        }
+        /* Compatta il wrapper del toggle */
+        [data-testid="stLayoutWrapper"]:has(.stCheckbox) {
+            margin-top: -0.5rem !important;
+            margin-bottom: 0.2rem !important;
+        }
+        /* Compatta spazio sotto toggle/helper */
+        [data-testid="stHorizontalBlock"]:has(.stCheckbox) {
+            margin-bottom: 0 !important;
+        }
+        /* Rimuove padding sui widget streamlit */
+        [data-testid="stVerticalBlock"] > div:has(.stToggle) {
+            padding-top: 0 !important;
+            padding-bottom: 0 !important;
+            margin: 0 !important;
+        }
+        /* Sposta il container dell'editor/preview verso il BASSO per allineamento */
+        [data-testid="stLayoutWrapper"]:has(.stVerticalBlock > .stElementContainer[class*="trans_editor"]) {
+            margin-top: 15px !important;
+        }
+        /* Alternativa: targetizza direttamente il container dell'editor */
+        .stElementContainer[class*="trans_editor"],
+        .stElementContainer:has(.st-emotion-cache-8atqhb > iframe) {
+            margin-top: -5px !important;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+
+    # Toggle Preview in header con helper inline (compatto, senza wrapper div)
+    col_toggle, col_help = st.columns([10, 1])
+    
+    with col_toggle:
+        preview_mode = st.toggle("👁️ Anteprima Markdown", key=f"preview_{doc_id}_{current_page}", value=False)
+    with col_help:
+        # Helper inline con tooltip che non sposta nulla
+        st.markdown("""
+            <div class="md-help-tooltip">
+                <span style="font-size: 20px; cursor: help;">ℹ️</span>
+                <div class="tooltiptext">
+                    <strong>Markdown Syntax:</strong><br><br>
+                    <code># Titolo</code> <code>## Sotto</code><br>
+                    <code>**grassetto**</code> <code>*corsivo*</code><br>
+                    <code>- item lista</code><br>
+                    <code>1. item numerata</code><br>
+                    <code>[testo](url)</code><br>
+                    <code>![img](url)</code><br>
+                    <code>`codice inline`</code><br>
+                    <code>&gt; citazione</code><br>
+                    <code>---</code> linea divisoria
+                </div>
+            </div>
+        """, unsafe_allow_html=True)
+    
+    # Mostra Editor o Preview in base al toggle
+    editor_container = st.container()
+    
+    with editor_container:
+        if preview_mode:
+            # PREVIEW MODE: Rendering Markdown (renderizza con st.markdown per styling corretto)
+            st.markdown('<div class="markdown-preview">', unsafe_allow_html=True)
+            if markdown_content and markdown_content.strip():
+                st.markdown(markdown_content, unsafe_allow_html=True)
+            else:
+                st.markdown("<p style='color: #858585; text-align: center; padding-top: 2rem;'>📄 Nessun contenuto da visualizzare</p>", unsafe_allow_html=True)
+            st.markdown('</div>', unsafe_allow_html=True)
+            
+            # Mantieni l'ultimo valore dall'editor
+            text_val = markdown_content
+        else:
+            # EDITOR MODE: ACE Editor
+            text_val = st_ace(
+                value=markdown_content,
+                placeholder="Inizia a scrivere la trascrizione...",
+                language="markdown",
+                theme="monokai",  # Dark theme per ACE
+                keybinding="vscode",
+                height=800,
+                font_size=15,
+                tab_size=2,
+                wrap=True,
+                auto_update=True,
+                readonly=False,
+                show_gutter=True,
+                show_print_margin=False,
+                key=edit_key,
+            )
+    
+    # Pulsante Salva FUORI dal form
+    save_btn = st.button(
+        "💾 Salva Modifiche",
+        use_container_width=True,
+        type="primary",
+        key=f"save_trans_{doc_id}_{current_page}"
+    )
+    
+    if save_btn:
+        _save_transcription(text_val, doc_id, library, current_page, trans, current_status, storage)
+
+    # Pulsanti Verifica e OCR FUORI dal form (come bottoni indipendenti)
+    btn_col2, btn_col3 = st.columns(2)
+
+    with btn_col2:
+        _render_verification_button(doc_id, library, current_page, current_status, trans, storage)
+
+    with btn_col3:
+        _render_ocr_button(doc_id, library, current_page, ocr_engine, storage)
     
     return text_val
 
@@ -306,13 +501,12 @@ def _handle_ocr_triggers(doc_id, library, current_page, ocr_engine, current_mode
 def _save_transcription(text_val, doc_id, library, current_page, trans, current_status, storage):
     """Save transcription to storage."""
 
-    # Convert HTML to plain text
-    soup = BeautifulSoup(text_val, "html.parser")
-    clean_text = soup.get_text("\n")
+    # Text_val is now plain Markdown text, no need to parse HTML
+    clean_text = text_val if text_val else ""
 
     new_data = {
         "full_text": clean_text,
-        "rich_text": text_val,
+        "rich_text": "",  # No longer using HTML rich text
         "engine": trans.get("engine", "manual") if trans else "manual",
         "is_manual": True,
         "status": current_status,
@@ -482,14 +676,15 @@ def _render_history_entry(
 def _restore_history_version(entry, current_text, current_data, doc_id, library, current_page, edit_key, storage):
     """Restore a previous version from history."""
 
-    # Save current state as backup
-    if current_text:
-        soup_snap = BeautifulSoup(current_text, "html.parser")
-        snap_plain = soup_snap.get_text("\n")
+    # Verifica: se current_text è vuoto ma abbiamo current_data, usiamo quello
+    if not current_text and current_data:
+        current_text = current_data.get("full_text", "")
 
+    # Save current state as backup (solo se c'è contenuto)
+    if current_text and current_text.strip():
         snap = {
-            "full_text": snap_plain,
-            "rich_text": current_text,
+            "full_text": current_text,
+            "rich_text": "",  # Non usiamo più rich_text
             "engine": current_data.get("engine", "manual") if current_data else "manual",
             "is_manual": True,
             "status": current_data.get("status", "draft") if current_data else "draft",
@@ -502,77 +697,13 @@ def _restore_history_version(entry, current_text, current_data, doc_id, library,
     # Clear editor state to force refresh
     StudioState.clear_editor_state(doc_id, current_page)
 
-    # Update editor with restored content
-    restored_rich = entry.get("rich_text")
+    # Update editor with restored content (sempre full_text per Markdown)
     restored_plain = entry.get("full_text", "")
-
-    if restored_rich:
-        st.session_state[edit_key] = restored_rich
-    else:
+    if edit_key in st.session_state:
         st.session_state[edit_key] = restored_plain
 
-    toast("Versione ripristinata!")
+    toast("✅ Versione ripristinata!", icon="↩")
     st.rerun()
-
-
-def _render_consolidated_navigation(doc_id: str, current_page: int, total_pages: int):
-    """Render consolidated navigation with integrated timeline (Top-Right)."""
-    
-    # Header con indicazione pagina (allineato con "Scansione" a sinistra)
-    progress_pct = int((current_page - 1) * 100 / max(total_pages - 1, 1))
-    page_info = f"<span style='color: #888; font-size: 0.9rem; margin-left: 15px;'>📍 Pagina {current_page} di {total_pages} ({progress_pct}%)</span>"
-    
-    st.markdown(
-        f"### Navigazione {page_info}",
-        unsafe_allow_html=True,
-    )
-    
-    # PREV/NEXT buttons con callback semplificato
-    nav_btn_cols = st.columns([1, 1], gap="small")
-    
-    with nav_btn_cols[0]:
-        if st.button(
-            "◀ PREV", 
-            width="stretch", 
-            key="btn_prev_nav", 
-            disabled=current_page <= 1,
-            on_click=lambda: StudioState.set_current_page(doc_id, max(1, current_page - 1))
-        ):
-            pass  # L'azione è gestita dal callback on_click
-    
-    with nav_btn_cols[1]:
-        if st.button(
-            "NEXT ▶", 
-            width="stretch", 
-            key="btn_next_nav", 
-            disabled=current_page >= total_pages,
-            on_click=lambda: StudioState.set_current_page(doc_id, min(total_pages, current_page + 1))
-        ):
-            pass  # L'azione è gestita dal callback on_click
-    
-    # Timeline slider - usa solo key senza value per evitare conflitti
-    # Il callback sincronizza page_{doc_id} quando lo slider cambia
-    def sync_page_from_slider():
-        """Sincronizza la pagina corrente quando lo slider viene mosso."""
-        new_page = st.session_state.get(f"timeline_{doc_id}", current_page)
-        page_key = StudioState.get_page_key(doc_id)
-        st.session_state[page_key] = new_page
-    
-    # Inizializza il valore dello slider se non esiste
-    slider_key = f"timeline_{doc_id}"
-    if slider_key not in st.session_state:
-        st.session_state[slider_key] = current_page
-    
-    st.slider(
-        "Scorri Timeline",
-        min_value=1,
-        max_value=total_pages,
-        key=slider_key,
-        label_visibility="collapsed",
-        help="Naviga rapidamente tra le pagine",
-        on_change=sync_page_from_slider
-    )
-
 
 def _render_manuscript_info(doc_id: str, library: str):
     """Render manuscript metadata and details in Info tab."""

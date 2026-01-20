@@ -45,21 +45,30 @@ def render_main_canvas(
     # Get current page with query param handling
     current_page = _handle_page_navigation(doc_id, total_pages)
 
-    # Page title
-    st.title(f"🏛️ {doc_id}")
+    # CSS compatto per ridurre spazi
+    st.markdown("""
+        <style>
+        /* Riduzione padding globale */
+        .block-container { padding-top: 1rem !important; }
+        h1 { margin-top: 0 !important; margin-bottom: 0.5rem !important; }
+        /* Allineamento colonne */
+        [data-testid="column"] { height: 100%; }
+        </style>
+    """, unsafe_allow_html=True)
 
-    # TWO COLUMN LAYOUT (45% Image - 55% Editor)
-    col_img, col_work = st.columns([0.45, 0.55], gap="small")
+    # Page title compatto
+    st.markdown(f"<h2 style='margin: 0; padding: 0.5rem 0;'>🏛️ {doc_id}</h2>", unsafe_allow_html=True)
+
+    # TWO COLUMN LAYOUT (55% Image - 45% Editor)
+    col_img, col_work = st.columns([0.55, 0.55], gap="small")
 
     # LEFT COLUMN: Image Viewer
     with col_img:
-        img_obj, page_stats = render_image_viewer(doc_id, library, paths, current_page, stats)
-        # Page counter below image
-        _render_page_counter(current_page, total_pages)
+        img_obj, page_stats = render_image_viewer(doc_id, library, paths, current_page, stats, total_pages)
 
     # RIGHT COLUMN: Work Area with Tabs
     with col_work:
-        trans, text_val = render_transcription_editor(doc_id, library, current_page, ocr_engine, current_model, paths, total_pages=total_pages)
+        trans, text_val = render_transcription_editor(doc_id, library, current_page, ocr_engine, current_model, paths, total_pages)
 
 
 def _calculate_total_pages(meta: dict, paths: dict) -> int:
@@ -110,20 +119,3 @@ def _handle_page_navigation(doc_id: str, total_pages: int) -> int:
             logger.debug("Invalid page_nav query param: %r", q_page)
 
     return StudioState.get_current_page(doc_id)
-
-
-def _render_page_counter(current_page: int, total_pages: int):
-    """Render page counter below image."""
-    st.markdown(
-        f"""
-        <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; margin-top: 10px;">
-            <span style="font-size: 1.4rem; font-weight: 800; color: #FF4B4B; line-height: 1;">
-                {current_page} <span style="color: #444; font-weight: 300;">/ {total_pages}</span>
-            </span>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-
-# Timeline slider removed - now integrated in navigation widget

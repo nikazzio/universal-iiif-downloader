@@ -24,7 +24,7 @@ logger = get_logger(__name__)
 
 
 def render_image_viewer(
-    doc_id: str, library: str, paths: dict, current_page: int, stats: dict = None
+    doc_id: str, library: str, paths: dict, current_page: int, stats: dict = None, total_pages: int = 1
 ) -> Tuple[Optional[PILImage.Image], dict]:
     """
     Render the image viewer with adjustments and cropping tools.
@@ -64,13 +64,16 @@ def render_image_viewer(
         p_stat = {"width": w, "height": h, "size_bytes": file_size}
 
     # Header with stats
+    progress_pct = int((current_page - 1) * 100 / max(total_pages - 1, 1))
     stats_str = ""
     if p_stat:
         mb_size = p_stat["size_bytes"] / (1024 * 1024)
-        stats_str = f"<span style='color: #888; font-size: 0.9rem; margin-left: 15px;'>📏 {p_stat['width']}×{p_stat['height']} px | 💾 {mb_size:.2f} MB</span>"
-
+ 
     st.markdown(
-        f"### Scansione {stats_str}",
+        f"""
+        ### Scansione <span style="font-size: 1.4rem; font-weight: 800; color: #FF4B4B; line-height: 1; margin-left: 10px;">{current_page} <span style="color: #444; font-weight: 300;">/ {total_pages}</span></span>            
+        <span style='color: #888; font-size: 0.9rem;'>📏 {p_stat['width']}×{p_stat['height']} px | 💾 {mb_size:.2f} MB |📍 ({progress_pct}%)</span>            
+        """,
         unsafe_allow_html=True,
     )
 
@@ -165,7 +168,60 @@ def render_image_viewer(
         # Normal viewer
         interactive_viewer(display_img, zoom_percent=100)
 
+    # NAVIGAZIONE CONSOLIDATA (Top-Right) con Timeline integrata
+    _render_consolidated_navigation(doc_id, current_page, total_pages)
+    
     return img_obj, p_stat or {}
+
+
+def _render_consolidated_navigation(doc_id: str, current_page: int, total_pages: int):
+    """Render consolidated navigation with integrated timeline (Top-Right)."""
+    
+    # PREV/NEXT buttons con callback semplificato
+    nav_btn_cols = st.columns([1, 1], gap="small")
+    
+    with nav_btn_cols[0]:
+        if st.button(
+            "◀ PREV", 
+            width="stretch", 
+            key="btn_prev_nav", 
+            disabled=current_page <= 1,
+            on_click=lambda: StudioState.set_current_page(doc_id, max(1, current_page - 1))
+        ):
+            pass  # L'azione è gestita dal callback on_click
+    
+    with nav_btn_cols[1]:
+        if st.button(
+            "NEXT ▶", 
+            width="stretch", 
+            key="btn_next_nav", 
+            disabled=current_page >= total_pages,
+            on_click=lambda: StudioState.set_current_page(doc_id, min(total_pages, current_page + 1))
+        ):
+            pass  # L'azione è gestita dal callback on_click
+    
+    # Timeline slider - usa solo key senza value per evitare conflitti
+    # Il callback sincronizza page_{doc_id} quando lo slider cambia
+    def sync_page_from_slider():
+        """Sincronizza la pagina corrente quando lo slider viene mosso."""
+        new_page = st.session_state.get(f"timeline_{doc_id}", current_page)
+        page_key = StudioState.get_page_key(doc_id)
+        st.session_state[page_key] = new_page
+    
+    # Inizializza il valore dello slider se non esiste
+    slider_key = f"timeline_{doc_id}"
+    if slider_key not in st.session_state:
+        st.session_state[slider_key] = current_page
+    
+    st.slider(
+        "Scorri Timeline",
+        min_value=1,
+        max_value=total_pages,
+        key=slider_key,
+        label_visibility="collapsed",
+        help="Naviga rapidamente tra le pagine",
+        on_change=sync_page_from_slider
+    )
 
 
 def _render_image_adjustments(doc_id: str, current_page: int, current_adjustments: dict):

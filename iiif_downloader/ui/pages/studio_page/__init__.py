@@ -7,8 +7,8 @@ import streamlit as st
 
 from iiif_downloader.ui.state import get_storage
 
-from .canvas_refactored import render_main_canvas
-from .sidebar_refactored import render_studio_sidebar
+from .canvas import render_main_canvas
+from .sidebar import render_studio_sidebar
 
 
 def render_studio_page():
