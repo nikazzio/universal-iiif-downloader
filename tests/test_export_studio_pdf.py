@@ -17,6 +17,7 @@ def _write_scan(scans_dir: Path, idx0: int, size=(800, 1200), color=(240, 240, 2
 
 
 def test_build_professional_pdf_respects_selected_pages(tmp_path: Path) -> None:
+    """Ensure selected pages determine PDF contents."""
     doc_dir = tmp_path / "doc"
     scans_dir = doc_dir / "scans"
     for i in range(5):
@@ -46,6 +47,7 @@ def test_build_professional_pdf_respects_selected_pages(tmp_path: Path) -> None:
 
 
 def test_testo_a_fronte_renders_some_text_even_if_long(tmp_path: Path) -> None:
+    """Assert testo a fronte layout shows transcription text."""
     doc_dir = tmp_path / "doc"
     scans_dir = doc_dir / "scans"
     _write_scan(scans_dir, 0)
@@ -79,6 +81,7 @@ def test_testo_a_fronte_renders_some_text_even_if_long(tmp_path: Path) -> None:
 
 
 def test_pdf_ricercabile_embeds_searchable_text(tmp_path: Path) -> None:
+    """Verify searchable PDF mode embeds OCR text."""
     doc_dir = tmp_path / "doc"
     scans_dir = doc_dir / "scans"
     _write_scan(scans_dir, 0)

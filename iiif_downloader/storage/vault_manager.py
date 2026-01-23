@@ -1,4 +1,5 @@
 import sqlite3
+from contextlib import suppress
 from pathlib import Path
 
 import fitz  # PyMuPDF
@@ -37,8 +38,8 @@ class VaultManager:
             if columns and not required_cols.issubset(columns):
                 logger.warning("Old DB schema detected. Recreating 'manuscripts' table (Beta reset).")
                 force_recreate = True
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("Schema check failed: %s", exc)
 
         if force_recreate:
             cursor.execute("DROP TABLE IF EXISTS manuscripts")
@@ -78,7 +79,7 @@ class VaultManager:
         conn.commit()
         conn.close()
 
-    def upsert_manuscript(self, id: str, **kwargs):
+    def upsert_manuscript(self, manuscript_id: str, **kwargs):
         """Insert or update a manuscript record."""
         valid_keys = [
             "title",
@@ -100,28 +101,29 @@ class VaultManager:
 
         if not updates:
             # Just ensure existence
-            self.register_manuscript(id)
+            self.register_manuscript(manuscript_id)
             return
 
         updates.append("updated_at = CURRENT_TIMESTAMP")
 
-        sql = f"""
-            UPDATE manuscripts SET {", ".join(updates)} WHERE id = ?
-        """
+        sql = "UPDATE manuscripts SET " + ", ".join(updates) + " WHERE id = ?"
 
         conn = self._get_conn()
         cursor = conn.cursor()
         try:
-            cursor.execute(sql, (*params, id))
+            cursor.execute(sql, (*params, manuscript_id))
             if cursor.rowcount == 0:
                 # Insert if not exists
                 keys = ["id"] + [k for k in kwargs if k in valid_keys]
                 placeholders = ["?"] * len(keys)
-                vals = [id] + [kwargs[k] for k in kwargs if k in valid_keys]
-                cursor.execute(f"INSERT INTO manuscripts ({', '.join(keys)}) VALUES ({', '.join(placeholders)})", vals)
+                vals = [manuscript_id] + [kwargs[k] for k in kwargs if k in valid_keys]
+                cursor.execute(
+                    "INSERT INTO manuscripts (" + ", ".join(keys) + ") VALUES (" + ", ".join(placeholders) + ")",
+                    vals,
+                )
             conn.commit()
         except sqlite3.Error as e:
-            logger.error(f"DB Error upserting manuscript {id}: {e}")
+            logger.error(f"DB Error upserting manuscript {manuscript_id}: {e}")
         finally:
             conn.close()
 
@@ -177,12 +179,12 @@ class VaultManager:
         finally:
             conn.close()
 
-    def update_status(self, id: str, status: str, error: str = None):
+    def update_status(self, manuscript_id: str, status: str, error: str = None):
         """Update the status of a manuscript, optionally with an error log."""
         kwargs = {"status": status}
         if error:
             kwargs["error_log"] = error
-        self.upsert_manuscript(id, **kwargs)
+        self.upsert_manuscript(manuscript_id, **kwargs)
 
     def register_manuscript(self, manuscript_id: str, title: str = None):
         """Ensures manuscript exists in DB."""
@@ -196,6 +198,7 @@ class VaultManager:
 
     def extract_image_snippet(self, image_path: str, coordinates: tuple) -> bytes:
         """Extracts a crop from an image using PyMuPDF (fitz).
+
         coordinates: (x0, y0, x1, y1) relative to the original image size.
         """
         try:
@@ -319,8 +322,6 @@ class VaultManager:
 
     def delete_snippet(self, snippet_id: int):
         """Delete a snippet by ID and remove the physical file."""
-        import os
-
         conn = self._get_conn()
         cursor = conn.cursor()
         try:
@@ -331,7 +332,8 @@ class VaultManager:
             if result and result[0]:
                 image_path = Path(result[0])
                 if image_path.exists():
-                    os.remove(image_path)
+                    with suppress(OSError):
+                        image_path.unlink()
 
             # Delete from DB
             cursor.execute("DELETE FROM snippets WHERE id = ?", (snippet_id,))

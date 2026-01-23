@@ -1,7 +1,6 @@
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
 
 import requests
 from requests import RequestException
@@ -13,6 +12,8 @@ logger = get_logger(__name__)
 
 @dataclass(frozen=True)
 class AvailableModel:
+    """Metadata describing an OCR model available for download."""
+
     key: str
     doi: str
     kind: str  # 'manuscript' | 'print' | 'generic'
@@ -36,7 +37,8 @@ class ModelManager:
     Models are stored in a user-configurable directory via `config.json`.
     """
 
-    def __init__(self, models_dir: Optional[Path] = None):
+    def __init__(self, models_dir: Path | None = None):
+        """Prepare the storage directory and fall back to cache if needed."""
         if models_dir is not None:
             self.models_dir = Path(models_dir)
         else:
@@ -54,11 +56,11 @@ class ModelManager:
             self.models_dir = _default_cache_dir()
             self.models_dir.mkdir(parents=True, exist_ok=True)
 
-    def list_installed_models(self) -> List[str]:
+    def list_installed_models(self) -> list[str]:
         """Returns a list of installed `.mlmodel` file names."""
         return sorted({f.name for f in self.models_dir.glob("*.mlmodel") if f.is_file()})
 
-    def get_available_models(self) -> Dict[str, AvailableModel]:
+    def get_available_models(self) -> dict[str, AvailableModel]:
         """Hardcoded list for prototype.
 
         We keep this explicit for stability (no live Zenodo search).
@@ -96,8 +98,8 @@ class ModelManager:
 
     def recommend_model_key(
         self,
-        document_hint: Optional[str],
-    ) -> Optional[str]:
+        document_hint: str | None,
+    ) -> str | None:
         """Returns the best model key given a simple hint."""
         available = self.get_available_models()
         if not available:
@@ -116,7 +118,7 @@ class ModelManager:
         # fallback to the first one available
         return next(iter(available.keys()))
 
-    def search_zenodo(self, query: str = "kraken model manuscript") -> List[Dict]:
+    def search_zenodo(self, query: str = "kraken model manuscript") -> list[dict]:
         """Dynamically search Zenodo for Kraken models."""
         url = "https://zenodo.org/api/records"
         # We append 'kraken' to ensure we find models for the right engine
@@ -157,15 +159,16 @@ class ModelManager:
             return []
 
     def get_model_path(self, model_filename: str) -> Path:
+        """Return the path where a model file is expected to live."""
         return self.models_dir / model_filename
 
-    def find_installed_model_for_key(self, model_key: str) -> Optional[str]:
+    def find_installed_model_for_key(self, model_key: str) -> str | None:
         """Returns an installed `.mlmodel` filename for a model key."""
         prefix = f"{_safe_filename(model_key)}__"
         matches = sorted([p.name for p in self.models_dir.glob(prefix + "*.mlmodel") if p.is_file()])
         return matches[0] if matches else None
 
-    def _parse_zenodo_record_id(self, doi_or_record: str) -> Optional[str]:
+    def _parse_zenodo_record_id(self, doi_or_record: str) -> str | None:
         s = (doi_or_record or "").strip()
         if not s:
             return None
@@ -190,7 +193,7 @@ class ModelManager:
         model_key: str,
         zenodo_doi: str,
         force: bool = False,
-    ) -> Tuple[bool, str]:
+    ) -> tuple[bool, str]:
         """Downloads a Kraken `.mlmodel` from Zenodo by DOI.
 
         Returns (success, message).
@@ -250,7 +253,7 @@ class ModelManager:
         try:
             with requests.get(download_url, stream=True, timeout=60) as r:
                 r.raise_for_status()
-                with open(tmp, "wb") as f:
+                with tmp.open("wb") as f:
                     for chunk in r.iter_content(chunk_size=1024 * 1024):
                         if chunk:
                             f.write(chunk)

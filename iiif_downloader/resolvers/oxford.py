@@ -4,10 +4,13 @@ from .base import BaseResolver
 
 
 class OxfordResolver(BaseResolver):
+    """Resolver for Digital Bodleian (Oxford) UUID-based manifests."""
     def can_resolve(self, url_or_id):
+        """Return True when the input references digital.bodleian.ox.ac.uk."""
         return "digital.bodleian.ox.ac.uk" in url_or_id
 
     def get_manifest_url(self, url_or_id):
+        """Build the canonical Bodleian manifest URL from a UUID input."""
         # Input: https://digital.bodleian.ox.ac.uk/objects/080f88f5-7586-4b8a-8064-63ab3495393c/
         # Output: https://iiif.bodleian.ox.ac.uk/iiif/manifest/080f88f5-7586-4b8a-8064-63ab3495393c.json
 

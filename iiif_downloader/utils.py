@@ -4,7 +4,6 @@ import os
 import shutil
 import time
 from pathlib import Path
-from typing import Union
 
 import requests
 from requests import RequestException
@@ -118,14 +117,14 @@ def load_json(path):
         return None
 
 
-def ensure_dir(path: Union[str, os.PathLike, None]):
+def ensure_dir(path: str | os.PathLike | None):
     """Ensures a directory exists."""
     if not path:
         return
     Path(path).mkdir(parents=True, exist_ok=True)
 
 
-def clean_dir(path: Union[str, os.PathLike]):
+def clean_dir(path: str | os.PathLike):
     """Safely removes a directory."""
     p = Path(path)
     if p.exists():
@@ -133,13 +132,12 @@ def clean_dir(path: Union[str, os.PathLike]):
 
 
 def cleanup_old_files(
-    path: Union[str, os.PathLike], *, older_than_days: int = 7
+    path: str | os.PathLike, *, older_than_days: int = 7
 ) -> dict:
     """Delete files/dirs under `path` older than `older_than_days`.
 
     Returns stats like {"deleted": X, "errors": Y, "skipped": Z}.
     """
-
     stats = {"deleted": 0, "errors": 0, "skipped": 0}
     base_dir = Path(path)
 

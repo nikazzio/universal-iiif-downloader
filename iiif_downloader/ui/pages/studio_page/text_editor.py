@@ -1,32 +1,34 @@
-"""
-Transcription Editor Component
+"""Transcription Editor Component.
+
 Handles the right column of the Studio page: text editing, OCR, and history.
 """
 
 import html
-import time
+from pathlib import Path
 
 import streamlit as st
-from bs4 import BeautifulSoup
 from streamlit_ace import st_ace
-
-from pathlib import Path
 
 from iiif_downloader.logger import get_logger
 from iiif_downloader.ui.notifications import toast
 from iiif_downloader.ui.state import get_storage
 
-logger = get_logger(__name__)
-
 from .ocr_utils import run_ocr_sync
 from .studio_state import StudioState
 
+logger = get_logger(__name__)
+
 
 def render_transcription_editor(
-    doc_id: str, library: str, current_page: int, ocr_engine: str, current_model: str, paths: dict = None, total_pages: int = 1
+    doc_id: str,
+    library: str,
+    current_page: int,
+    ocr_engine: str,
+    current_model: str,
+    paths: dict = None,
+    total_pages: int = 1,
 ) -> tuple:
-    """
-    Render the transcription editor with all controls.
+    """Render the transcription editor with all controls.
 
     Args:
         doc_id: Document ID
@@ -35,60 +37,66 @@ def render_transcription_editor(
         ocr_engine: OCR engine name
         current_model: OCR model name
         paths: Document paths dictionary
+        total_pages: Number of pages available for this document
 
     Returns:
         Tuple of (transcription_data, current_text_value)
     """
-
     storage = get_storage()
     trans = storage.load_transcription(doc_id, current_page, library)
-    initial_text = trans.get("full_text", "") if trans else ""
     current_status = trans.get("status", "draft") if trans else "draft"
-    is_manual = trans.get("is_manual", False) if trans else False
 
     st.markdown("<div style='margin-bottom: 30px;'></div>", unsafe_allow_html=True)
 
     # TAB SYSTEM: Trascrizione, Cronologia, Snippet, Info
     tabs = st.tabs(["📝 Trascrizione", "📜 Cronologia", "✂️ Snippet", "ℹ️ Info Manoscritto"])
-    
+
     # TAB 1: TRASCRIZIONE
     with tabs[0]:
-        _render_transcription_tab(doc_id, library, current_page, trans, current_status, ocr_engine, current_model, storage)
-    
+        _render_transcription_tab(
+            doc_id,
+            library,
+            current_page,
+            trans,
+            current_status,
+            ocr_engine,
+            current_model,
+            storage,
+        )
+
     # TAB 2: CRONOLOGIA
     with tabs[1]:
         render_history_sidebar(doc_id, library, current_page, current_data=trans, current_text="")
-    
+
     # TAB 3: SNIPPET (ritagli della pagina)
     with tabs[2]:
         _render_snippets_tab(doc_id, current_page)
-    
+
     # TAB 4: INFO MANOSCRITTO
     with tabs[3]:
         _render_manuscript_info(doc_id, library)
-    
+
     return trans, ""  # Return empty text for now
 
 
 def _render_transcription_tab(
-    doc_id: str, library: str, current_page: int, trans: dict, current_status: str, 
+    doc_id: str, library: str, current_page: int, trans: dict, current_status: str,
     ocr_engine: str, current_model: str, storage
 ) -> str:
     """Render the main transcription editor tab."""
-    
     # Metadata
     if trans:
         is_manual = trans.get("is_manual", False)
         engine = trans.get('engine', 'N/A')
         conf = trans.get('average_confidence', 'N/A')
         timestamp = trans.get('timestamp', '-')
-        
+
         meta_parts = [f"Engine: {engine}", f"Conf: {conf}", f"🕒 {timestamp}"]
         if is_manual:
             meta_parts.append("✍️ Modificato Manualmente")
-        
+
         st.caption(" | ".join(meta_parts))
-        
+
     if not trans:
         st.caption("Nessuna trascrizione. Scrivi e salva per creare.")
 
@@ -100,14 +108,14 @@ def _render_transcription_tab(
 
     # Check for pending updates (from history restore or OCR)
     pending_text = StudioState.get_pending_update(doc_id, current_page)
-    
+
     # Prepare markdown content (convert from rich_text if present)
     markdown_content = trans.get("full_text", "") if trans else ""
-    
+
     # If there's a pending text update, use that instead
     if pending_text:
         markdown_content = pending_text
-    
+
     # Custom CSS for the editor + floating helper (DARK MODE)
     st.markdown("""
         <style>
@@ -232,12 +240,10 @@ def _render_transcription_tab(
             margin: 1.5em 0;
         }
         /* COMPATTAMENTO AGGRESSIVO - Riduce tutti gli spazi verticali */
-        
         /* Riduce il gap in TUTTI i blocchi verticali */
         [data-testid="stVerticalBlock"] {
             gap: 0.2rem !important;
         }
-        
         /* Compatta tutti gli stElementContainer */
         .stElementContainer {
             margin-top: 0 !important;
@@ -245,14 +251,12 @@ def _render_transcription_tab(
             padding-top: 0 !important;
             padding-bottom: 0 !important;
         }
-        
         /* Compatta i layout wrapper */
         [data-testid="stLayoutWrapper"] {
             margin-top: 0 !important;
             margin-bottom: 0.3rem !important;
             padding: 0 !important;
         }
-        
         /* Rimuove gap tra caption e CSS style block */
         .stElementContainer:has([data-testid="stCaptionContainer"]) {
             margin-bottom: 0 !important;
@@ -290,7 +294,7 @@ def _render_transcription_tab(
 
     # Toggle Preview in header con helper inline (compatto, senza wrapper div)
     col_toggle, col_help = st.columns([10, 1])
-    
+
     with col_toggle:
         preview_mode = st.toggle("👁️ Anteprima Markdown", key=f"preview_{doc_id}_{current_page}", value=False)
     with col_help:
@@ -312,10 +316,10 @@ def _render_transcription_tab(
                 </div>
             </div>
         """, unsafe_allow_html=True)
-    
+
     # Mostra Editor o Preview in base al toggle
     editor_container = st.container()
-    
+
     with editor_container:
         if preview_mode:
             # PREVIEW MODE: Conversione veloce e leggera
@@ -345,11 +349,14 @@ def _render_transcription_tab(
                         html_lines.append(f'<p>{escaped}</p>')
                 html_content = ''.join(html_lines)
             else:
-                html_content = "<p style='color: #858585; text-align: center; padding-top: 2rem;'>📄 Nessun contenuto da visualizzare</p>"
-            
+                html_content = (
+                    "<p style='color: #858585; text-align: center; padding-top: 2rem;'>"
+                    "📄 Nessun contenuto da visualizzare</p>"
+                )
+
             # Renderizza tutto dentro il div con altezza fissa come l'editor
             st.markdown(f'<div class="markdown-preview">{html_content}</div>', unsafe_allow_html=True)
-            
+
             # Mantieni l'ultimo valore dall'editor
             text_val = markdown_content
         else:
@@ -370,7 +377,7 @@ def _render_transcription_tab(
                 show_print_margin=False,
                 key=edit_key,
             )
-    
+
     # Pulsante Salva FUORI dal form
     save_btn = st.button(
         "💾 Salva Modifiche",
@@ -378,7 +385,7 @@ def _render_transcription_tab(
         type="primary",
         key=f"save_trans_{doc_id}_{current_page}"
     )
-    
+
     if save_btn:
         _save_transcription(text_val, doc_id, library, current_page, trans, current_status, storage)
 
@@ -390,31 +397,30 @@ def _render_transcription_tab(
 
     with btn_col3:
         _render_ocr_button(doc_id, library, current_page, ocr_engine, storage)
-    
+
     return text_val
 
 
 def _render_snippets_tab(doc_id: str, current_page: int):
     """Render the snippets tab showing image crops for current page."""
-    
     logger.debug(f"Render tab snippet - doc={doc_id}, page={current_page}")
-    
+
     try:
         from iiif_downloader.storage import VaultManager
-        
+
         vault = VaultManager()
         snippets = vault.get_snippets(doc_id, page_num=current_page)
-        
+
         if not snippets:
             logger.debug(f"Nessuno snippet trovato per {doc_id} pagina {current_page}")
             st.info("📭 Nessun snippet salvato per questa pagina.")
             st.caption("✂️ Usa il pulsante 'Taglia' nella toolbar dell'immagine per creare snippet.")
             return
-        
+
         st.markdown(f"### 🖼️ Galleria Snippet ({len(snippets)})")
         st.caption(f"Pagina {current_page} - {doc_id}")
         st.markdown("---")
-        
+
         # Container scrollabile per molti snippet
         st.markdown("""
             <style>
@@ -425,27 +431,27 @@ def _render_snippets_tab(doc_id: str, current_page: int):
             }
             </style>
         """, unsafe_allow_html=True)
-        
+
         # Wrapper scrollabile
         with st.container():
             st.markdown('<div class="snippet-container">', unsafe_allow_html=True)
-            
+
             # Mostra ogni snippet
             for snippet in snippets:
                 with st.container():
                     # Colonne per layout
                     img_col, info_col = st.columns([1, 2])
-                    
+
                     with img_col:
                         # Mostra miniatura
                         img_path = Path(snippet['image_path'])
-                        
+
                         if img_path.exists():
                             st.image(snippet['image_path'], width="stretch")
                         else:
                             st.warning("⚠️ File non trovato")
                             logger.warning(f"File snippet non trovato: {img_path}")
-                    
+
                     with info_col:
                         # Tag categoria
                         category_colors = {
@@ -458,23 +464,27 @@ def _render_snippets_tab(doc_id: str, current_page: int):
                             "Nota Marginale": "#C7CEEA",
                             "Altro": "#B0B0B0",
                         }
-                        
+
                         cat_color = category_colors.get(snippet.get('category'), "#999")
                         st.markdown(
-                            f"<span style='background: {cat_color}; padding: 4px 12px; border-radius: 12px; color: white; font-weight: bold; font-size: 0.85rem;'>{snippet.get('category', 'N/A')}</span>",
+                            (
+                                f"<span style='background: {cat_color}; padding: 4px 12px; "
+                                "border-radius: 12px; color: white; font-weight: bold; "
+                                "font-size: 0.85rem;'>{snippet.get('category', 'N/A')}</span>"
+                            ),
                             unsafe_allow_html=True
                         )
-                        
+
                         st.caption(f"🕖 {snippet['timestamp']}")
-                        
+
                         # Espandi per vedere dettagli
                         with st.expander("🔍 Espandi dettagli"):
                             if snippet.get('transcription'):
-                                st.markdown(f"**✍️ Trascrizione:**")
+                                st.markdown("**✍️ Trascrizione:**")
                                 st.text(snippet['transcription'])
-                            
+
                             if snippet.get('notes'):
-                                st.markdown(f"**📝 Note:**")
+                                st.markdown("**📝 Note:**")
                                 st.text_area(
                                     "Note",
                                     value=snippet['notes'],
@@ -483,28 +493,27 @@ def _render_snippets_tab(doc_id: str, current_page: int):
                                     label_visibility="collapsed",
                                     height=100,
                                 )
-                            
+
                             if snippet.get('coords_json'):
                                 coords = snippet['coords_json']
                                 st.caption(f"📐 Dimensioni: {coords[2]}x{coords[3]} px")
-                        
+
                         # Pulsante elimina
                         if st.button("🗑️ Elimina", key=f"del_snippet_{snippet['id']}", type="secondary"):
                             vault.delete_snippet(snippet['id'])
                             toast("✅ Snippet eliminato!", icon="🗑️")
                             st.rerun()
-                    
+
                     st.markdown("<hr style='margin: 1rem 0; opacity: 0.2;'>", unsafe_allow_html=True)
-            
+
             st.markdown('</div>', unsafe_allow_html=True)
-        
+
     except Exception as e:
         st.error(f"❌ Errore nel caricamento snippet: {e}")
 
 
 def _handle_ocr_triggers(doc_id, library, current_page, ocr_engine, current_model, storage):
     """Handle OCR confirmation and execution triggers."""
-
     # Confirmation dialog
     if StudioState.get(StudioState.CONFIRM_OCR_SYNC) == current_page:
         st.warning("⚠️ Testo esistente! Sovrascrivere?", icon="⚠️")
@@ -526,7 +535,6 @@ def _handle_ocr_triggers(doc_id, library, current_page, ocr_engine, current_mode
 
 def _save_transcription(text_val, doc_id, library, current_page, trans, current_status, storage):
     """Save transcription to storage."""
-
     # Text_val is now plain Markdown text, no need to parse HTML
     clean_text = text_val if text_val else ""
 
@@ -547,7 +555,6 @@ def _save_transcription(text_val, doc_id, library, current_page, trans, current_
 
 def _render_verification_button(doc_id, library, current_page, current_status, trans, storage):
     """Render the verification toggle button."""
-
     is_verified = current_status == "verified"
     btn_label = "⚪ Segna come da Verificare" if is_verified else "✅ Segna come Verificato"
 
@@ -566,7 +573,6 @@ def _render_verification_button(doc_id, library, current_page, current_status, t
 
 def _render_ocr_button(doc_id, library, current_page, ocr_engine, storage):
     """Render the OCR execution button."""
-
     if st.button(
         f"🤖 Nuova Chiamata {ocr_engine}",
         width="stretch",
@@ -582,15 +588,14 @@ def _render_ocr_button(doc_id, library, current_page, ocr_engine, storage):
 
 def render_history_sidebar(doc_id, library, current_page, current_data=None, current_text=""):
     """Render the history list in a vertical side column."""
-
     storage = get_storage()
-    
+
     history = storage.load_history(doc_id, current_page, library)
-    
+
     if not history:
         st.info("📭 Nessuna versione salvata")
         return
-    
+
     # Header compatto con count
     col1, col2 = st.columns([2, 1])
     with col1:
@@ -604,13 +609,13 @@ def render_history_sidebar(doc_id, library, current_page, current_data=None, cur
             else:
                 st.session_state[f"confirm_clear_{current_page}"] = True
                 st.rerun()
-    
+
     if st.session_state.get(f"confirm_clear_{current_page}"):
         st.warning("⚠️ Conferma eliminazione")
         if st.button("Annulla", key=f"cancel_{current_page}", width="stretch"):
             del st.session_state[f"confirm_clear_{current_page}"]
             st.rerun()
-    
+
     st.divider()
 
     edit_key = StudioState.get_editor_key(doc_id, current_page)
@@ -652,9 +657,7 @@ def _render_history_entry(
     storage,
 ):
     """Render a single history entry."""
-
     ts = entry.get("timestamp", "-").split(" ")[1]  # Time only
-    full_ts = entry.get("timestamp", "-")
     eng = entry.get("engine", "manual")
     status = entry.get("status", "draft")
     chars = len(entry.get("full_text", ""))
@@ -675,21 +678,25 @@ def _render_history_entry(
         # Header compatto: tempo + icone + chars in una riga
         col1, col2 = st.columns([3, 1])
         with col1:
-            st.markdown(
-                f"<div style='line-height:1.2;'>"
+            metadata_html = (
+                "<div style='line-height:1.2;'>"
                 f"<span style='font-weight:600; font-size:0.9rem;'>{ts}</span>"
                 f"<span style='margin-left:4px;'>{icon}</span>"
                 f"{v_label}{status_icon}"
-                f"<br><span style='color:#666; font-size:0.75rem;'>{eng} • {chars} ch <span style='color:{diff_color}'>({diff_str})</span></span>"
-                f"</div>",
-                unsafe_allow_html=True,
+                "<br>"
+                "<span style='color:#666; font-size:0.75rem;'>"
+                f"{eng} • {chars} ch "
+                f"<span style='color:{diff_color}'>({diff_str})</span>"
+                "</span>"
+                "</div>"
             )
+            st.markdown(metadata_html, unsafe_allow_html=True)
         with col2:
             if st.button(
                 "↩",
                 key=f"restore_side_{current_page}_{idx}",
                 width="stretch",
-                help=f"Ripristina",
+                help="Ripristina",
             ):
                 _restore_history_version(
                     entry, current_text, current_data, doc_id, library, current_page, edit_key, storage
@@ -701,7 +708,6 @@ def _render_history_entry(
 
 def _restore_history_version(entry, current_text, current_data, doc_id, library, current_page, edit_key, storage):
     """Restore a previous version from history."""
-
     # Verifica: se current_text è vuoto ma abbiamo current_data, usiamo quello
     if not current_text and current_data:
         current_text = current_data.get("full_text", "")
@@ -733,22 +739,21 @@ def _restore_history_version(entry, current_text, current_data, doc_id, library,
 
 def _render_manuscript_info(doc_id: str, library: str):
     """Render manuscript metadata and details in Info tab."""
-    
     storage = get_storage()
     meta = storage.load_metadata(doc_id, library)
     stats = storage.load_image_stats(doc_id, library)
-    
+
     st.markdown("### 📜 Informazioni Manoscritto")
-    
+
     if meta:
         st.markdown(f"**Titolo**: {meta.get('label', 'Senza Titolo')}")
-        
+
         desc = meta.get("description", "-")
         st.markdown(f"**Descrizione**: {desc}")
-        
+
         st.markdown(f"**Attribuzione**: {meta.get('attribution', '-')}")
         st.markdown(f"**Licenza**: {meta.get('license', '-')}")
-        
+
         if "metadata" in meta and isinstance(meta["metadata"], list):
             st.markdown("---")
             st.markdown("#### 🏷️ Metadati Aggiuntivi")
@@ -757,17 +762,17 @@ def _render_manuscript_info(doc_id: str, library: str):
                     label = item.get("label", "Campo")
                     value = item.get("value", "-")
                     st.markdown(f"**{label}**: {value}")
-    
+
     if stats:
         st.markdown("---")
         st.markdown("#### 📊 Statistiche Tecniche")
-        
+
         pages_s = stats.get("pages", [])
         if pages_s:
             avg_w = sum(p["width"] for p in pages_s) // len(pages_s)
             avg_h = sum(p["height"] for p in pages_s) // len(pages_s)
             total_mb = sum(p["size_bytes"] for p in pages_s) / (1024 * 1024)
-            
+
             col1, col2, col3 = st.columns(3)
             with col1:
                 st.metric("Pagine", len(pages_s))

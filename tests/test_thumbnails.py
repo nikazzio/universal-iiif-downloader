@@ -6,6 +6,7 @@ from iiif_downloader.thumbnail_utils import ensure_thumbnail, guess_available_pa
 
 
 def test_guess_available_pages(tmp_path: Path) -> None:
+    """Validate available page detection from scan files."""
     scans = tmp_path / "scans"
     scans.mkdir(parents=True)
 
@@ -16,6 +17,7 @@ def test_guess_available_pages(tmp_path: Path) -> None:
 
 
 def test_ensure_thumbnail_resizes_and_caches(tmp_path: Path) -> None:
+    """Ensure thumbnail generation resizes and caches output."""
     scans = tmp_path / "scans"
     thumbs = tmp_path / "data" / "thumbnails"
     scans.mkdir(parents=True)
@@ -49,6 +51,7 @@ def test_ensure_thumbnail_resizes_and_caches(tmp_path: Path) -> None:
 
 
 def test_ensure_thumbnail_regenerates_when_size_changes(tmp_path: Path) -> None:
+    """Assert thumbnail cache invalidates when target size increases."""
     scans = tmp_path / "scans"
     thumbs = tmp_path / "data" / "thumbnails"
     scans.mkdir(parents=True)

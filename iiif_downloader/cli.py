@@ -1,6 +1,8 @@
 import argparse
 import sys
 
+from iiif_downloader import __version__
+
 # pylint: disable=broad-exception-caught
 from .logger import get_logger, setup_logging
 from .logic import IIIFDownloader
@@ -50,6 +52,7 @@ def main():
     """CLI entry point."""
     setup_logging()
     parser = argparse.ArgumentParser(description="Universal IIIF Downloader")
+    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     parser.add_argument(
         "url",
         nargs="?",
@@ -119,10 +122,7 @@ def main():
             if status == "downloading" or status == "pending":
                 # Check temp dir for active downloads
                 t_path = temp_dir / ms_id
-                if t_path.exists():
-                    current = len(list(t_path.glob("pag_*.jpg")))
-                else:
-                    current = 0
+                current = len(list(t_path.glob("pag_*.jpg"))) if t_path.exists() else 0
             else:
                 # For complete/error, trust DB or check final path
                 current = m.get("downloaded_canvases") or 0

@@ -2,10 +2,13 @@ from .base import BaseResolver
 
 
 class GallicaResolver(BaseResolver):
+    """Resolver tailored to Gallica (BnF) URLs and ARK identifiers."""
     def can_resolve(self, url_or_id):
+        """Return True when a Gallica URL or ID is provided."""
         return "gallica.bnf.fr" in url_or_id
 
     def get_manifest_url(self, url_or_id):
+        """Build the manifest URL from a Gallica ARK or manifest input."""
         # Input: https://gallica.bnf.fr/ark:/12148/btv1b84260335
         # Output: https://gallica.bnf.fr/iiif/ark:/12148/btv1b84260335/manifest.json
 

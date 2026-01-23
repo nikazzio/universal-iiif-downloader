@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+from contextlib import suppress
 from pathlib import Path
-from typing import List, Optional
 
 from PIL import Image as PILImage
 
@@ -12,7 +12,6 @@ def _cached_image_matches_target(*, img_path: Path, target_long_edge: int) -> bo
     We don't encode settings in filenames; instead we validate dimensions.
     Regenerate if the cached image is clearly too small or too large.
     """
-
     if target_long_edge <= 0:
         return True
     try:
@@ -25,15 +24,12 @@ def _cached_image_matches_target(*, img_path: Path, target_long_edge: int) -> bo
     # Accept small rounding differences and small originals.
     if long_edge <= target_long_edge and long_edge >= int(target_long_edge * 0.85):
         return True
-    if abs(long_edge - target_long_edge) <= 2:
-        return True
-    return False
+    return abs(long_edge - target_long_edge) <= 2
 
 
-def guess_available_pages(scans_dir: Path) -> List[int]:
+def guess_available_pages(scans_dir: Path) -> list[int]:
     """Return available 1-based page numbers from pag_XXXX.jpg files."""
-
-    pages: List[int] = []
+    pages: list[int] = []
     for p in sorted(scans_dir.glob("pag_*.jpg")):
         stem = p.stem
         try:
@@ -45,10 +41,12 @@ def guess_available_pages(scans_dir: Path) -> List[int]:
 
 
 def thumbnail_path(thumbnails_dir: Path, page_num_1_based: int) -> Path:
+    """Return the expected thumbnail file path for a page."""
     return thumbnails_dir / f"thumb_{page_num_1_based - 1:04d}.jpg"
 
 
 def hover_preview_path(thumbnails_dir: Path, page_num_1_based: int) -> Path:
+    """Return the hover-preview file path for a page."""
     return thumbnails_dir / f"hover_{page_num_1_based - 1:04d}.jpg"
 
 
@@ -59,13 +57,12 @@ def ensure_thumbnail(
     page_num_1_based: int,
     max_long_edge_px: int = 320,
     jpeg_quality: int = 70,
-) -> Optional[Path]:
+) -> Path | None:
     """Create (if missing) and return cached thumbnail path for a page.
 
     - Reads: scans_dir/pag_XXXX.jpg (0-based file index)
     - Writes: thumbnails_dir/thumb_XXXX.jpg (0-based file index)
     """
-
     try:
         thumbnails_dir.mkdir(parents=True, exist_ok=True)
         out_path = thumbnail_path(thumbnails_dir, page_num_1_based)
@@ -74,10 +71,8 @@ def ensure_thumbnail(
         ):
             return out_path
         if out_path.exists():
-            try:
+            with suppress(OSError):
                 out_path.unlink()
-            except OSError:
-                pass
 
         scan_path = scans_dir / f"pag_{page_num_1_based - 1:04d}.jpg"
         if not scan_path.exists():
@@ -107,13 +102,12 @@ def ensure_hover_preview(
     page_num_1_based: int,
     max_long_edge_px: int = 900,
     jpeg_quality: int = 82,
-) -> Optional[Path]:
+) -> Path | None:
     """Create (if missing) and return a cached hover preview for a page.
 
     This is intentionally larger than thumbnails, but smaller than the original scans,
     so it can be embedded in the UI for hover previews.
     """
-
     try:
         thumbnails_dir.mkdir(parents=True, exist_ok=True)
         out_path = hover_preview_path(thumbnails_dir, page_num_1_based)
@@ -122,10 +116,8 @@ def ensure_hover_preview(
         ):
             return out_path
         if out_path.exists():
-            try:
+            with suppress(OSError):
                 out_path.unlink()
-            except OSError:
-                pass
 
         scan_path = scans_dir / f"pag_{page_num_1_based - 1:04d}.jpg"
         if not scan_path.exists():

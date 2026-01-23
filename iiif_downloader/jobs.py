@@ -1,7 +1,8 @@
 import threading
 import time
 import uuid
-from typing import Any, Callable, Dict, Optional
+from collections.abc import Callable
+from typing import Any
 
 from iiif_downloader.logger import get_logger
 
@@ -12,18 +13,20 @@ logger = get_logger(__name__)
 
 
 class JobManager:
+    """Singleton manager for background jobs."""
     _instance = None
-    _jobs: Dict[str, Dict[str, Any]] = {}
+    _jobs: dict[str, dict[str, Any]] = {}
     _lock = threading.Lock()
 
     def __new__(cls):
+        """Ensure only one JobManager instance exists."""
         if cls._instance is None:
-            cls._instance = super(JobManager, cls).__new__(cls)
+            cls._instance = super().__new__(cls)
         return cls._instance
 
     def submit_job(self, task_func: Callable, args=(), kwargs=None, job_type="generic") -> str:
-        """
-        Submits a task to run in a background thread.
+        """Submits a task to run in a background thread.
+
         Returns the job_id.
         """
         if kwargs is None:
@@ -81,11 +84,13 @@ class JobManager:
 
         return job_id
 
-    def get_job(self, job_id: str) -> Optional[Dict]:
+    def get_job(self, job_id: str) -> dict | None:
+        """Return stored info for a given job_id."""
         with self._lock:
             return self._jobs.get(job_id)
 
     def update_job(self, job_id: str, status=None, progress=None, message=None):
+        """Update one of the tracked job fields."""
         with self._lock:
             if job_id in self._jobs:
                 if status:
@@ -96,6 +101,7 @@ class JobManager:
                     self._jobs[job_id]["message"] = message
 
     def list_jobs(self, active_only=False):
+        """List all tracked jobs, optionally filtering to active work."""
         with self._lock:
             if active_only:
                 return {k: v for k, v in self._jobs.items() if v["status"] in ["pending", "running"]}

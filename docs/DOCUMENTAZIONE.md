@@ -38,6 +38,22 @@ Universal IIIF Downloader & Studio è una web-app Streamlit che permette di:
 
 ---
 
+## 9) Versioning & Release
+
+Il progetto adotta **Semantic Versioning** con **python-semantic-release**:
+
+- I rilasci vengono creati automaticamente a ogni push su `main`.
+- Il calcolo della versione è basato su **Conventional Commits**.
+- La versione runtime è disponibile in `iiif_downloader.__version__` (mostrata anche in UI).
+
+Esempi di commit validi:
+
+```
+feat: aggiungi export snippet
+fix: gestisci manifest vuoto
+feat!: cambia layout dati (breaking)
+```
+
 ## 3) Architettura ad alto livello
 
 ### Entry point UI

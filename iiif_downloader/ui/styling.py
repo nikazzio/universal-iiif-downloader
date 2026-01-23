@@ -133,8 +133,8 @@ def load_custom_css():
 
 
 def render_gallery_card(title, subtitle, image_url=None, footer=None, key=None):
-    """
-    Renders a clickable card.
+    """Renders a clickable gallery card.
+
     NOTE: Streamlit doesn't support clickable custom HTML divs that trigger python events easily.
     We use a workaround: The Card is visual, and a transparent button covers it,
     OR we design the container to look like a card and put a "Select" button inside.
@@ -144,17 +144,23 @@ def render_gallery_card(title, subtitle, image_url=None, footer=None, key=None):
     # These are reserved for future UI variants (overlay button / keyed widgets).
     _ = footer, key
     with st.container():
-        st.markdown(
-            f"""
-        <div class="card-container">
-            <div style="height: 140px; background-color: #333; border-radius: 8px; margin-bottom: 12px; display: flex; align-items: center; justify-content: center; overflow: hidden;">
-                {f'<img src="{image_url}" style="width: 100%; height: 100%; object-fit: cover;">' if image_url else '<span style="font-size: 3rem;">📜</span>'}
-            </div>
-            <h4 style="margin: 0; font-size: 1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{title}</h4>
-            <p style="color: #aaa; font-size: 0.8rem; margin: 4px 0 12px 0;">{subtitle}</p>
-        </div>
-        """,
-            unsafe_allow_html=True,
+        image_html = (
+            f'<img src="{image_url}" style="width: 100%; height: 100%; object-fit: cover;">'
+            if image_url
+            else '<span style="font-size: 3rem;">📜</span>'
         )
+        card_html = (
+            "<div class=\"card-container\">"
+            "<div style=\"height: 140px; background-color: #333; border-radius: 8px; "
+            "margin-bottom: 12px; display: flex; align-items: center; "
+            "justify-content: center; overflow: hidden;\">"
+            f"{image_html}"
+            "</div>"
+            f"<h4 style=\"margin: 0; font-size: 1rem; white-space: nowrap; overflow: hidden; "
+            f"text-overflow: ellipsis;\">{title}</h4>"
+            f"<p style=\"color: #aaa; font-size: 0.8rem; margin: 4px 0 12px 0;\">{subtitle}</p>"
+            "</div>"
+        )
+        st.markdown(card_html, unsafe_allow_html=True)
         # The actual interaction must be a button below or overlay
         # We'll expect the caller to place a button here

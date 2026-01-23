@@ -11,9 +11,11 @@ logger = get_logger(__name__)
 
 
 class OCRStorage:
+    """Handles storage paths, metadata, and OCR persistence for documents."""
     STORAGE_VERSION = 3  # Incremented for DB Integration
 
     def __init__(self, base_dir: str = "downloads"):
+        """Initialize download directories and the vault."""
         # Always use config.json as single source of truth
         base_dir = str(get_config_manager().get_downloads_dir())
 
@@ -60,10 +62,11 @@ class OCRStorage:
             if not library_dir.is_dir():
                 continue
             for doc_dir in library_dir.iterdir():
-                if doc_dir.is_dir():
-                    # Clean look for metadata in new 'data' folder
-                    if (doc_dir / "data" / "metadata.json").exists():
-                        docs.append(
+                if not doc_dir.is_dir():
+                    continue
+                metadata_path = doc_dir / "data" / "metadata.json"
+                if metadata_path.exists():
+                    docs.append(
                             {
                                 "id": doc_dir.name,
                                 "library": library_dir.name,
@@ -81,13 +84,12 @@ class OCRStorage:
             m = self.vault.get_manuscript(doc_id)
             if m and m.get("local_path"):
                 doc_path = Path(m["local_path"])
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("Vault lookup failed for %s: %s", doc_id, exc)
 
         # 2. Fallback: Path Construction
-        if not doc_path or not doc_path.exists():
-            if library and library != "Unknown":
-                doc_path = self.base_dir / library / doc_id
+        if (not doc_path or not doc_path.exists()) and library and library != "Unknown":
+            doc_path = self.base_dir / library / doc_id
 
         # 3. Fallback: Search in downloads dir
         if not doc_path or not doc_path.exists():

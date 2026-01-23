@@ -2,21 +2,23 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 from iiif_downloader.ocr.storage import OCRStorage
 
 
 @dataclass(frozen=True)
 class DocOption:
+    """Represents metadata for documents that can be exported."""
     label: str
     doc_id: str
     library: str
     doc_dir: Path
-    meta: Dict[str, Any]
+    meta: dict[str, Any]
 
 
-def safe_read_json(p: Path) -> Optional[Dict[str, Any]]:
+def safe_read_json(p: Path) -> dict[str, Any] | None:
+    """Safely read a JSON file, returning None if it fails."""
     try:
         import json
 
@@ -27,7 +29,8 @@ def safe_read_json(p: Path) -> Optional[Dict[str, Any]]:
         return None
 
 
-def load_document_option(storage: OCRStorage, doc: Dict[str, Any]) -> Optional[DocOption]:
+def load_document_option(storage: OCRStorage, doc: dict[str, Any]) -> DocOption | None:
+    """Construct a DocOption entry for an exported manuscript."""
     doc_dir = Path(doc.get("path") or "")
     if not doc_dir.exists():
         return None

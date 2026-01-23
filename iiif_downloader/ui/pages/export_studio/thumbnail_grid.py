@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import base64
 from pathlib import Path
-from typing import List, Optional
 
 import streamlit as st
 
@@ -16,8 +15,8 @@ def _selection_key(doc_key: str, page_num_1_based: int) -> str:
 def render_thumbnail_grid(
     *,
     doc_key: str,
-    pages: List[int],
-    action_pages: List[int],
+    pages: list[int],
+    action_pages: list[int],
     scans_dir: Path,
     thumbnails_dir: Path,
     columns: int = 6,
@@ -28,13 +27,12 @@ def render_thumbnail_grid(
     hover_preview_jpeg_quality: int = 82,
     hover_preview_delay_ms: int = 550,
     disabled: bool = False,
-) -> List[int]:
+) -> list[int]:
     """Render a reliable Streamlit-native thumbnail grid.
 
     This intentionally avoids injected HTML/JS and URL query-params toggling.
     Click behavior stays stable across Streamlit versions.
     """
-
     st.caption("Seleziona le pagine (click sull'immagine).")
 
     c1, c2, c3 = st.columns([1, 1, 1])
@@ -69,7 +67,7 @@ def render_thumbnail_grid(
 
     cols_n = max(1, int(columns or 1))
 
-    def _b64_data_url(img_path: Path) -> Optional[str]:
+    def _b64_data_url(img_path: Path) -> str | None:
         try:
             b = img_path.read_bytes()
             return "data:image/jpeg;base64," + base64.b64encode(b).decode("ascii")
@@ -83,7 +81,8 @@ def render_thumbnail_grid(
     st.markdown(
         """
         <style>
-        /* CRITICAL: Ensure the column containing the hovered button is raised above subsequent columns (z-index trap) */
+        /* CRITICAL: Ensure the column containing the hovered button
+           is raised above subsequent columns (z-index trap) */
         div[data-testid="column"]:has(button:hover) {
             z-index: 10000 !important;
         }
@@ -121,7 +120,7 @@ def render_thumbnail_grid(
         if thumb is None:
             continue
 
-        preview_path: Optional[Path] = None
+        preview_path: Path | None = None
         if hover_preview_enabled:
             preview_path = ensure_hover_preview(
                 scans_dir=scans_dir,

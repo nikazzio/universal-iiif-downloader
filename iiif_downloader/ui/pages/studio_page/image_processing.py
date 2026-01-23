@@ -1,16 +1,14 @@
-"""
-Image Processing Module for Studio Page
+"""Image Processing Module for Studio Page.
+
 Handles all image manipulation operations (brightness, contrast, cropping)
 Separated from UI logic for better maintainability and testability.
 """
 
 from io import BytesIO
 from pathlib import Path
-from typing import Optional, Tuple
 
 import streamlit as st
 from PIL import Image, ImageEnhance
-
 
 from iiif_downloader.logger import get_logger
 
@@ -22,9 +20,8 @@ class ImageProcessor:
 
     @staticmethod
     @st.cache_data(show_spinner=False)
-    def load_image(image_path: Path) -> Optional[Image.Image]:
-        """
-        Load an image from disk.
+    def load_image(image_path: Path) -> Image.Image | None:
+        """Load an image from disk.
 
         Args:
             image_path: Path to the image file
@@ -41,8 +38,7 @@ class ImageProcessor:
 
     @staticmethod
     def adjust_brightness(image: Image.Image, brightness: float) -> Image.Image:
-        """
-        Adjust image brightness.
+        """Adjust image brightness.
 
         Args:
             image: PIL Image object
@@ -56,8 +52,7 @@ class ImageProcessor:
 
     @staticmethod
     def adjust_contrast(image: Image.Image, contrast: float) -> Image.Image:
-        """
-        Adjust image contrast.
+        """Adjust image contrast.
 
         Args:
             image: PIL Image object
@@ -71,8 +66,7 @@ class ImageProcessor:
 
     @staticmethod
     def apply_adjustments(image: Image.Image, brightness: float = 1.0, contrast: float = 1.0) -> Image.Image:
-        """
-        Apply multiple adjustments to an image.
+        """Apply multiple adjustments to an image.
 
         Args:
             image: PIL Image object
@@ -90,9 +84,8 @@ class ImageProcessor:
         return image
 
     @staticmethod
-    def crop_image(image: Image.Image, coordinates: Tuple[int, int, int, int]) -> Image.Image:
-        """
-        Crop an image to specified coordinates.
+    def crop_image(image: Image.Image, coordinates: tuple[int, int, int, int]) -> Image.Image:
+        """Crop an image to specified coordinates.
 
         Args:
             image: PIL Image object
@@ -105,8 +98,7 @@ class ImageProcessor:
 
     @staticmethod
     def save_crop_to_bytes(cropped_image: Image.Image) -> bytes:
-        """
-        Convert a cropped image to PNG bytes for database storage.
+        """Convert a cropped image to PNG bytes for database storage.
 
         Args:
             cropped_image: PIL Image object
@@ -120,8 +112,7 @@ class ImageProcessor:
 
     @staticmethod
     def get_image_stats(image: Image.Image) -> dict:
-        """
-        Get basic statistics about an image.
+        """Get basic statistics about an image.
 
         Args:
             image: PIL Image object

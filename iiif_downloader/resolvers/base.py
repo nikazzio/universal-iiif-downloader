@@ -2,6 +2,7 @@ class BaseResolver:
     """Base class for resolving user input into a IIIF Manifest URL."""
 
     def __init__(self):
+        """Initialize the resolver base hook."""
         pass
 
     def can_resolve(self, url_or_id):

@@ -1,10 +1,10 @@
-"""
-Main Canvas Module - Refactored
+"""Main Canvas Module - Refactored.
+
 Clean, modular implementation of the Studio page canvas with modern layout.
 Separated concerns: UI rendering, state management, and image processing.
 """
 
-import os
+from pathlib import Path
 
 import streamlit as st
 
@@ -13,7 +13,7 @@ from iiif_downloader.ui.state import get_storage
 
 from .image_viewer import render_image_viewer
 from .studio_state import StudioState
-from .text_editor import render_history_sidebar, render_transcription_editor
+from .text_editor import render_transcription_editor
 
 logger = get_logger(__name__)
 
@@ -21,8 +21,7 @@ logger = get_logger(__name__)
 def render_main_canvas(
     doc_id: str, library: str, paths: dict, stats: dict = None, ocr_engine: str = "openai", current_model: str = "gpt-5"
 ):
-    """
-    Main canvas renderer with modern two-column layout.
+    """Main canvas renderer with modern two-column layout.
 
     Args:
         doc_id: Document ID
@@ -32,7 +31,6 @@ def render_main_canvas(
         ocr_engine: OCR engine name
         current_model: OCR model name
     """
-
     # Initialize state
     StudioState.init_defaults()
 
@@ -68,12 +66,19 @@ def render_main_canvas(
 
     # RIGHT COLUMN: Work Area with Tabs
     with col_work:
-        trans, text_val = render_transcription_editor(doc_id, library, current_page, ocr_engine, current_model, paths, total_pages)
+        trans, text_val = render_transcription_editor(
+            doc_id,
+            library,
+            current_page,
+            ocr_engine,
+            current_model,
+            paths,
+            total_pages,
+        )
 
 
 def _calculate_total_pages(meta: dict, paths: dict) -> int:
-    """
-    Calculate total number of pages from various sources.
+    """Calculate total number of pages from various sources.
 
     Returns:
         Total page count (minimum 1)
@@ -83,9 +88,9 @@ def _calculate_total_pages(meta: dict, paths: dict) -> int:
     if meta and meta.get("pages"):
         total_pages = int(meta.get("pages"))
     else:
-        scans_dir = paths.get("scans")
-        if scans_dir and os.path.exists(scans_dir):
-            files = [f for f in os.listdir(scans_dir) if f.endswith(".jpg")]
+        scans_dir = Path(paths.get("scans") or "")
+        if scans_dir.exists():
+            files = [f for f in scans_dir.iterdir() if f.name.endswith(".jpg")]
             if files:
                 total_pages = len(files)
 
@@ -93,8 +98,7 @@ def _calculate_total_pages(meta: dict, paths: dict) -> int:
 
 
 def _handle_page_navigation(doc_id: str, total_pages: int) -> int:
-    """
-    Handle page navigation with query params and session state.
+    """Handle page navigation with query params and session state.
 
     Returns:
         Current page number (1-indexed)

@@ -517,8 +517,8 @@ def render_settings_page(cm: Any) -> None:
             step=1,
             key="cfg_pdf_ocr_dpi",
             help=(
-                "Usato per convertire PDF→immagini durante l'import e (se serve) per generare l'immagine inviata all'OCR/LLM. "
-                "Default 300."
+                "Usato per convertire PDF→immagini durante l'import e (se serve) "
+                "per generare l'immagine inviata all'OCR/LLM. Default 300."
             ),
         )
 
@@ -544,7 +544,8 @@ def render_settings_page(cm: Any) -> None:
 
     with tabs[8]:
         st.caption(
-            "Le chiavi API sono salvate localmente in config.json e vengono usate solo per chiamare i provider selezionati."
+            "Le chiavi API sono salvate localmente in config.json e vengono usate solo "
+            "per chiamare i provider selezionati."
         )
         k1, k2, k3, k4 = st.columns(4)
         k1.text_input(
