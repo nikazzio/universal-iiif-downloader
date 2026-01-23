@@ -4,7 +4,7 @@
     "maxFileSize": 40000000
   },
   "output": {
-    "filePath": "repomix-output-universal-iiif.xml",
+    "filePath": "repomix-output.xml",
     "style": "xml",
     "parsableStyle": true,
     "compress": true,
@@ -54,7 +54,10 @@
       "data/**",
       "logs/**",
       "config.json",
-      "assets/snippets/**"
+      "assets/snippets/**",
+      "AGENTS.md",
+      "repomix-output*",
+      "package-lock.json"
     ]
   },
   "security": {
