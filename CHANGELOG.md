@@ -2,6 +2,12 @@
 
 Tutte le modifiche notevoli a questo progetto saranno documentate in questo file.
 
+## [v0.6.0] - 2026-01-23
+
+### Added
+
+- Feat snippet sqlite (#6)
+
 ## [v0.5.0] - 2026-01-19
 
 ### Added
