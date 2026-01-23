@@ -4,9 +4,11 @@ import io
 import math
 import mmap
 import time
+from collections.abc import Iterable
+from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Iterable, Optional, Tuple
+from typing import Any
 
 from PIL import Image, UnidentifiedImageError
 from requests import RequestException, Session
@@ -14,6 +16,8 @@ from requests import RequestException, Session
 
 @dataclass(frozen=True)
 class IIIFTilePlan:
+    """Plan describing how to stitch IIIF tiles into one canvas."""
+
     base_url: str
     full_width: int
     full_height: int
@@ -23,14 +27,16 @@ class IIIFTilePlan:
 
     @property
     def out_width(self) -> int:
+        """Target canvas width for this plan."""
         return int(math.ceil(self.full_width / self.scale_factor))
 
     @property
     def out_height(self) -> int:
+        """Target canvas height for this plan."""
         return int(math.ceil(self.full_height / self.scale_factor))
 
 
-def _pick_tile_spec(info: Dict[str, Any]) -> Optional[Tuple[int, int, Iterable[int]]]:
+def _pick_tile_spec(info: dict[str, Any]) -> tuple[int, int, Iterable[int]] | None:
     tiles = info.get("tiles")
     if not tiles:
         return None
@@ -56,9 +62,9 @@ def _pick_tile_spec(info: Dict[str, Any]) -> Optional[Tuple[int, int, Iterable[i
 
 
 def build_tile_plan(
-    info: Dict[str, Any],
+    info: dict[str, Any],
     base_url: str,
-) -> Optional[IIIFTilePlan]:
+) -> IIIFTilePlan | None:
     """Create a stitching plan from `info.json`.
 
     This plan always targets full resolution (scaleFactor=1).
@@ -66,7 +72,6 @@ def build_tile_plan(
     The caller can decide whether to keep the output canvas in RAM or to
     use a disk-backed buffer (mmap) based on its own RAM cap.
     """
-
     try:
         full_w = int(info.get("width") or 0)
         full_h = int(info.get("height") or 0)
@@ -115,7 +120,7 @@ def _write_tile_rgb_to_mmap(
         mm[dst_off : dst_off + row_stride] = tile_bytes[src_off : src_off + row_stride]
 
 
-def _tile_regions(plan: IIIFTilePlan) -> Iterable[Tuple[int, int, int, int]]:
+def _tile_regions(plan: IIIFTilePlan) -> Iterable[tuple[int, int, int, int]]:
     step_x = plan.tile_width * plan.scale_factor
     step_y = plan.tile_height * plan.scale_factor
 
@@ -137,7 +142,7 @@ def stitch_iiif_tiles_to_jpeg(
     timeout_s: int = 30,
     max_retries_per_tile: int = 3,
     throttle_base_wait_s: float = 2.0,
-) -> Optional[Tuple[int, int]]:
+) -> tuple[int, int] | None:
     """Download and stitch IIIF tiles sequentially into a JPEG.
 
     Returns (width, height) of the output image on success, else None.
@@ -147,7 +152,6 @@ def stitch_iiif_tiles_to_jpeg(
         - If the uncompressed output would exceed `max_ram_bytes`, we assemble
             the RGB raster on disk (mmap) and then encode to JPEG.
     """
-
     info_url = base_url.rstrip("/") + "/info.json"
     try:
         r = session.get(info_url, timeout=timeout_s)
@@ -165,7 +169,7 @@ def stitch_iiif_tiles_to_jpeg(
     use_disk_buffer = est_out_bytes > int(max_ram_bytes)
 
     canvas = None
-    raw_path: Optional[Path] = None
+    raw_path: Path | None = None
     raw_fh = None
     mm = None
 
@@ -184,21 +188,15 @@ def stitch_iiif_tiles_to_jpeg(
             raw_fh.truncate(est_out_bytes)
             mm = mmap.mmap(raw_fh.fileno(), est_out_bytes, access=mmap.ACCESS_WRITE)
         except (OSError, ValueError):
-            try:
-                if mm is not None:
+            if mm is not None:
+                with suppress(OSError):
                     mm.close()
-            except OSError:
-                pass
-            try:
-                if raw_fh is not None:
+            if raw_fh is not None:
+                with suppress(OSError):
                     raw_fh.close()
-            except OSError:
-                pass
-            try:
-                if raw_path is not None:
+            if raw_path is not None:
+                with suppress(OSError):
                     raw_path.unlink(missing_ok=True)
-            except OSError:
-                pass
             return None
 
     for x, y, w, h in _tile_regions(plan):
@@ -239,26 +237,18 @@ def stitch_iiif_tiles_to_jpeg(
                 break
             except (RequestException, UnidentifiedImageError, OSError, ValueError):
                 if attempt >= max_retries_per_tile - 1:
-                    try:
-                        if canvas is not None:
+                    if canvas is not None:
+                        with suppress(OSError):
                             canvas.close()
-                    except OSError:
-                        pass
-                    try:
-                        if mm is not None:
+                    if mm is not None:
+                        with suppress(OSError):
                             mm.close()
-                    except OSError:
-                        pass
-                    try:
-                        if raw_fh is not None:
+                    if raw_fh is not None:
+                        with suppress(OSError):
                             raw_fh.close()
-                    except OSError:
-                        pass
-                    try:
-                        if raw_path is not None:
+                    if raw_path is not None:
+                        with suppress(OSError):
                             raw_path.unlink(missing_ok=True)
-                    except OSError:
-                        pass
                     return None
 
     try:
@@ -267,10 +257,8 @@ def stitch_iiif_tiles_to_jpeg(
             assert mm is not None
             img = Image.frombuffer("RGB", (out_w, out_h), mm, "raw", "RGB", 0, 1)
             img.save(str(out_path), format="JPEG", quality=int(jpeg_quality), optimize=True)
-            try:
+            with suppress(OSError):
                 img.close()
-            except OSError:
-                pass
         else:
             assert canvas is not None
             canvas.save(str(out_path), format="JPEG", quality=int(jpeg_quality), optimize=True)
@@ -278,23 +266,15 @@ def stitch_iiif_tiles_to_jpeg(
     except (OSError, ValueError):
         return None
     finally:
-        try:
-            if canvas is not None:
+        if canvas is not None:
+            with suppress(OSError):
                 canvas.close()
-        except OSError:
-            pass
-        try:
-            if mm is not None:
+        if mm is not None:
+            with suppress(OSError):
                 mm.close()
-        except OSError:
-            pass
-        try:
-            if raw_fh is not None:
+        if raw_fh is not None:
+            with suppress(OSError):
                 raw_fh.close()
-        except OSError:
-            pass
-        try:
-            if raw_path is not None:
+        if raw_path is not None:
+            with suppress(OSError):
                 raw_path.unlink(missing_ok=True)
-        except OSError:
-            pass

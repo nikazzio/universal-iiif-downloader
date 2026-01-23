@@ -21,9 +21,7 @@ def inject_premium_styles():
 
 
 def interactive_viewer(image, zoom_percent: int):
-    """
-    Render the premium interactive image viewer using an isolated iframe component.
-    """
+    """Render the premium interactive image viewer using an isolated iframe component."""
     if not image:
         return
 

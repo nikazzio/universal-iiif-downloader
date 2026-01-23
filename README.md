@@ -56,6 +56,22 @@ Lancia l'applicazione Web (metodo raccomandato):
 streamlit run app.py
 ```
 
+## 🧬 Versioning & Release
+
+Il progetto usa **Semantic Versioning** con **python-semantic-release**.
+
+- I rilasci vengono generati automaticamente su `main` in base ai commit **Conventional Commits**.
+- Il tag è nel formato `vX.Y.Z`.
+- La versione runtime è esposta in `iiif_downloader.__version__` e mostrata in UI.
+
+Esempi di commit:
+
+```
+feat: aggiungi export snippet
+fix: gestisci manifest vuoto
+feat!: cambia layout dati (breaking)
+```
+
 ## 🧭 Funzionalità principali
 
 - **Discovery & Download**: risoluzione segnature/URL → anteprima manifest → download in parallelo.

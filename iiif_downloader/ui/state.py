@@ -6,7 +6,6 @@ from iiif_downloader.ocr.storage import OCRStorage
 
 def init_session_state():
     """Initializes all session state variables."""
-
     # Core Services
     if "ocr_storage" not in st.session_state:
         st.session_state["ocr_storage"] = OCRStorage()
@@ -32,6 +31,7 @@ def init_session_state():
 
 
 def get_storage() -> OCRStorage:
+    """Return the active OCR storage instance in session state."""
     # Handle stale instances in session state after code updates
     refresh = False
     if "ocr_storage" in st.session_state:
@@ -49,4 +49,5 @@ def get_storage() -> OCRStorage:
 
 
 def get_model_manager() -> ModelManager:
+    """Return the shared ModelManager instance kept in session state."""
     return st.session_state["model_manager"]

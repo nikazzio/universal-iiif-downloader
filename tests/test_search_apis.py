@@ -1,5 +1,4 @@
-"""
-Test script for library search APIs (Gallica SRU and Oxford).
+"""Test script for library search APIs (Gallica SRU and Oxford).
 
 Note: Oxford API is deprecated as of Jan 2026 and will return errors.
 Run from project root: python -m tests.test_search_apis
@@ -18,6 +17,7 @@ pytestmark = pytest.mark.skipif(
 
 
 def test_gallica():
+    """Smoke-test Gallica SRU search endpoint."""
     query = "dante"
     print(f"Testing Gallica with query: {query}")
     url = "https://gallica.bnf.fr/SRU"
@@ -42,6 +42,7 @@ def test_gallica():
 
 
 def test_oxford():
+    """Attempt to call the Oxford search API and log output."""
     query = "dante"
     print(f"\nTesting Oxford with query: {query}")
     url = "https://digital.bodleian.ox.ac.uk/api/search/"

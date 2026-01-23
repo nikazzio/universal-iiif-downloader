@@ -1,13 +1,11 @@
 from __future__ import annotations
 
-from typing import Optional, Union
-
 import streamlit as st
 
 from iiif_downloader.config_manager import get_config_manager
 
 
-def _normalize_toast_duration(value: Union[int, str, None]) -> Union[int, str]:
+def _normalize_toast_duration(value: int | str | None) -> int | str:
     """Normalize config values for Streamlit `st.toast(duration=...)`.
 
     Streamlit accepts either:
@@ -16,7 +14,6 @@ def _normalize_toast_duration(value: Union[int, str, None]) -> Union[int, str]:
 
     We treat small ints (<= 60) as seconds for human-friendliness.
     """
-
     if value is None:
         return 3000
 
@@ -40,7 +37,8 @@ def _normalize_toast_duration(value: Union[int, str, None]) -> Union[int, str]:
     return max(250, min(ms, 60_000))
 
 
-def toast(message: str, *, icon: Optional[str] = None, duration: Union[int, str, None] = None) -> None:
+def toast(message: str, *, icon: str | None = None, duration: int | str | None = None) -> None:
+    """Display a Streamlit toast message with optional icon/duration."""
     cm = get_config_manager()
     default_duration = _normalize_toast_duration(cm.get_setting("ui.toast_duration", 3000))
     dur = _normalize_toast_duration(duration) if duration is not None else default_duration

@@ -1,5 +1,5 @@
-"""
-Storage Layer Module
+"""Storage Layer Module.
+
 Handles all database operations and data persistence.
 """
 

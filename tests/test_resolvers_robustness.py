@@ -1,6 +1,4 @@
-"""
-Tests for resolver robustness: trailing slashes, IDs from wrong libraries, etc.
-"""
+"""Tests for resolver robustness: trailing slashes, IDs from wrong libraries, etc."""
 
 import sys
 from pathlib import Path
@@ -13,6 +11,7 @@ sys.path.insert(0, str(project_root))
 
 
 def test_oxford_robustness():
+    """Ensure the Oxford resolver handles legacy URLs and UUID variants."""
     print("\n--- Testing Oxford Robustness ---")
     # Base UUID
     uuid = "cb1df5f1-7435-468b-8860-d56db988b929"
@@ -35,6 +34,7 @@ def test_oxford_robustness():
 
 
 def test_vatican_cross_protection():
+    """Assert Vatican resolver warns when Oxford UUIDs are provided."""
     print("\n--- Testing Vatican Cross-Protection ---")
     uuid = "cb1df5f1-7435-468b-8860-d56db988b929"
 
@@ -47,6 +47,7 @@ def test_vatican_cross_protection():
 
 
 def test_gallica_bpt():
+    """Check Gallica resolver accepts BPT identifiers."""
     print("\n--- Testing Gallica BPT ---")
     bpt_id = "bpt6k9761787t"
     m_url, _d_id = resolve_shelfmark("Gallica (BnF)", bpt_id)

@@ -1,5 +1,6 @@
 import logging
 import sys
+from contextlib import suppress
 from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
 
@@ -60,10 +61,8 @@ def setup_logging():
         if app_logger.level != effective_level:
             app_logger.setLevel(effective_level)
             for h in app_logger.handlers:
-                try:
+                with suppress(TypeError, ValueError, AttributeError):
                     h.setLevel(effective_level)
-                except (TypeError, ValueError, AttributeError):
-                    pass
             app_logger.info("Logging level updated (Level: %s)", log_level)
 
         _STATE["initialized"] = True

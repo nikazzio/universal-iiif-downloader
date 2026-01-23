@@ -6,6 +6,7 @@ from iiif_downloader.pdf_utils import generate_pdf_from_images
 
 
 def test_generate_pdf_from_images_creates_pdf(tmp_path: Path):
+    """Confirm PDF generation from image list succeeds."""
     images_dir = tmp_path / "images"
     images_dir.mkdir()
 

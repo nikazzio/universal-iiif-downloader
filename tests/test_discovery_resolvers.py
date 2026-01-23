@@ -1,5 +1,4 @@
-"""
-Test script for discovery resolvers (Gallica, Oxford, Vaticana).
+"""Test script for discovery resolvers (Gallica, Oxford, Vaticana).
 
 Tests both the resolve_shelfmark() function and the search_*() APIs.
 Run from project root: python -m tests.test_discovery_resolvers
@@ -20,6 +19,7 @@ sys.path.insert(0, str(project_root))
 
 
 def test_gallica():
+    """Exercise Gallica resolver and search helpers."""
     print("\n--- Testing Gallica ---")
     print(
         "Test resolve_shelfmark (ark):",
@@ -38,6 +38,7 @@ def test_gallica():
 
 
 def test_oxford():
+    """Exercise the Oxford resolver with a sample UUID."""
     print("\n--- Testing Oxford ---")
     print(
         "Test resolve_shelfmark (uuid):",

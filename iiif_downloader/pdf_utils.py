@@ -1,4 +1,3 @@
-import logging
 from pathlib import Path
 
 import pymupdf as fitz  # PyMuPDF
@@ -13,7 +12,7 @@ logger = get_logger(__name__)
 
 
 class PdfPasswordProtectedError(RuntimeError):
-    pass
+    """Raised when a PDF cannot be opened because it is password protected."""
 
 
 def _open_pdf_document(pdf_source, password: str | None = None) -> fitz.Document:
@@ -62,7 +61,6 @@ def load_pdf_page(
     By default returns the image (or None). If `return_error=True`, returns
     `(image, error_message)` where error_message is None on success.
     """
-
     try:
         doc = _open_pdf_document(pdf_source, password=password)
         try:
@@ -84,9 +82,7 @@ def load_pdf_page(
 
 
 def generate_pdf_from_images(image_paths, output_path):
-    """
-    Combine a list of image paths into a single PDF.
-    """
+    """Combine a list of image paths into a single PDF."""
     try:
         images = []
         for p in image_paths:
@@ -119,7 +115,6 @@ def convert_pdf_to_images(
     - DPI is configurable (default 300, good for OCR).
     - Detects password-protected PDFs and returns a user-friendly message.
     """
-
     try:
         out_dir = Path(output_dir)
         out_dir.mkdir(parents=True, exist_ok=True)

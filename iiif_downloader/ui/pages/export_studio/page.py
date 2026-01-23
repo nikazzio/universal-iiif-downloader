@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+from contextlib import suppress
 from pathlib import Path
-from typing import List
 
 import streamlit as st
 
@@ -32,7 +32,7 @@ def _get_bool_setting(key: str, default: bool) -> bool:
     return bool(cm.get_setting(key, default))
 
 
-def _paginate(*, items: List[int], enabled: bool, page_size: int) -> List[int]:
+def _paginate(*, items: list[int], enabled: bool, page_size: int) -> list[int]:
     if not enabled:
         return items
 
@@ -48,6 +48,7 @@ def _paginate(*, items: List[int], enabled: bool, page_size: int) -> List[int]:
 
 
 def render_export_studio_page() -> None:
+    """Render the Export Studio interface for professional PDFs."""
     st.title("Export Studio")
     st.caption("Crea un PDF professionale (frontespizio + pagine selezionate + colophon).")
 
@@ -218,7 +219,5 @@ def render_export_studio_page() -> None:
                 cover_logo_bytes=cover_logo_bytes,
             )
         st.success(f"PDF generato: {out_path}")
-        try:
+        with suppress(OSError):
             st.download_button("⬇️ Scarica PDF", data=out_path.read_bytes(), file_name=out_path.name)
-        except OSError:
-            pass

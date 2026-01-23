@@ -1,5 +1,5 @@
-"""
-Sidebar Module - Refactored
+"""Sidebar Module - Refactored.
+
 Modern sidebar with document selection, navigation, metadata, and export tools.
 """
 
@@ -10,15 +10,13 @@ import streamlit as st
 from iiif_downloader.jobs import job_manager
 from iiif_downloader.pdf_utils import generate_pdf_from_images
 from iiif_downloader.ui.notifications import toast
-from iiif_downloader.ui.state import get_storage
 
 from .ocr_utils import render_ocr_controls
 from .studio_state import StudioState
 
 
 def render_studio_sidebar(docs: list, doc_id: str, library: str, paths: dict):
-    """
-    Render the complete sidebar for Studio page.
+    """Render the complete sidebar for Studio page.
 
     Args:
         docs: List of available documents
@@ -26,7 +24,6 @@ def render_studio_sidebar(docs: list, doc_id: str, library: str, paths: dict):
         library: Current library name
         paths: Document paths dictionary
     """
-
     st.sidebar.title("🏛️ Studio")
 
     # Document selection
@@ -64,7 +61,6 @@ def render_studio_sidebar(docs: list, doc_id: str, library: str, paths: dict):
 
 def _render_document_selector(docs: list, current_doc_id: str):
     """Render document selection dropdown."""
-
     st.sidebar.subheader("📚 Selezione Documento")
 
     default_idx = 0
@@ -83,7 +79,6 @@ def _render_document_selector(docs: list, current_doc_id: str):
 
 def _render_quick_navigation(doc_id: str, paths: dict):
     """Render quick page navigation controls."""
-
     st.sidebar.subheader("🧭 Navigazione Rapida")
 
     current_page = StudioState.get_current_page(doc_id)
@@ -139,7 +134,6 @@ def _render_quick_navigation(doc_id: str, paths: dict):
 
 def _render_metadata_panel(meta: dict, stats: dict):
     """Render document metadata in expandable section."""
-
     with st.sidebar.expander("ℹ️ Dettagli Tecnici", expanded=False):
         if stats:
             pages_s = stats.get("pages", [])
@@ -182,21 +176,19 @@ def _render_metadata_panel(meta: dict, stats: dict):
 
 def _render_active_jobs():
     """Display active background jobs."""
-
     st.sidebar.subheader("📤 Job Attivi")
 
     active_jobs = job_manager.list_jobs(active_only=True)
 
     if active_jobs:
         st.sidebar.subheader("⚙️ Job Attivi")
-        for job_id, job in active_jobs.items():
+        for _job_id, job in active_jobs.items():
             progress = int(job.get("progress", 0) * 100)
             st.sidebar.progress(progress / 100, text=f"{job['message']} ({progress}%)")
 
 
 def _render_export_panel(doc_id: str, paths: dict):
     """Render export tools."""
-
     st.sidebar.subheader("📤 Esportazione")
 
     if st.sidebar.button("📄 Genera PDF Completo", width="stretch"):

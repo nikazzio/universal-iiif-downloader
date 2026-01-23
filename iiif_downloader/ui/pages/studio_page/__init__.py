@@ -1,5 +1,5 @@
-"""
-Studio Page - Refactored
+"""Studio Page - Refactored.
+
 Modern interface with image adjustments and cropping.
 """
 
@@ -13,7 +13,6 @@ from .sidebar import render_studio_sidebar
 
 def render_studio_page():
     """Main entry point for Studio page."""
-
     storage = get_storage()
     docs = storage.list_documents()
 

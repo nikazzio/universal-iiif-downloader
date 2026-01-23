@@ -67,3 +67,11 @@ minversion = "6.0"
 addopts = "-ra -q"
 testpaths = ["tests"]
 python_files = "test_*.py"
+
+[tool.semantic_release]
+branch = "main"
+version_variable = "iiif_downloader/__init__.py:__version__"
+tag_format = "v{version}"
+changelog_file = "CHANGELOG.md"
+upload_to_release = true
+build_command = ""

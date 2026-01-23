@@ -1,9 +1,9 @@
-"""
-State Management Module for Studio Page
+"""State Management Module for Studio Page.
+
 Centralized session state management to prevent data loss and ensure consistency.
 """
 
-from typing import Any, Optional
+from typing import Any
 
 import streamlit as st
 
@@ -55,8 +55,8 @@ class StudioState:
 
     @staticmethod
     def get_image_adjustments(doc_id: str, page_num: int) -> dict:
-        """
-        Get image adjustments for a specific page.
+        """Get image adjustments for a specific page.
+
         Returns default values if not set.
         """
         brightness_key = f"{doc_id}_p{page_num}_brightness"
@@ -110,7 +110,7 @@ class StudioState:
         return f"pending_update_{editor_key}" in st.session_state
 
     @staticmethod
-    def get_pending_update(doc_id: str, page_num: int) -> Optional[str]:
+    def get_pending_update(doc_id: str, page_num: int) -> str | None:
         """Get pending update text and clear it from state."""
         editor_key = StudioState.get_editor_key(doc_id, page_num)
         pending_key = f"pending_update_{editor_key}"

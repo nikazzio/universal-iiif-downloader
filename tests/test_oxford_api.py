@@ -1,5 +1,4 @@
-"""
-Legacy test for Oxford/Bodleian API endpoint.
+"""Legacy test for Oxford/Bodleian API endpoint.
 
 Note: This API endpoint is deprecated (returns 404) as of January 2026.
 This test is kept for historical reference.

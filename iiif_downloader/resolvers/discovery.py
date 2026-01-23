@@ -1,8 +1,7 @@
 import re
-import xml.etree.ElementTree as ET
-from typing import Dict, List, Optional, Tuple
 
 import requests
+from defusedxml import ElementTree
 
 from iiif_downloader.logger import get_logger
 from iiif_downloader.utils import DEFAULT_HEADERS
@@ -10,9 +9,9 @@ from iiif_downloader.utils import DEFAULT_HEADERS
 logger = get_logger(__name__)
 
 
-def resolve_shelfmark(library: str, shelfmark: str) -> Tuple[Optional[str], Optional[str]]:
-    """
-    Resolve a library name and shelfmark/ID into a IIIF Manifest URL.
+def resolve_shelfmark(library: str, shelfmark: str) -> tuple[str | None, str | None]:
+    """Resolve a library name and shelfmark/ID into a IIIF Manifest URL.
+
     Returns (manifest_url, doc_id).
     """
     s = shelfmark.strip()
@@ -76,9 +75,8 @@ def resolve_shelfmark(library: str, shelfmark: str) -> Tuple[Optional[str], Opti
     return None, None
 
 
-def search_gallica(query: str, max_records: int = 10) -> List[Dict]:
-    """
-    Search Gallica manuscripts using the official SRU API.
+def search_gallica(query: str, max_records: int = 10) -> list[dict]:
+    """Search Gallica manuscripts using the official SRU API.
 
     Uses the BnF SRU (Search/Retrieve via URL) protocol with CQL queries.
     Documentation: https://api.bnf.fr/fr/api-gallica-de-recherche
@@ -104,11 +102,11 @@ def search_gallica(query: str, max_records: int = 10) -> List[Dict]:
         "startRecord": "1",
     }
 
-    results: List[Dict] = []
+    results: list[dict] = []
     try:
         r = requests.get(url, params=params, headers=DEFAULT_HEADERS, timeout=15)
         r.raise_for_status()
-        root = ET.fromstring(r.text)
+        root = ElementTree.fromstring(r.text)
 
         # Define XML namespaces for parsing
         ns = {
@@ -141,7 +139,7 @@ def search_gallica(query: str, max_records: int = 10) -> List[Dict]:
 
     except requests.RequestException as e:
         logger.error("Network error searching Gallica: %s", e)
-    except ET.ParseError as e:
+    except ElementTree.ParseError as e:
         logger.error("XML parsing error from Gallica: %s", e)
     except Exception as e:  # pylint: disable=broad-exception-caught
         logger.error("Unexpected error searching Gallica: %s", e)
@@ -149,9 +147,8 @@ def search_gallica(query: str, max_records: int = 10) -> List[Dict]:
     return results
 
 
-def search_oxford(_query: str) -> List[Dict]:
-    """
-    Oxford/Bodleian search is currently unavailable.
+def search_oxford(_query: str) -> list[dict]:
+    """Oxford/Bodleian search is currently unavailable.
 
     The Digital Bodleian public search API has been removed (returns 404).
     As of January 2026, there is no publicly documented API endpoint for
