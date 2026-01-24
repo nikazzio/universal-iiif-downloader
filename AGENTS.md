@@ -33,7 +33,6 @@
 *   **New Tool**: Add widget in `sidebar.py`, logic in specific util, state handling in `studio_state.py`.
 
 ## 🚀 GitHub & PR Strategy (MANDATORY)
-- **Do not use `git push`**: The SSH connection is unstable. 
 - **Use GitHub CLI**: Always use `gh` for remote operations.
 - **Push & PR**: To publish changes, run `gh pr create --fill`. This command handles the upload via HTTPS/Token and creates the PR automatically.
 - **Sync**: Use `gh repo sync` to pull changes if `git pull` fails.
