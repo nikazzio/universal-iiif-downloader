@@ -61,20 +61,24 @@ def history_tab_content(doc_id, page, library, info_message: str | None = None):
             ),
             Span(
                 f"+{added}",
-                cls="text-[10px] px-2 py-0.5 rounded-full bg-emerald-900/30 text-emerald-200 font-semibold tracking-wider",
+                cls=(
+                    "text-[10px] px-2 py-0.5 rounded-full bg-emerald-900/30 "
+                    "text-emerald-200 font-semibold tracking-wider",
+                ),
             ),
             Span(
                 f"-{deleted}",
-                cls="text-[10px] px-2 py-0.5 rounded-full bg-rose-900/30 text-rose-200 font-semibold tracking-wider",
+                cls=("text-[10px] px-2 py-0.5 rounded-full bg-rose-900/30 text-rose-200 font-semibold tracking-wider",),
             ),
             cls="flex flex-wrap items-center gap-2 text-xs",
         )
 
-        subtle_status = Span(
-            status.upper(),
-            cls="text-[10px] font-semibold tracking-wider px-2 py-0.5 rounded-full "
-            f"{'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-200' if status == 'verified' else 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-100'}",
+        status_classes = "text-[10px] font-semibold tracking-wider px-2 py-0.5 rounded-full " + (
+            "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-200"
+            if status == "verified"
+            else "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-100"
         )
+        subtle_status = Span(status.upper(), cls=status_classes)
 
         restore_meta = None
         if entry.get("restored_from"):
@@ -94,7 +98,11 @@ def history_tab_content(doc_id, page, library, info_message: str | None = None):
                 info_badges,
                 P(
                     snippet,
-                    cls="text-sm font-mono text-slate-700 dark:text-slate-200 bg-slate-50 dark:bg-slate-900/60 p-3 rounded-xl border border-slate-100 dark:border-slate-800 shadow-inner",
+                    cls=(
+                        "text-sm font-mono text-slate-700 dark:text-slate-200 "
+                        "bg-slate-50 dark:bg-slate-900/60 p-3 rounded-xl border "
+                        "border-slate-100 dark:border-slate-800 shadow-inner",
+                    ),
                 ),
                 *([restore_meta] if restore_meta else []),
                 Div(
@@ -106,7 +114,10 @@ def history_tab_content(doc_id, page, library, info_message: str | None = None):
                         Button(
                             "↺ Ripristina versione",
                             type="submit",
-                            cls="text-[11px] font-bold uppercase tracking-[0.25em] px-3 py-1 rounded-full bg-blue-600 hover:bg-blue-700 text-white shadow-sm transition",
+                            cls=(
+                                "text-[11px] font-bold uppercase tracking-[0.25em] px-3 py-1 rounded-full "
+                                "bg-blue-600 hover:bg-blue-700 text-white shadow-sm transition"
+                            ),
                         ),
                         hx_post="/api/restore_transcription",
                         hx_target="#studio-right-panel",
@@ -118,7 +129,10 @@ def history_tab_content(doc_id, page, library, info_message: str | None = None):
                     ),
                     cls="mt-3",
                 ),
-                cls="relative bg-white dark:bg-gray-900/60 p-4 rounded-2xl border border-gray-200 dark:border-gray-800 shadow-lg space-y-3",
+                cls=(
+                    "relative bg-white dark:bg-gray-900/60 p-4 rounded-2xl border "
+                    "border-gray-200 dark:border-gray-800 shadow-lg space-y-3",
+                ),
             )
         )
 

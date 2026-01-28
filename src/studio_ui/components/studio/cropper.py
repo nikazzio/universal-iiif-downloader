@@ -4,6 +4,7 @@ from fasthtml.common import H3, Button, Div, Form, Input, Label, NotStr, Script,
 
 
 def render_cropper_modal(doc_id, library, page, img_url):
+    """Render the cropper modal."""
     return Div(
         Div(
             Div(

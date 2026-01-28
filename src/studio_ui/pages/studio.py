@@ -52,10 +52,17 @@ def document_picker():
                             Button(
                                 "🗑️ Cancella",
                                 hx_delete=f"/studio/delete?doc_id={quote(doc['id'])}&library={quote(doc['library'])}",
-                                hx_confirm=f"Sei sicuro di voler eliminare DEFINITIVAMENTE '{doc.get('label', doc['id'])}'? Questa operazione non può essere annullata.",
+                                hx_confirm=(
+                                    "Sei sicuro di voler eliminare DEFINITIVAMENTE '"
+                                    + doc.get("label", doc["id"])
+                                    + "'? Questa operazione non può essere annullata."
+                                ),
                                 hx_target="closest .p-10",  # Target the whole picker container to refresh the list
-                                cls="bg-red-50 hover:bg-red-100 text-red-600 dark:bg-red-900/20 "
-                                "dark:hover:bg-red-900/30 dark:text-red-400 px-4 py-2 rounded-lg font-medium transition",
+                                cls=(
+                                    "bg-red-50 hover:bg-red-100 text-red-600 dark:bg-red-900/20 "
+                                    "dark:hover:bg-red-900/30 dark:text-red-400 px-4 py-2 rounded-lg font-medium "
+                                    "transition"
+                                ),
                                 onclick="event.stopPropagation();",  # Prevent card click from opening studio
                             ),
                             cls="flex items-center",
@@ -98,11 +105,18 @@ def studio_layout(title, library, doc_id, page, manifest_url, initial_canvas, ma
                                 Div(
                                     Span(
                                         library,
-                                        cls="bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 text-[11px] font-bold px-3 py-1 rounded uppercase tracking-wider",
+                                        cls=(
+                                            "bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 "
+                                            "dark:text-indigo-400 text-[11px] font-bold px-3 py-1 "
+                                            "rounded uppercase tracking-wider"
+                                        ),
                                     ),
                                     Span(
                                         doc_id,
-                                        cls="bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-[9px] font-mono px-2 py-0.5 rounded",
+                                        cls=(
+                                            "bg-slate-100 dark:bg-slate-800 text-slate-500 "
+                                            "dark:text-slate-400 text-[9px] font-mono px-2 py-0.5 rounded"
+                                        ),
                                     ),
                                     cls="flex gap-2 mt-1",
                                 ),
@@ -162,7 +176,9 @@ def studio_layout(title, library, doc_id, page, manifest_url, initial_canvas, ma
                     url.searchParams.set('page', newPage);
                     window.history.pushState({{}}, '', url);
 
-                    const target = `/studio/partial/tabs?doc_id=${{encodeURIComponent(docId)}}&library=${{encodeURIComponent(library)}}&page=${{newPage}}`;
+                    const target = '/studio/partial/tabs?doc_id=' + encodeURIComponent(docId) +
+                        '&library=' + encodeURIComponent(library) +
+                        '&page=' + newPage;
                     htmx.ajax('GET', target, {{
                         target: '#studio-right-panel',
                         swap: 'innerHTML'

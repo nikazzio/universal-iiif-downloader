@@ -1,10 +1,13 @@
 """API Routes - Simple Manifest Serving.
 
-Serves IIIF manifests with image URLs pointing to static /downloads/ directory.
-No complex IIIF Image API - just plain static files.
+Serves IIIF manifests with image URLs rewritten to point at the local
+`/downloads/` static directory. The heavy lifting for manifest parsing and
+rewriting is delegated to small helpers in `api_helpers.py` so the route stays
+concise and easy to lint.
 """
 
-import json
+from __future__ import annotations
+
 from pathlib import Path
 from urllib.parse import quote, unquote
 
@@ -13,20 +16,27 @@ from fasthtml.common import Request, Response
 from universal_iiif_core.logger import get_logger
 from universal_iiif_core.services.ocr.storage import OCRStorage
 
+from .api_helpers import load_manifest, rewrite_image_urls, total_canvases
+
 logger = get_logger(__name__)
 
 
-def setup_api_routes(app):
+def setup_api_routes(app) -> None:
     """Register API routes for manifest serving."""
 
     @app.get("/iiif/manifest/{library}/{doc_id}")
-    def get_manifest(request: Request, library: str, doc_id: str):
-        """Serve IIIF manifest with images pointing to /downloads/ static directory."""
+    def get_manifest(request: Request, library: str, doc_id: str) -> Response:
+        """Serve an on-disk manifest with image URLs rewritten to static files.
+
+        The function is intentionally small: it validates the manifest path,
+        loads the manifest via `load_manifest`, applies URL rewrites and returns
+        a JSON response.
+        """
         lib_raw = unquote(library)
         doc_raw = unquote(doc_id)
         base_url = f"{request.url.scheme}://{request.url.netloc}"
 
-        logger.info(f"📖 Serving manifest: {lib_raw}/{doc_raw}")
+        logger.info("📖 Serving manifest: %s/%s", lib_raw, doc_raw)
 
         try:
             storage = OCRStorage()
@@ -34,52 +44,29 @@ def setup_api_routes(app):
             manifest_path = Path(paths["manifest"])
 
             if not manifest_path.exists():
-                logger.error(f"Manifest not found: {manifest_path}")
-                return Response(
-                    json.dumps({"error": "Manifest not found"}), status_code=404, media_type="application/json"
-                )
+                logger.error("Manifest not found: %s", manifest_path)
+                return Response('{"error": "Manifest not found"}', status_code=404, media_type="application/json")
 
-            with manifest_path.open(encoding="utf-8") as f:
-                manifest = json.load(f)
+            manifest = load_manifest(manifest_path)
 
-            # Rewrite image URLs to point to /downloads/
             lib_q = quote(lib_raw, safe="")
             doc_q = quote(doc_raw, safe="")
 
-            # IIIF v2 (sequences)
-            if "sequences" in manifest:
-                for sequence in manifest["sequences"]:
-                    for idx, canvas in enumerate(sequence.get("canvases", [])):
-                        for image in canvas.get("images", []):
-                            resource = image.get("resource", {})
-                            if resource:
-                                # Direct path to static file
-                                img_url = f"{base_url}/downloads/{lib_q}/{doc_q}/scans/pag_{idx:04d}.jpg"
-                                resource["@id"] = img_url
-                                resource.pop("service", None)  # Remove IIIF service
+            rewrite_image_urls(manifest, base_url, lib_q, doc_q)
+            pages = total_canvases(manifest)
 
-            # IV v3 (items)
-            if "items" in manifest:
-                for idx, canvas in enumerate(manifest["items"]):
-                    for annot_page in canvas.get("items", []):
-                        for annot in annot_page.get("items", []):
-                            body = annot.get("body", {})
-                            if body:
-                                img_url = f"{base_url}/downloads/{lib_q}/{doc_q}/scans/pag_{idx:04d}.jpg"
-                                body["id"] = img_url
-                                body.pop("service", None)
-
-            total_canvases = (
-                len(manifest.get("sequences", [{}])[0].get("canvases", []))
-                if "sequences" in manifest
-                else len(manifest.get("items", []))
-            )
-            logger.info(f"✅ Served manifest for {doc_raw} ({total_canvases} pages)")
+            logger.info("✅ Served manifest for %s (%d pages)", doc_raw, pages)
 
             return Response(
-                json.dumps(manifest), media_type="application/json", headers={"Access-Control-Allow-Origin": "*"}
+                content=__import__("json").dumps(manifest),
+                media_type="application/json",
+                headers={"Access-Control-Allow-Origin": "*"},
             )
 
-        except Exception as e:
-            logger.exception(f"❌ Error serving manifest: {e}")
-            return Response(json.dumps({"error": str(e)}), status_code=500, media_type="application/json")
+        except Exception as exc:  # pragma: no cover - route-level safety
+            logger.exception("❌ Error serving manifest: %s", exc)
+            return Response(
+                content=__import__("json").dumps({"error": str(exc)}),
+                status_code=500,
+                media_type="application/json",
+            )

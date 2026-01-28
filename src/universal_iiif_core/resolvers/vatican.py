@@ -5,6 +5,7 @@ from .base import BaseResolver
 
 logger = get_logger(__name__)
 
+
 class VaticanResolver(BaseResolver):
     """Resolver for Vatican Library IIIF manifests."""
 
@@ -29,7 +30,7 @@ class VaticanResolver(BaseResolver):
 
     def get_manifest_url(self, url_or_id):
         """Return (manifest_url, id) for a Vatican shelfmark or URL.
-        
+
         Explicitly supports the 'Vaticana' library standardization.
         """
         s = url_or_id.strip()
@@ -49,10 +50,7 @@ class VaticanResolver(BaseResolver):
 
         # Mapping to proper BAV prefixes
         clean_s = (
-            clean_s.replace("Lat.", "lat.")
-                   .replace("Gr.", "gr.")
-                   .replace("Vat.", "vatic.")
-                   .replace("Pal.", "pal.")
+            clean_s.replace("Lat.", "lat.").replace("Gr.", "gr.").replace("Vat.", "vatic.").replace("Pal.", "pal.")
         )
 
         clean_id = clean_s if clean_s.startswith("MSS_") else f"MSS_{clean_s}"
