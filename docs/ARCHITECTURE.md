@@ -21,6 +21,8 @@ graph TD
 - **components/**: tab sets, toast holder, SimpleMDE-powered editor, Mirador viewer, snippet/history cards.
 - **routes/studio.py**: HTMX endpoints (`/api/run_ocr_async`, `/api/check_ocr_status`, `/studio/partial/tabs`, `/studio/partial/history`), plus toast helpers and history refresh control.
 - **UI Enhancements**: the SimpleMDE initializer injects a lightweight CSS/toolbar theme to keep the markdown controls legible, while `_build_toast` now anchors the floating stack at the viewport top-right with a smooth show/hide choreographed by `requestAnimationFrame`.
+- **Viewer config**: the `settings.viewer` section of `config.json` now holds the Mirador/openSeadragon options and the Visual tab defaults/presets so future UI controls can edit them without touching code, and the sidebar is now collapsible with only icons in compact mode (button `☰`, `localStorage` persistence).
+- **Mirador zoom**: the viewer configuration feeds `openSeadragonOptions` (higher `maxZoomPixelRatio`, `maxZoomLevel`) so study sessions can zoom deeper into scans without losing the minimized toolbar/thumbnail setup.
 
 ### iiif_downloader
 - **ocr/**: processor, storage, logger helpers (history snapshots, `compute_text_diff_stats`).
@@ -31,6 +33,7 @@ graph TD
 1. **User clicks Run OCR** → HTMX POST to `/api/run_ocr_async` launches worker thread, sets `OCR_JOBS_STATE`, shows overlay + toast container.
 2. **HTMX polling**: Overlay polls `/api/check_ocr_status` every 2s; success removes overlay, errors show toast/hx update.
 3. **Save/Restore**: `/api/save_transcription` now returns floating toasts plus a hidden `hx-get` trigger that reloads `/studio/partial/history` (optionally carrying an info banner when no change was detected). `/api/restore_transcription` still refreshes the entire right panel and reuses `_build_toast`.
+4. **Visual Tab**: introduce a compact controller that writes a `<style>` tag scoped to the current Mirador canvas, so brightness/contrast/saturation/hue/invert filters apply only to the image on screen without touching toolbars, buttons or thumbnails, and the slider values are mirrored in the UI labels.
 4. **UI state**: `build_studio_tab_content` centralizes metadata/scans loading so `/studio`, `/studio/partial/tabs`, `/api/check_ocr_status` all reuse consistent tab markup, toast container, and history message pipeline.
 
 ## Key Design Decisions

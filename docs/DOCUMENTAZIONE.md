@@ -22,6 +22,13 @@ API key settate in `api_keys`: `openai`, `anthropic`, `google_vision`, `huggingf
 ### 🖼️ Viewer e layout
 * Mirador occupa il 55% sinistro, con configurazione minimale (toolbar disattivata, workspace controls off).
 * La parte destra usa tab HTMX per caricare i contenuti senza ricaricare tutta la pagina (`/studio/partial/tabs` + `/studio/partial/history`).
+* Mirador riceve `openSeadragonOptions` che aumentano `maxZoomPixelRatio` e `maxZoomLevel`, così i conservatori possono zoomare più a fondo sulle pagine senza perdere menu o thumbnails.
+* Il layout espone la favicon/logo `assets/morte_tamburo.png` e una barra laterale riducibile: il pulsante ☰ collassa la sidebar a un collettore di icone, lo stato viene salvato in `localStorage` e il contenuto principale resta largo anche in modalità conversazione compatta.
+
+### 🎚️ Visual Tab
+* La scheda Visual ora offre slider per luminosità, contrasto, saturazione e hue, toggle per 'Inverti colori' e 'Bianco & Nero intenso' e preset rapidi (Default, Lettura notturna, Contrasto+).
+* Un piccolo script creato nel tab inietta un tag `<style>` dedicato e applica i filtri direttamente ai canvas/img che compongono la pagina attiva di Mirador, lasciando menu e miniature inalterati.
+* Il controllo è a risposta immediata e legge i valori dai range input per aggiornare anche l'etichetta numerica accanto a ogni slider; ogni preset riporta anche lo stato dei pulsanti toggle.
 
 ### ✍️ Trascrizione & OCR
 * L’editor principale ora usa SimpleMDE: tema scuro, toolbar personalizzate, `forceSync` e `text-area` in readOnly quando OCR è in corso.
@@ -49,3 +56,4 @@ API key settate in `api_keys`: `openai`, `anthropic`, `google_vision`, `huggingf
 * Per comprare la guida Architettura aggiornata, leggi `docs/ARCHITECTURE.md`.
 * Per aggiungere nuovi tool all’editor, aggiorna `fasthtml_ui/components/studio/transcription.py` (SimpleMDE) e considera di esporre ulteriori toolbar/shortcuts qui.
 * Il core OCR resta in `iiif_downloader/ocr`; tutto ciò che riguarda la UI (toasts, overlay, htmx) è in `fasthtml_ui/`.
+* **Configurazione viewer**: `settings.viewer.mirador.openSeadragonOptions` governa i limiti di zoom/stabilità mentre `settings.viewer.visual_filters` scrive i default/preset di luminosità/contrast/saturazione/hue/invert; la UI aspetta questi valori nella scheda Visual.

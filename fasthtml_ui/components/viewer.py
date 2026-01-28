@@ -8,6 +8,7 @@ a standard DOM CustomEvent 'mirador:page-changed' that HTMX can listen to.
 import json
 
 from fasthtml.common import Div, Script
+from iiif_downloader.config_manager import get_config_manager
 
 
 def mirador_viewer(manifest_url: str, container_id: str = "mirador-viewer", canvas_id: str = None) -> list:
@@ -19,7 +20,7 @@ def mirador_viewer(manifest_url: str, container_id: str = "mirador-viewer", canv
         canvas_id: Optional initial canvas ID to display.
     """
     # Configuration object (Python dictionary)
-    window_config = {
+    base_config = {
         "manifestId": manifest_url,
         "thumbnailNavigationPosition": "far-bottom",
         "allowClose": False,
@@ -27,6 +28,19 @@ def mirador_viewer(manifest_url: str, container_id: str = "mirador-viewer", canv
         "defaultSideBarPanel": "info",
         "sideBarOpenAtStartup": False,
         "views": [{"key": "single"}],
+    }
+
+    cfg = get_config_manager()
+    mirador_settings = cfg.get_setting("viewer.mirador", {}) or {}
+    open_seadragon_defaults = {
+        "maxZoomPixelRatio": 5,
+        "maxZoomLevel": 25,
+        "minZoomLevel": 0.35,
+    }
+    window_config = {**base_config, **{k: v for k, v in mirador_settings.items() if k != "openSeadragonOptions"}}
+    window_config["openSeadragonOptions"] = {
+        **open_seadragon_defaults,
+        **mirador_settings.get("openSeadragonOptions", {}),
     }
 
     # If a specific canvas is requested, add it to the config

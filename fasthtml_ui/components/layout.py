@@ -3,7 +3,7 @@
 Shell HTML con sidebar, headers per Tailwind/HTMX/Mirador, tema chiaro/scuro, e area contenuto principale.
 """
 
-from fasthtml.common import A, Body, Button, Div, Head, Html, Link, Main, Meta, Nav, Script, Title
+from fasthtml.common import A, Body, Button, Div, Head, Html, Img, Link, Main, Meta, Nav, Script, Title
 
 
 def base_layout(title: str, content, active_page: str = "") -> Html:
@@ -40,6 +40,7 @@ def base_layout(title: str, content, active_page: str = "") -> Html:
 
             # Mirador
             Link(rel="stylesheet", href="https://unpkg.com/mirador@latest/dist/mirador.min.css"),
+            Link(rel="icon", href="/assets/morte_tamburo.png"),
             Script(src="https://unpkg.com/mirador@latest/dist/mirador.min.js"),
 
             # Cropper.js (For snippets)
@@ -78,21 +79,49 @@ def _sidebar(active_page: str = "") -> Nav:
 
     return Nav(
         Div(
-            Div("Universal IIIF", cls="text-xl font-bold mb-1 text-white"),
-            Div("Downloader & Studio", cls="text-sm text-gray-400"),
-            cls="mb-8 pb-4 border-b border-gray-700"
+            Div(
+                Div(
+                    Img(src="/assets/morte_tamburo.png", cls="w-10 h-10 rounded-full border border-white/30 shadow-sm"),
+                    Div(
+                        Div("Universal IIIF", cls="text-xl font-bold text-white leading-tight"),
+                        Div("Downloader & Studio", cls="text-xs uppercase tracking-[0.3em] text-gray-400"),
+                        cls="flex flex-col leading-tight sidebar-brand"
+                    ),
+                    cls="flex items-center gap-3"
+                ),
+                Button("☰", onclick="toggleSidebar()", cls="text-2xl focus:outline-none", id="sidebar-toggle"),
+                cls="flex items-center justify-between mb-6"
+            ),
+            cls="sidebar-brand mb-6 pb-4 border-b border-gray-700"
         ),
 
         Div(*[
-            A(Div(Div(icon, cls="text-2xl mr-3"), Div(label, cls="font-medium"), cls="flex items-center"),
-              href=url, cls=_sidebar_link_classes(key == active_page))
+            A(
+                Div(
+                    Div(icon, cls="sidebar-icon text-2xl"),
+                    Div(label, cls="sidebar-label font-medium"),
+                    cls="flex items-center gap-3"
+                ),
+                href=url,
+                cls=_sidebar_link_classes(key == active_page)
+            )
             for key, label, url, icon in nav_items
         ], cls="space-y-1 flex-1"),
 
-        Button(Div(Div("☀️", id="light-icon", cls="text-xl"), Div("🌙", id="dark-icon", cls="text-xl hidden"), cls="flex items-center justify-center"),
-               onclick="toggleTheme()", cls="w-full py-3 px-4 rounded bg-gray-700 hover:bg-gray-600 transition-colors mb-3 text-white"),
+        Button(
+            Div(
+                Div("☀️", id="light-icon", cls="text-xl"),
+                Div("🌙", id="dark-icon", cls="text-xl hidden"),
+                cls="flex items-center justify-center"
+            ),
+            onclick="toggleTheme()",
+            cls="w-full py-3 px-4 rounded bg-gray-700 hover:bg-gray-600 transition-colors mb-3 text-white"
+        ),
 
-        Div(Div("v0.6.0 → FastHTML", cls="text-xs text-gray-500"), cls="pt-4 border-t border-gray-700"),
+        Div(
+            Div("v0.6.0 → FastHTML", cls="text-xs text-gray-500"),
+            cls="pt-4 border-t border-gray-700 sidebar-footer"
+        ),
 
         Script("""
             function toggleTheme() {
@@ -118,7 +147,25 @@ def _sidebar(active_page: str = "") -> Nav:
                 }
             });
         """),
-        cls="w-64 bg-gray-800 dark:bg-gray-950 text-white p-6 flex flex-col transition-colors duration-200"
+        Script("""
+            function setSidebarCollapse(collapsed) {
+                const nav = document.getElementById('app-sidebar');
+                if (!nav) return;
+                nav.classList.toggle('sidebar-collapsed', collapsed);
+                localStorage.setItem('sidebar-collapsed', collapsed ? 'true' : 'false');
+            }
+            function toggleSidebar() {
+                const nav = document.getElementById('app-sidebar');
+                if (!nav) return;
+                setSidebarCollapse(!nav.classList.contains('sidebar-collapsed'));
+            }
+            window.addEventListener('DOMContentLoaded', () => {
+                const collapsed = localStorage.getItem('sidebar-collapsed') === 'true';
+                setSidebarCollapse(collapsed);
+            });
+        """),
+        id="app-sidebar",
+        cls="sidebar w-64 bg-gray-800 dark:bg-gray-950 text-white p-6 flex flex-col transition-all duration-200"
     )
 
 
@@ -142,6 +189,16 @@ def _style_tag():
         ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
         .dark ::-webkit-scrollbar-thumb { background: #475569; }
         
+        .sidebar { width: 16rem; }
+        .sidebar-collapsed { width: 3.5rem !important; }
+        .sidebar-collapsed .sidebar-label { display: none; }
+        .sidebar-collapsed .sidebar-icon { margin-right: 0; }
+        .sidebar-collapsed .sidebar-link { justify-content: center; }
+        .sidebar-collapsed .sidebar-footer,
+        .sidebar-collapsed .sidebar-brand { display: none; }
+        #sidebar-toggle { background: transparent; border: none; color: inherit; }
+        #sidebar-toggle:focus-visible { outline: 2px solid #6366f1; outline-offset: 2px; }
+
         /* FIX MIRADOR THUMBNAIL ANIMATION */
         .mirador-thumbnail-nav-scroll-content { transition: transform 0.2s ease-out !important; }
         .mirador-thumbnail-nav-canvas { border-radius: 4px; overflow: hidden; }

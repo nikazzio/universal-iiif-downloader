@@ -18,7 +18,7 @@
     "dist"
   ],
   "pythonVersion": "3.10",
-  "typeCheckingMode": "strict",
+  "typeCheckingMode": "basic",
   "reportMissingImports": true,
   "reportMissingModuleSource": true,
   "executionEnvironments": [

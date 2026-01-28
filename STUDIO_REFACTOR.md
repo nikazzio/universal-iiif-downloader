@@ -136,6 +136,9 @@ function switchTab(tabName) {
 - **Toasts flottanti**: `_build_toast` genera messaggi fissi in alto a destra con `requestAnimationFrame` che li anima dentro e poi li dissolve; il contenitore `#studio-toast-holder` è `fixed` per rimanere visibile anche quando si scorre.
 - **History live**: La tab storica mostra badge di aggiunte/cancellazioni verdi/rosse, la quantità totale di caratteri e un pulsante di ripristino con conferma; dopo ogni salvataggio viene inserito un trigger HTMX nascosto che ricarica `/studio/partial/history` e può mostrare un banner informativo se il testo non è cambiato.
 - **Route helper**: `_history_refresh_trigger` e `build_studio_tab_content` mantengono sincronizzati i polling OCR e i pannelli tab senza script inline dispersivi, potendo così riutilizzare `/studio` e le partials con lo stesso layout.
+- **Visual tab**: Il tab Visual ora contiene slider per luminosità/contrasto/saturazione/hue, toggle per invertire i colori o passare a bianco e nero e preset rapidi; un piccolo script inietta un CSS mirato solo ai canvas/img di Mirador, così i filtri agiscono esclusivamente sulle immagini senza impattare i controlli o le miniature.
+- **Zoom profondo**: La configurazione di Mirador usa `openSeadragonOptions` con `maxZoomPixelRatio` e `maxZoomLevel` più alti per permettere di isolare caratteri sottili senza alterare l'interfaccia ridotta.
+- **Brand e sidebar**: La sidebar ora mostra la favicon `morte_tamburo.png` accanto al titolo, e può essere ristretta in una barra di icone attivando il pulsante ☰ (salvando lo stato in `localStorage`).
 
 ## Next Steps
 

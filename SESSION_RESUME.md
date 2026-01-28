@@ -81,13 +81,20 @@ Per mantenere il codice manutenibile e scalabile, segui sempre queste regole:
 - **Floating Toast**: `_build_toast` continua a generare messaggi in alto a destra ma ora li anima con `requestAnimationFrame` e li ancoriamo a un contenitore `fixed` per tenerli visibili anche quando si scorre la tab.
 - **History live + diff**: I card della history mostrano badge verde/rosso delle variazioni di caratteri, la quantità totale di testo e un restored metadata; dopo ogni salvataggio viene iniettato un trigger HTMX nascosto (`_history_refresh_trigger`) che ricarica `/studio/partial/history`, mostrando un banner informativo quando il testo non è cambiato.
 - **Helpers**: `_history_refresh_trigger` e `build_studio_tab_content` mantengono sincronizzati polling OCR, overlay e partial, così `/studio`, `/api/check_ocr_status` e le partial condividono lo stesso markup.
+- **Zoom Mirador**: Il viewer passa parametri `openSeadragonOptions` con `maxZoomPixelRatio` e `maxZoomLevel` accresciuti (più zoom possibile senza rompere toolbar/minimini), così la visualizzazione rimane compatta ma concede più dettaglio sui caratteri.
 
-### 9. Salvataggi & History verificati
+### 9. Visual Tab & Filtri
+- **Controlli immagine**: La tab Visual ora raccoglie slider per luminosità, contrasto, saturazione e hue, pulsanti per invertire i colori o passare a bianco e nero e preset rapidi per Lettura notturna e Contrasto+.
+- **Applicazione mirata**: Il tab inietta una regola CSS (`#studio-visual-filter-style`) che targetta canvas/img interni a Mirador, così i filtri agiscono solo sull'immagine attiva lasciando menu e miniature intatti senza dover riavviare il viewer.
+- **Navbar compatta**: Alla sidebar è stata aggiunta la favicon/logo `morte_tamburo.png` e il pulsante ☰ rende la barra laterale un menu in sola icona, con il collapsato persistito in `localStorage`.
+
+### 10. Salvataggi & History verificati
 - **Test salvataggi**: La logica di `save_transcription` ora rileva versioni identiche, restituisce un feedback in pagina con hx-swap-oob e lascia lo storico immutato; ogni salvataggio effettivo salva una snapshot nuova e attiva il refresh della history.
 - **Cronologia migliorata**: La tab History evidenzia versioni revive, mostra dettagli su caratteri aggiunti/rimossi e ha un pulsante di ripristino con conferma, permettendo di tornare a uno snapshot senza lasciare la pagina.
 
-### 10. Documentazione aggiornata
+### 11. Documentazione aggiornata
 - Aggiornate le note in `docs/ARCHITECTURE.md`, `docs/DOCUMENTAZIONE.md` e `STUDIO_REFACTOR.md` per descrivere i nuovi toast, il trigger history e le scelte di styling dell’editor.
+- **Configurazione viewer**: `settings.viewer.mirador.openSeadragonOptions` e `settings.viewer.visual_filters` nel `config.json` ora custodiscono le scelte di zoom/filtri che abbiamo migrato fuori dai componenti per abilitare un’interfaccia futura.
 
 ---
 

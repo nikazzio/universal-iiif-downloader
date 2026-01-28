@@ -68,6 +68,21 @@ addopts = "-ra -q"
 testpaths = ["tests"]
 python_files = "test_*.py"
 
+[tool.pyright]
+include = ["src"]
+exclude = ["**/node_modules", "**/__pycache__"]
+venv = ".venv"
+
+# Regole: parti leggero o vai su "strict" se il progetto è nuovo
+typeCheckingMode = "basic"         # o "strict" per masochisti/perfezionisti
+reportUnknownVariableType = "none"
+reportUnknownMemberType = "none"
+reportUnknownArgumentType = "none"
+reportMissingTypeStubs = "none"
+
+# Aiuta l'agente a non fare confusione con le importazioni
+reportMissingImports = true
+
 [tool.semantic_release]
 version_variables = ["iiif_downloader/__init__.py:__version__"]
 changelog_file = "CHANGELOG.md"

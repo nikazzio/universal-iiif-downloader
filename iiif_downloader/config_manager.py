@@ -93,6 +93,51 @@ DEFAULT_CONFIG_JSON: dict[str, Any] = {
         "testing": {
             "run_live_tests": False,
         },
+        "viewer": {
+            "mirador": {
+                "openSeadragonOptions": {
+                    "maxZoomPixelRatio": 5,
+                    "maxZoomLevel": 25,
+                    "minZoomLevel": 0.35,
+                }
+            },
+            "visual_filters": {
+                "defaults": {
+                    "brightness": 1.0,
+                    "contrast": 1.0,
+                    "saturation": 1.0,
+                    "hue": 0,
+                    "invert": False,
+                    "grayscale": False,
+                },
+                "presets": {
+                    "default": {
+                        "brightness": 1.0,
+                        "contrast": 1.0,
+                        "saturation": 1.0,
+                        "hue": 0,
+                        "invert": False,
+                        "grayscale": False,
+                    },
+                    "night": {
+                        "brightness": 0.9,
+                        "contrast": 1.3,
+                        "saturation": 0.9,
+                        "hue": 0,
+                        "invert": False,
+                        "grayscale": False,
+                    },
+                    "contrast": {
+                        "brightness": 1.05,
+                        "contrast": 1.5,
+                        "saturation": 1.2,
+                        "hue": 0,
+                        "invert": False,
+                        "grayscale": False,
+                    },
+                },
+            },
+        },
     },
 }
 
