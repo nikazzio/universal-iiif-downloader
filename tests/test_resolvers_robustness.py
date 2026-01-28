@@ -3,7 +3,7 @@
 import sys
 from pathlib import Path
 
-from iiif_downloader.resolvers.discovery import resolve_shelfmark
+from universal_iiif_core.resolvers.discovery import resolve_shelfmark
 
 # Add project root to sys.path
 project_root = Path(__file__).parent.parent
@@ -38,7 +38,7 @@ def test_vatican_cross_protection():
     print("\n--- Testing Vatican Cross-Protection ---")
     uuid = "cb1df5f1-7435-468b-8860-d56db988b929"
 
-    m_url, d_id = resolve_shelfmark("Vaticana (BAV)", uuid)
+    m_url, d_id = resolve_shelfmark("Vaticana", uuid)
     print(f"Input UUID to Vatican: {uuid}")
     if m_url is None and "Oxford" in d_id:
         print(f"  ✅ Protected: {d_id}")

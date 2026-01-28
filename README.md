@@ -11,11 +11,13 @@ Uno strumento **professionale** e modulare per scaricare, organizzare e studiare
 ## 🚀 Funzionalità Principali
 
 ### 🏛️ Discovery & Download
+
 - **IIIF Universale**: Scarica da Biblioteca Vaticana, Gallica (BnF), Bodleian e qualsiasi manifest IIIF generico.
 - **Import PDF**: Carica PDF personali trattandoli come manoscritti, con estrazione automatica delle immagini.
 - **Resilienza**: Download parallelo, gestione rate-limit e **Tile Stitching** automatico per aggirare i blocchi su immagini ad alta risoluzione.
 
 ### 🖼️ Studio Digitale
+
 - **Viewer Interattivo**: Deep zoom, pan e navigazione fluida.
 - **Editor Trascrizione**: Editor Rich Text (WYSIWYG) con salvataggio automatico e cronologia versionata per pagina.
 - **OCR/HTR Ibrido**:
@@ -24,6 +26,7 @@ Uno strumento **professionale** e modulare per scaricare, organizzare e studiare
 - **✂️ Snippet & Annotazioni**: Ritaglia dettagli visivi (capolettera, glosse), categorizzali e salvali nel database interno.
 
 ### 🔍 Gestione & Ricerca
+
 - **Ricerca Globale**: Cerca parole chiave in *tutte* le trascrizioni della tua libreria.
 - **Database Vault**: SQLite integrato per la gestione strutturata di metadati e ritagli.
 - **Export**: Generazione PDF delle immagini scaricate.
@@ -37,35 +40,58 @@ Uno strumento **professionale** e modulare per scaricare, organizzare e studiare
 
 ```bash
 # 1. Clona il repository
-git clone https://github.com/yourusername/universal-iiif-downloader.git
-cd universal-iiif-downloader
+git clone https://github.com/yourusername/universal-iiif.git
+cd universal-iiif
 
 # 2. Crea ambiente virtuale
 python3 -m venv .venv
 source .venv/bin/activate  # Linux/Mac
 # .venv\Scripts\activate   # Windows
 
-# 3. Installa dipendenze
-pip install -r requirements.txt
+# 3. Installa il pacchetto in modalità editable
+pip install -e .
+```
+
+Per linting e testing automatizzati puoi installare anche le dipendenze di sviluppo:
+
+```bash
+pip install -r requirements-dev.txt
 ```
 
 ## 💻 Utilizzo
 
-Lancia l'applicazione Web:
+### Web Studio
 
 ```bash
-streamlit run app.py
+python studio_app.py
+```
+
+> Il comando presuppone che il pacchetto sia già installato (`pip install -e .`). Il server FastHTML avvierà Mirador + Studio sull'istanza locale.
+
+### CLI e strumenti di assistenza
+
+```bash
+# Lancio principale del downloader CLI
+python -m universal_iiif_cli.cli <manifest-or-url> [--ocr kraken]
+
+# Lista i manoscritti disponibili
+python -m universal_iiif_cli.cli --list
+
+# Utility di verifica immagini
+python -m universal_iiif_cli.tools.verify_image_processing --library Vatican --doc Urb.lat.1779 --page 7
 ```
 
 ### Configurazione
+
 Al primo avvio viene generato un `config.json`. Puoi modificarlo dalla UI (**⚙️ Impostazioni**) o manualmente per inserire le API Key dei provider OCR. Vedi la [Documentazione](docs/DOCUMENTAZIONE.md#2-configurazione-dettagliata-configjson) per i dettagli.
+
 ## 🧬 Versioning & Release
 
 Il progetto usa **Semantic Versioning** con **python-semantic-release**.
 
 - I rilasci vengono generati automaticamente su `main` in base ai commit **Conventional Commits**.
 - Il tag è nel formato `vX.Y.Z`.
-- La versione runtime è esposta in `iiif_downloader.__version__` e mostrata in UI.
+- La versione runtime è esposta in `universal_iiif_core.__version__` e mostrata in UI.
 
 Esempi di commit:
 
@@ -111,7 +137,7 @@ cp config.example.json config.json
 Per automazioni batch:
 
 ```bash
-python3 main.py "Urb.lat.1779" --ocr "kraken"
+python -m universal_iiif_cli.cli "Urb.lat.1779" --ocr kraken
 ```
 
 > Nota: la CLI usa `--ocr` per Kraken post-download. I provider OpenAI/Anthropic/Google/HF sono selezionabili dalla UI nello Studio.
@@ -119,7 +145,7 @@ python3 main.py "Urb.lat.1779" --ocr "kraken"
 ## 📁 Struttura Cartelle
 
 ```text
-downloads/          # Archivio Manoscritti (Immagini, JSON, PDF)
+var/downloads/      # Archivio Manoscritti (Immagini, JSON, PDF)
 assets/snippets/    # Ritagli salvati
 data/vault.db       # Database SQLite
 models/             # Modelli OCR Kraken

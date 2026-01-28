@@ -6,7 +6,7 @@ This test is kept for historical reference.
 
 import requests
 
-from iiif_downloader.utils import DEFAULT_HEADERS
+from universal_iiif_core.utils import DEFAULT_HEADERS
 
 url = "https://digital.bodleian.ox.ac.uk/api/search/catalog/"
 params = {"q": "dante", "format": "json", "rows": 1}

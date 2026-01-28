@@ -1,12 +1,12 @@
-def test_export_studio_page_importable():
-    """Ensure export studio page component imports cleanly."""
-    from iiif_downloader.ui.pages.export_studio import render_export_studio_page
+def test_studio_routes_importable():
+    """Ensure the new FastHTML studio routes module imports."""
+    from studio_ui.routes.studio import setup_studio_routes
 
-    assert callable(render_export_studio_page)
+    assert callable(setup_studio_routes)
 
 
-def test_export_studio_thumbnail_grid_importable():
-    """Ensure the export studio thumbnail grid component imports."""
-    from iiif_downloader.ui.pages.export_studio.thumbnail_grid import render_thumbnail_grid
+def test_studio_tabs_importable():
+    """Ensure the studio tabs component imports."""
+    from studio_ui.components.studio.tabs import render_studio_tabs
 
-    assert callable(render_thumbnail_grid)
+    assert callable(render_studio_tabs)

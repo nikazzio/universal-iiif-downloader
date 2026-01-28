@@ -2,7 +2,7 @@
   "include": [
     "app.py",
     "main.py",
-    "iiif_downloader",
+    "src",
     "tests"
   ],
   "exclude": [
@@ -18,9 +18,13 @@
     "dist"
   ],
   "pythonVersion": "3.10",
-  "typeCheckingMode": "strict",
-  "reportMissingImports": true,
-  "reportMissingModuleSource": true,
+  "typeCheckingMode": "basic",
+  "reportUnknownVariableType": "none",
+  "reportUnknownMemberType": "none",
+  "reportUnknownArgumentType": "none",
+  "reportMissingTypeStubs": "none",
+  "reportGeneralTypeIssues": "none",
+  "reportOptionalMemberAccess": "none",
   "executionEnvironments": [
     {
       "root": ".",

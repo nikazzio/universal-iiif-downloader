@@ -2,7 +2,7 @@ from pathlib import Path
 
 from PIL import Image
 
-from iiif_downloader.pdf_utils import generate_pdf_from_images
+from universal_iiif_core.pdf_utils import generate_pdf_from_images
 
 
 def test_generate_pdf_from_images_creates_pdf(tmp_path: Path):

@@ -15,7 +15,6 @@ downloads/
 *.pdf
 *.log
 models/
-.streamlit/
 config.json
 config.yaml
 data/vault.db

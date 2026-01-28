@@ -4,6 +4,7 @@
 # Qualità del Codice e Linting
 ruff
 pre-commit
+pyright
 
 # Testing
 pytest

@@ -1,14 +1,10 @@
-import sys
 import time
 import unittest
 from pathlib import Path
 
-from iiif_downloader.cli import resolve_url
-from iiif_downloader.config_manager import get_config_manager
-from iiif_downloader.logic import IIIFDownloader
-
-# Add parent directory to path to import modules
-sys.path.append(str(Path(__file__).parent.parent.resolve()))
+from universal_iiif_cli.cli import resolve_url
+from universal_iiif_core.config_manager import get_config_manager
+from universal_iiif_core.logic import IIIFDownloader
 
 
 @unittest.skipUnless(

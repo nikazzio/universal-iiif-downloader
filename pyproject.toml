@@ -1,3 +1,38 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "universal-iiif"
+version = "0.6.0"
+description = "Universal IIIF Downloader & Studio for working with IIIF manuscripts."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = [
+  "python-fasthtml",
+  "uvicorn",
+  "python-multipart",
+  "python-dotenv",
+  "defusedxml",
+  "Pillow>=10.0.0",
+  "pandas",
+  "requests>=2.31.0",
+  "beautifulsoup4",
+  "tqdm>=4.66.0",
+  "PyMuPDF",
+  "img2pdf>=0.5.1",
+  "openai",
+  "anthropic",
+]
+
+[project.urls]
+Homepage = "https://github.com/yourusername/universal-iiif"
+Repository = "https://github.com/yourusername/universal-iiif"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
 [tool.ruff]
 # Manteniamo le tue impostazioni base
 line-length = 120
@@ -68,8 +103,23 @@ addopts = "-ra -q"
 testpaths = ["tests"]
 python_files = "test_*.py"
 
+[tool.pyright]
+include = ["src"]
+exclude = ["**/node_modules", "**/__pycache__"]
+venv = ".venv"
+
+# Regole: parti leggero o vai su "strict" se il progetto è nuovo
+typeCheckingMode = "basic"         # o "strict" per masochisti/perfezionisti
+reportUnknownVariableType = "none"
+reportUnknownMemberType = "none"
+reportUnknownArgumentType = "none"
+reportMissingTypeStubs = "none"
+
+# Aiuta l'agente a non fare confusione con le importazioni
+reportMissingImports = true
+
 [tool.semantic_release]
-version_variables = ["iiif_downloader/__init__.py:__version__"]
+version_variables = ["src/universal_iiif_core/__init__.py:__version__"]
 changelog_file = "CHANGELOG.md"
 assets = []
 commit_message = "chore(release): {version} [skip ci]"
@@ -81,3 +131,7 @@ build_command = ""
 
 [tool.semantic_release.branches.main]
 match = "main"
+
+[project.scripts]
+iiif-studio = "studio_app:main"
+iiif-cli = "universal_iiif_cli.cli:main"

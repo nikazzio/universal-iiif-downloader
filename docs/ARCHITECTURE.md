@@ -2,73 +2,46 @@
 
 ## Overview
 
-**Universal IIIF Downloader & Studio** is a modular Streamlit application designed for Digital Humanities. It decouples core business logic (downloading, resolving, OCR) from the UI Presentation layer, enabling maintainability and testability.
+Universal IIIF Downloader & Studio now separates a **FastHTML/htmx-based UI shell** (studio_ui/) from the pure Python core (`universal_iiif_core/`). The UI renders HTML elements, wires HTMX for asynchronous swaps, and embeds Mirador, while the back-end keeps all metadata, storage and OCR logic untouched.
 
-## 📦 Module Structure
+## Module Structure
 
-```mermaid
+```
 graph TD
-    App[app.py] --> UI[iiif_downloader/ui]
-    UI --> Logic[iiif_downloader/logic]
-    UI --> OCR[iiif_downloader/ocr]
-    UI --> Storage[iiif_downloader/storage]
-    Logic --> Resolvers[iiif_downloader/resolvers]
-    Logic --> Utils[iiif_downloader/utils]
+    FastHTML[studio_ui/pages & components] --> StudioRoutes[studio_ui/routes/studio]
+    StudioRoutes --> OCR[universal_iiif_core/ocr]
+    StudioRoutes --> Storage[universal_iiif_core/ocr/storage]
+    Campus[studio_ui/components/viewer] --> Mirador[Mirador Viewer]
+    OCR --> Models[universal_iiif_core/ocr/processor]
+    Storage --> Vault[VaultManager + SQLite]
 ```
 
-### Directory Map
+### studio_ui
 
-*   **`iiif_downloader/logic/`**: Core business logic.
-    *   `downloader.py`: Orchestrates IIIF downloads, PDF generation, and tile stitching.
-*   **`iiif_downloader/resolvers/`**: Adapters for different library standards.
-    *   `base.py`: Abstract interface.
-    *   `vatican.py`, `gallica.py`, `oxford.py`: Specific implementations.
-    *   `discovery.py`: Unified entry point for resolving shelfmarks/URLs.
-*   **`iiif_downloader/ocr/`**: OCR/HTR abstraction layer.
-    *   `processor.py`: Unified API for engines (Kraken, OpenAI, Google, etc.).
-    *   `model_manager.py`: Manages local Kraken models.
-    *   `storage.py`: Filesystem persistence for transcriptions and history.
-*   **`iiif_downloader/storage/`**: Data persistence.
-    *   `vault_manager.py`: SQLite database for global snippets and manuscript registry.
-*   **`iiif_downloader/ui/`**: Streamlit Interface.
-    *   `pages/studio_page/`: The main workspace.
-        *   `canvas.py`: Main layout and text editor.
-        *   `image_viewer.py`: Interactive Tiled interaction.
-        *   `sidebar.py`: Contextual tools (OCR commands, metadata).
-        *   `studio_state.py`: Centralized session state management.
-    *   `pages/export_studio/`: PDF/Document export tools.
+- **pages/**: layout builders (`studio_layout`, document picker, Mirador wiring).
+- **components/**: tab sets, toast holder, SimpleMDE-powered editor, Mirador viewer, snippet/history cards.
+- **routes/studio.py**: HTMX endpoints (`/api/run_ocr_async`, `/api/check_ocr_status`, `/studio/partial/tabs`, `/studio/partial/history`), plus toast helpers and history refresh control.
+- **common/**: shared utilities (`build_toast`, htmx history refresh hooks, Mirador window presets) used across routes and partials.
+- **UI Enhancements**: the SimpleMDE initializer injects a lightweight CSS/toolbar theme to keep the markdown controls legible, while `build_toast` now anchors the floating stack at the viewport top-right with a smooth show/hide choreographed by `requestAnimationFrame`.
+- **Viewer config**: the `settings.viewer` section of `config.json` now holds the Mirador/openSeadragon options and the Visual tab defaults/presets so future UI controls can edit them without touching code, and the sidebar is now collapsible with only icons in compact mode (button `☰`, `localStorage` persistence).
+- **Mirador zoom**: the viewer configuration feeds `openSeadragonOptions` (higher `maxZoomPixelRatio`, `maxZoomLevel`) so study sessions can zoom deeper into scans without losing the minimized toolbar/thumbnail setup.
 
-## 🔄 Core Workflows
+### universal_iiif_core
 
-### 1. Discovery & Download
-1.  **Input**: User provides a shelfmark or URL.
-2.  **Resolution**: `discovery.resolve_shelfmark()` identifies the library and fetches the IIIF Manifest.
-3.  **Process**: `IIIFDownloader` iterates through canvases.
-    *   Tries full-size image download.
-    *   **Fallback**: If rate-limited or blocked, uses `iiif_tiles.stitch_iiif_tiles_to_jpeg()` to reconstruct the image from tiles (using mmap for RAM safety).
-4.  **Storage**: Saves to `downloads/{Library}/{ID}/scans/`.
+- **ocr/**: processor, storage, logger helpers (history snapshots, `compute_text_diff_stats`).
+- **storage/**: VaultManager keeps metadata, snippets, and manuscript registry.
+- **utils/**: Shared helpers including JSON I/O and the new text diff helper powering colored history badges.
 
-### 2. The Studio (Editing Loop)
-1.  **Load**: `studio_state.py` loads image paths and transcription JSON.
-2.  **View**: `image_viewer.py` renders the scan.
-3.  **Edit**: User edits text in `text_editor.py` (Quill-based).
-4.  **OCR**: User requests OCR via `sidebar.py` -> `ocr.processor.py`.
-    *   Result updates the JSON and refeshes the editor.
-5.  **Save**: Changes are persisted to `transcription.json` and a versioned history file.
+## Interactive Flow
 
-## 🗄️ Data Persistence
+1. **User clicks Run OCR** → HTMX POST to `/api/run_ocr_async` launches worker thread, sets `OCR_JOBS_STATE`, shows overlay + toast container.
+2. **HTMX polling**: Overlay polls `/api/check_ocr_status` every 2s; success removes overlay, errors show toast/hx update.
+3. **Save/Restore**: `/api/save_transcription` now returns floating toasts plus a hidden `hx-get` trigger that reloads `/studio/partial/history` (optionally carrying an info banner when no change was detected). `/api/restore_transcription` still refreshes the entire right panel and reuses `build_toast`.
+4. **Visual Tab**: introduce a compact controller that writes a `<style>` tag scoped to the current Mirador canvas, so brightness/contrast/saturation/hue/invert filters apply only to the image on screen without touching toolbars, buttons or thumbnails, and the slider values are mirrored in the UI labels.
+5. **UI state**: `build_studio_tab_content` centralizes metadata/scans loading so `/studio`, `/studio/partial/tabs`, `/api/check_ocr_status` all reuse consistent tab markup, toast container, and history message pipeline.
 
-### File System (`downloads/`)
-Stores the bulk content (images, PDFs, JSONs).
-*   `transcription.json`: Contains the current text content and OCR metadata.
-*   `metadata.json`: The original IIIF manifest data.
+## Key Design Decisions
 
-### SQLite Vault (`data/vault.db`)
-Stores structured, cross-document data.
-*   **snippets**: Image crops saved by the user (Blob/Path + Metadata).
-*   **manuscripts**: Registry of downloaded items (for search/indexing).
-
-## 🚀 Key Design Decisions
-*   **Stateless logic, Stateful UI**: Logic modules (`logic/`, `ocr/`) are pure Python and could run in CLI. The UI modules manage `st.session_state`.
-*   **Universal Resolver Pattern**: Adding a library requires adding a single file in `resolvers/` and registering it, without touching the download engine.
-*   **Hybrid OCR**: Supports both local (Kraken) and Cloud (OpenAI/Google) engines via a common strategy pattern in `OCRProcessor`.
+- **Pure HTTP front-end**: The UI load is served via FastHTML and HTMX-managed partials for responsiveness; there are no legacy session frameworks.
+- **Separation of concerns**: `universal_iiif_core` remains business/core logic, studio_ui handles presentation and htmx orchestration.
+- **Resilient UX**: Floating toast container, SimpleMDE styling, and history diffing keep the editing experience predictable even when background OCR jobs overlap.
