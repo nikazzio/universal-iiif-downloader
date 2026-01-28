@@ -13,9 +13,12 @@ def history_refresh_script(doc_id: str, library: str, page_idx: int, info_messag
     if info_message:
         hx_url += f"&info_message={quote(info_message, safe='')}"
 
-    js = (
-        "(function(){"
-        f"setTimeout(function(){{ try{{ htmx.ajax('GET', '{hx_url}', {{target: '#tab-content-history', swap: 'innerHTML'}}); }}catch(e){{console.error('history refresh failed', e);}} }}, 20);"
-        "})();"
-    )
-    return Script(js)
+    parts = [
+        "(function(){",
+        "setTimeout(function(){ try{ htmx.ajax('GET', '",
+        hx_url,
+        "', {target: '#tab-content-history', ",
+        "swap: 'innerHTML'}); }catch(e){console.error('history refresh failed', e);} }, 20);",
+        "})();",
+    ]
+    return Script("".join(parts))

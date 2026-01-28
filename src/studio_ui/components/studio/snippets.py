@@ -9,6 +9,7 @@ from universal_iiif_core.services.ocr.storage import OCRStorage
 
 
 def snippets_tab_content(doc_id, page, library):
+    """Show saved snippets for this document."""
     vault = OCRStorage().vault
     snippets = vault.get_snippets(doc_id)
     content = [
@@ -17,7 +18,11 @@ def snippets_tab_content(doc_id, page, library):
                 "✂️ Nuovo Ritaglio",
                 hx_get=f"/studio/cropper?doc_id={quote(doc_id)}&library={quote(library)}&page={page}",
                 hx_target="#cropper-modal-container",
-                cls="w-full bg-indigo-50 text-indigo-600 border-2 border-dashed border-indigo-200 py-4 rounded-xl font-bold mb-6 hover:bg-indigo-100 transition",
+                cls=(
+                    "w-full bg-indigo-50 text-indigo-600 "
+                    "border-2 border-dashed border-indigo-200 py-4 "
+                    "rounded-xl font-bold mb-6 hover:bg-indigo-100 transition"
+                ),
             ),
             cls="mb-2",
         )
@@ -44,10 +49,16 @@ def snippets_tab_content(doc_id, page, library):
                     cls="flex justify-between items-center mb-2",
                 ),
                 NotStr(
-                    f'<img src="/{s["image_path"]}" class="w-full rounded border bg-white cursor-pointer hover:opacity-90 transition" onclick="window.open(this.src)">'
+                    f'<img src="/{s["image_path"]}" '
+                    'class="w-full rounded border bg-white cursor-pointer hover:opacity-90 transition" '
+                    'onclick="window.open(this.src)">'
                 ),
-                P(s.get("transcription", ""), cls="text-xs mt-2 text-gray-600 italic line-clamp-3"),
-                cls="snippet bg-white dark:bg-gray-800 p-3 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm hover:shadow-md transition",
+                P(s.get("transcription", ""), cls=("text-xs mt-2 text-gray-600 italic line-clamp-3")),
+                cls=(
+                    "snippet bg-white dark:bg-gray-800 p-3 rounded-lg "
+                    "border border-gray-200 dark:border-gray-700 shadow-sm "
+                    "hover:shadow-md transition"
+                ),
             )
         )
 

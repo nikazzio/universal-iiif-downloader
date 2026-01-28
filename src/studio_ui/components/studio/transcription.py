@@ -31,19 +31,29 @@ def transcription_tab_content(doc_id, library, page, error_msg: str = None, is_l
     timestamp = trans.get("timestamp", "N/A") if trans else "N/A"
 
     # Status Badge for the Engine
+    status_extra = (
+        (
+            "border-green-200 bg-emerald-50 text-emerald-800 dark:border-emerald-500/40 "
+            "dark:bg-emerald-900/40 dark:text-emerald-100"
+        )
+        if is_ready
+        else ("border-rose-200 bg-rose-50 text-rose-800 dark:border-rose-500/40 dark:bg-rose-900/30 dark:text-rose-100")
+    )
+
     status_badge = Span(
         "Configurato" if is_ready else "Chiave mancante",
-        cls=(
-            "text-[10px] font-semibold px-2 py-1 rounded-full border "
-            f"{'border-green-200 bg-emerald-50 text-emerald-800 dark:border-emerald-500/40 dark:bg-emerald-900/40 dark:text-emerald-100' if is_ready else 'border-rose-200 bg-rose-50 text-rose-800 dark:border-rose-500/40 dark:bg-rose-900/30 dark:text-rose-100'}"
-        ),
+        cls=("text-[10px] font-semibold px-2 py-1 rounded-full border " + status_extra),
     )
 
     error_alert = None
     if error_msg:
         error_alert = Div(
             Span(f"⚠️ {error_msg}", cls="text-[10px] font-medium"),
-            cls="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-800 text-red-700 dark:text-red-400 rounded-lg animate-in fade-in slide-in-from-top-1",
+            cls=(
+                "mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-100 "
+                "dark:border-red-800 text-red-700 dark:text-red-400 rounded-lg "
+                "animate-in fade-in slide-in-from-top-1"
+            ),
         )
 
     # Disable entire UI if loading
@@ -93,14 +103,21 @@ def transcription_tab_content(doc_id, library, page, error_msg: str = None, is_l
                 hx_swap="outerHTML",
                 id="ocr-form",
             ),
-            cls="bg-gray-50/50 dark:bg-gray-900/30 p-4 rounded-xl border border-gray-100 dark:border-gray-800 shadow-sm mb-6",
+            cls=(
+                "bg-gray-50/50 dark:bg-gray-900/30 p-4 rounded-xl border "
+                "border-gray-100 dark:border-gray-800 shadow-sm mb-6"
+            ),
         )
     )
 
     info_line = Div(
         Span(
             f"PAGINA {page}",
-            cls="text-xs sm:text-sm font-semibold tracking-widest text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800/40 px-3 py-1 rounded-full shadow-inner",
+            cls=(
+                "text-xs sm:text-sm font-semibold tracking-widest text-slate-600 "
+                "dark:text-slate-300 bg-slate-100 dark:bg-slate-800/40 px-3 py-1 "
+                "rounded-full shadow-inner"
+            ),
         ),
         Div(
             Span(f"Motore: {engine_name}", cls="text-sm font-medium text-slate-500 dark:text-slate-300"),
@@ -108,7 +125,11 @@ def transcription_tab_content(doc_id, library, page, error_msg: str = None, is_l
             Span(f"Ultimo salvataggio: {timestamp}", cls="text-sm text-slate-500 dark:text-slate-300"),
             cls="flex flex-wrap items-center gap-1",
         ),
-        cls="flex flex-wrap items-center justify-between gap-3 border border-gray-100 dark:border-gray-800/60 rounded-2xl px-4 py-3 mb-3 bg-white/70 dark:bg-gray-900/50 shadow-sm",
+        cls=(
+            "flex flex-wrap items-center justify-between gap-3 border border-gray-100 "
+            "dark:border-gray-800/60 rounded-2xl px-4 py-3 mb-3 bg-white/70 "
+            "dark:bg-gray-900/50 shadow-sm"
+        ),
     )
 
     components = [
@@ -121,8 +142,9 @@ def transcription_tab_content(doc_id, library, page, error_msg: str = None, is_l
                 id="transcription-simplemde",
                 disabled=is_loading,
                 cls=(
-                    "w-full h-[55vh] border-0 rounded-2xl bg-gradient-to-br from-slate-50 to-white/70 dark:from-slate-950 "
-                    "dark:to-slate-900/70 font-sans text-base leading-relaxed shadow-inner focus:ring-4 focus:ring-indigo-500/30 "
+                    "w-full h-[55vh] border-0 rounded-2xl bg-gradient-to-br from-slate-50 "
+                    "to-white/70 dark:from-slate-950 dark:to-slate-900/70 font-sans "
+                    "text-base leading-relaxed shadow-inner focus:ring-4 focus:ring-indigo-500/30 "
                     "transition-all backdrop-blur-sm"
                     f"{'' if not is_loading else ' opacity-50'}"
                 ),
@@ -309,12 +331,16 @@ def transcription_tab_content(doc_id, library, page, error_msg: str = None, is_l
             onclick=(
                 "(function(){"
                 "const f = document.getElementById('transcription-form');"
-                "if(window.simplemdeTranscription){ const ta=document.getElementById('transcription-simplemde'); ta.value = window.simplemdeTranscription.value(); }"
+                "if(window.simplemdeTranscription){ "
+                "const ta=document.getElementById('transcription-simplemde'); "
+                "ta.value = window.simplemdeTranscription.value(); "
+                "}"
                 "if(f && f.requestSubmit) f.requestSubmit(); else if(f) f.submit();"
                 "})()"
             ),
             cls=(
-                "bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-full shadow-lg transition-all active:scale-95 pointer-events-auto"
+                "bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 "
+                "rounded-full shadow-lg transition-all active:scale-95 pointer-events-auto"
             ),
         ),
         cls="pointer-events-none fixed top-6 right-6 z-60",

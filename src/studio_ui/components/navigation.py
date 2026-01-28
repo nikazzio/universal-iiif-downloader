@@ -38,7 +38,10 @@ def page_navigation(doc_id: str, library: str, current_page: int, total_pages: i
                 disabled=not has_next,
                 cls=_button_classes(has_next),
             ),
-            cls="flex justify-between items-center px-6 py-3 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700",
+            cls=(
+                "flex justify-between items-center px-6 py-3 bg-white "
+                "dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700",
+            ),
         ),
         # Page slider
         Div(
@@ -67,23 +70,23 @@ def page_navigation(doc_id: str, library: str, current_page: int, total_pages: i
             function navigateToPage(page) {{
                 page = parseInt(page);
                 if (page < 1 || page > totalPages) return;
-                
+
                 console.log('🚀 Navigating to page:', page);
-                
+
                 // 1. Update URL (history API)
                 const url = new URL(window.location);
                 url.searchParams.set('page', page);
                 window.history.pushState({{}}, '', url);
-                
+
                 // 2. Update Mirador via Redux dispatch (Robust Lookup)
                 if (window.miradorInstance) {{
                     const state = window.miradorInstance.store.getState();
                     const windowId = Object.keys(state.windows)[0];
-                    
+
                     if (windowId) {{
                         const manifestId = state.windows[windowId].manifestId;
                         const manifest = state.manifests[manifestId];
-                        
+
                         if (manifest && manifest.json) {{
                             // Strategy: Find the N-th canvas in the sequence
                             // Use Mirador's selectors logic (simplified)
@@ -91,11 +94,11 @@ def page_navigation(doc_id: str, library: str, current_page: int, total_pages: i
                             if (sequences && sequences.length > 0) {{
                                 const canvases = sequences[0].canvases;
                                 const targetIndex = page - 1;
-                                
+
                                 if (canvases && canvases[targetIndex]) {{
                                     const targetCanvasId = canvases[targetIndex]['@id'] || canvases[targetIndex].id;
                                     console.log('✅ Found Canvas ID in store:', targetCanvasId);
-                                    
+
                                     window.miradorInstance.store.dispatch({{
                                         type: 'mirador/SET_CANVAS',
                                         windowId: windowId,
@@ -108,13 +111,18 @@ def page_navigation(doc_id: str, library: str, current_page: int, total_pages: i
                         }}
                     }}
                 }}
-                
+
                 // 3. Update UI via HTMX
-                htmx.ajax('GET', `/studio/partial/tabs?doc_id=${{encodeURIComponent(docId)}}&library=${{encodeURIComponent(library)}}&page=${{page}}`, {{
+                const tabsUrl = '/studio/partial/tabs?doc_id=' +
+                    encodeURIComponent(docId) +
+                    '&library=' + encodeURIComponent(library) +
+                    '&page=' + page;
+
+                htmx.ajax('GET', tabsUrl, {{
                     target: '#studio-right-panel',
                     swap: 'innerHTML'
                 }});
-                
+
                 // Aggiornamento componenti locali
                 const counter = document.getElementById('page-counter');
                 if (counter) counter.textContent = `Pagina ${{page}} di ${{totalPages}}`;
@@ -126,7 +134,7 @@ def page_navigation(doc_id: str, library: str, current_page: int, total_pages: i
                 const label = document.getElementById('slider-label');
                 const slider = document.getElementById('page-slider');
                 if (!label || !slider) return;
-                
+
                 const rect = slider.getBoundingClientRect();
                 const percent = (value - 1) / (totalPages - 1);
                 const left = rect.left + (rect.width * percent);

@@ -26,6 +26,12 @@ def _simulate_iiif(image: Image.Image, region: str, size: str) -> Image.Image:
 
 
 def main() -> None:
+    """CLI entrypoint for verifying the local IIIF image processing pipeline.
+
+    Loads a local image (or a configured download) and applies a simulated IIIF
+    region/size transform to ensure the processing pipeline produces a valid
+    JPEG output.
+    """
     parser = argparse.ArgumentParser(description="Verify image processing flow for Universal IIIF downloads.")
     parser.add_argument("--library", default="Vaticana", help="Library folder inside downloads/")
     parser.add_argument("--doc", default="Urb.lat.1779", help="Document identifier (folder name)")

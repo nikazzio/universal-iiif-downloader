@@ -61,7 +61,7 @@ def build_studio_tab_content(
     )
 
 
-def setup_studio_routes(app):
+def setup_studio_routes(app):  # noqa: C901
     """Register all Studio routes."""
 
     @app.get("/studio")
@@ -341,7 +341,8 @@ def setup_studio_routes(app):
             from fasthtml.common import Script
 
             return Script(
-                "document.getElementById('cropper-modal-container').innerHTML = ''; htmx.trigger('#tab-snippets', 'click');"
+                "document.getElementById('cropper-modal-container').innerHTML = ''; "
+                "htmx.trigger('#tab-snippets', 'click');"
             )
 
         except Exception as e:
@@ -367,32 +368,37 @@ def setup_studio_routes(app):
                 js_icon = json.dumps("ℹ️")
                 js_msg = json.dumps("Nessuna modifica rilevata; il testo è identico all'ultima versione.")
                 js_tone = json.dumps("bg-slate-900/90 border border-slate-600/80 text-slate-50 shadow-slate-700/50")
-                js = (
-                    "(function(){"
-                    "try{"
-                    " const stack = document.getElementById('studio-toast-stack');"
-                    " if(stack){"
-                    "  const toast = document.createElement('div');"
-                    "  toast.className = 'studio-toast-entry flex items-center gap-3 rounded-2xl border px-4 py-3 shadow-2xl backdrop-blur-sm opacity-0 -translate-y-3 scale-95 transition-all duration-300 ' + "
-                    + js_tone
-                    + ";"
-                    "  toast.setAttribute('role','status'); toast.setAttribute('aria-live','polite');"
-                    "  toast.innerHTML = '<span class=\\'text-lg leading-none\\>' + "
-                    + js_icon
-                    + " + '</span><span class=\\'text-sm font-semibold text-current\\>' + "
-                    + js_msg
-                    + " + '</span>';"
-                    "  stack.appendChild(toast);"
-                    "  requestAnimationFrame(()=>{ toast.classList.remove('opacity-0','-translate-y-3','scale-95'); toast.classList.add('opacity-100','translate-y-0','scale-100'); });"
-                    "  setTimeout(()=>{ toast.classList.add('opacity-0','translate-y-3'); toast.classList.remove('opacity-100','translate-y-0'); },4800);"
-                    "  setTimeout(()=>{ if(stack.contains(toast)) toast.remove(); },5600);"
-                    " }"
-                    "}catch(e){console.error('toast-err',e);}"
-                    " setTimeout(function(){ try{ htmx.ajax('GET', "
-                    + hx_js_url
-                    + " , {target:'#studio-right-panel', swap:'innerHTML'}); }catch(e){console.error('refresh-err',e);} }, 50);"
-                    "})();"
-                )
+                parts = [
+                    "(function(){",
+                    "try{",
+                    " const stack = document.getElementById('studio-toast-stack');",
+                    " if(stack){",
+                    "  const toast = document.createElement('div');",
+                    "  toast.className = 'studio-toast-entry flex items-center gap-3 rounded-2xl border px-4 py-3 ' + ",
+                    "  'shadow-2xl backdrop-blur-sm opacity-0 -translate-y-3 scale-95 ' + ",
+                    js_tone,
+                    ";",
+                    "  toast.setAttribute('role','status'); toast.setAttribute('aria-live','polite');",
+                    "  toast.innerHTML = '<span class=\\'text-lg leading-none\\>' + ",
+                    js_icon,
+                    " + '</span><span class=\\'text-sm font-semibold text-current\\>' + ",
+                    js_msg,
+                    " + '</span>';",
+                    "  stack.appendChild(toast);",
+                    "  requestAnimationFrame(()=>{ toast.classList.remove('opacity-0','-translate-y-3','scale-95'); ",
+                    " toast.classList.add('opacity-100','translate-y-0','scale-100'); });",
+                    "  setTimeout(()=>{ toast.classList.add('opacity-0','translate-y-3'); ",
+                    " toast.classList.remove('opacity-100','translate-y-0'); },4800);",
+                    "  setTimeout(()=>{ if(stack.contains(toast)) toast.remove(); },5600);",
+                    " }",
+                    "}catch(e){console.error('toast-err',e);}",
+                    " setTimeout(function(){ try{ htmx.ajax('GET', ",
+                    hx_js_url,
+                    " , {target:'#studio-right-panel', swap:'innerHTML'}); ",
+                    " }catch(e){console.error('refresh-err',e);} }, 50);",
+                    "})();",
+                ]
+                js = "".join(parts)
                 return Script(js)
 
             # Save the transcription
@@ -406,60 +412,69 @@ def setup_studio_routes(app):
             js_icon = json.dumps("✅")
             js_msg = json.dumps("Modifiche salvate con successo nello storico")
             js_tone = json.dumps("bg-emerald-900/95 border border-emerald-500/70 text-emerald-50 shadow-emerald-500/40")
-            js = (
-                "(function(){"
-                "try{"
-                " const stack = document.getElementById('studio-toast-stack');"
-                " if(stack){"
-                "  const toast = document.createElement('div');"
-                "  toast.className = 'studio-toast-entry flex items-center gap-3 rounded-2xl border px-4 py-3 shadow-2xl backdrop-blur-sm opacity-0 -translate-y-3 scale-95 transition-all duration-300 ' + "
-                + js_tone
-                + ";"
-                "  toast.setAttribute('role','status'); toast.setAttribute('aria-live','polite');"
-                "  toast.innerHTML = '<span class=\\'text-lg leading-none\\>' + "
-                + js_icon
-                + " + '</span><span class=\\'text-sm font-semibold text-current\\>' + "
-                + js_msg
-                + " + '</span>';"
-                "  stack.appendChild(toast);"
-                "  requestAnimationFrame(()=>{ toast.classList.remove('opacity-0','-translate-y-3','scale-95'); toast.classList.add('opacity-100','translate-y-0','scale-100'); });"
-                "  setTimeout(()=>{ toast.classList.add('opacity-0','translate-y-3'); toast.classList.remove('opacity-100','translate-y-0'); },4800);"
-                "  setTimeout(()=>{ if(stack.contains(toast)) toast.remove(); },5600);"
-                " }"
-                "}catch(e){console.error('toast-err',e);}"
-                " setTimeout(function(){ try{ htmx.ajax('GET', "
-                + hx_js_url
-                + " , {target:'#studio-right-panel', swap:'innerHTML'}); }catch(e){console.error('refresh-err',e);} }, 50);"
-                "})();"
-            )
+            parts = [
+                "(function(){",
+                "try{",
+                " const stack = document.getElementById('studio-toast-stack');",
+                " if(stack){",
+                "  const toast = document.createElement('div');",
+                "  toast.className = 'studio-toast-entry flex items-center gap-3 rounded-2xl border px-4 py-3 ' + ",
+                "  'shadow-2xl backdrop-blur-sm opacity-0 -translate-y-3 scale-95 ' + ",
+                js_tone,
+                ";",
+                "  toast.setAttribute('role','status'); toast.setAttribute('aria-live','polite');",
+                "  toast.innerHTML = '<span class=\\'text-lg leading-none\\>' + ",
+                js_icon,
+                " + '</span><span class=\\'text-sm font-semibold text-current\\>' + ",
+                js_msg,
+                " + '</span>';",
+                "  stack.appendChild(toast);",
+                "  requestAnimationFrame(()=>{ toast.classList.remove('opacity-0','-translate-y-3','scale-95'); ",
+                " toast.classList.add('opacity-100','translate-y-0','scale-100'); });",
+                "  setTimeout(()=>{ toast.classList.add('opacity-0','translate-y-3'); ",
+                " toast.classList.remove('opacity-100','translate-y-0'); },4800);",
+                "  setTimeout(()=>{ if(stack.contains(toast)) toast.remove(); },5600);",
+                " }",
+                "}catch(e){console.error('toast-err',e);}",
+                " setTimeout(function(){ try{ htmx.ajax('GET', ",
+                hx_js_url,
+                " , {target:'#studio-right-panel', swap:'innerHTML'}); ",
+                " }catch(e){console.error('refresh-err',e);} }, 50);",
+                "})();",
+            ]
+            js = "".join(parts)
             return Script(js)
         except Exception as e:
             js_icon = json.dumps("⚠️")
             js_msg = json.dumps(f"Errore durante il salvataggio: {e}")
             js_tone = json.dumps("bg-rose-900/90 border border-rose-500/70 text-rose-50 shadow-rose-500/40")
-            js = (
-                "(function(){"
-                "try{"
-                " const stack = document.getElementById('studio-toast-stack');"
-                " if(stack){"
-                "  const toast = document.createElement('div');"
-                "  toast.className = 'studio-toast-entry flex items-center gap-3 rounded-2xl border px-4 py-3 shadow-2xl backdrop-blur-sm opacity-0 -translate-y-3 scale-95 transition-all duration-300 ' + "
-                + js_tone
-                + ";"
-                "  toast.setAttribute('role','status'); toast.setAttribute('aria-live','polite');"
-                "  toast.innerHTML = '<span class=\\'text-lg leading-none\\>' + "
-                + js_icon
-                + " + '</span><span class=\\'text-sm font-semibold text-current\\>' + "
-                + js_msg
-                + " + '</span>';"
-                "  stack.appendChild(toast);"
-                "  requestAnimationFrame(()=>{ toast.classList.remove('opacity-0','-translate-y-3','scale-95'); toast.classList.add('opacity-100','translate-y-0','scale-100'); });"
-                "  setTimeout(()=>{ toast.classList.add('opacity-0','translate-y-3'); toast.classList.remove('opacity-100','translate-y-0'); },4800);"
-                "  setTimeout(()=>{ if(stack.contains(toast)) toast.remove(); },5600);"
-                " }"
-                "}catch(e){console.error('toast-err',e);}"
-                "})();"
-            )
+            parts = [
+                "(function(){",
+                "try{",
+                " const stack = document.getElementById('studio-toast-stack');",
+                " if(stack){",
+                "  const toast = document.createElement('div');",
+                "  toast.className = 'studio-toast-entry flex items-center gap-3 rounded-2xl border px-4 py-3 ' + ",
+                "  'shadow-2xl backdrop-blur-sm opacity-0 -translate-y-3 scale-95 ' + ",
+                js_tone,
+                ";",
+                "  toast.setAttribute('role','status'); toast.setAttribute('aria-live','polite');",
+                "  toast.innerHTML = '<span class=\\'text-lg leading-none\\>' + ",
+                js_icon,
+                " + '</span><span class=\\'text-sm font-semibold text-current\\>' + ",
+                js_msg,
+                " + '</span>';",
+                "  stack.appendChild(toast);",
+                "  requestAnimationFrame(()=>{ toast.classList.remove('opacity-0','-translate-y-3','scale-95'); ",
+                " toast.classList.add('opacity-100','translate-y-0','scale-100'); });",
+                "  setTimeout(()=>{ toast.classList.add('opacity-0','translate-y-3'); ",
+                " toast.classList.remove('opacity-100','translate-y-0'); },4800);",
+                "  setTimeout(()=>{ if(stack.contains(toast)) toast.remove(); },5600);",
+                " }",
+                "}catch(e){console.error('toast-err',e);}",
+                "})();",
+            ]
+            js = "".join(parts)
             return Script(js)
 
     @app.delete("/api/delete_snippet/{snippet_id}")

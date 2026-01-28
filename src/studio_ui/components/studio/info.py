@@ -8,6 +8,7 @@ from studio_ui.config import get_setting
 
 
 def info_row(label, value):
+    """Render a single info row."""
     val = value[0] if isinstance(value, list) and value else value
     if val in (None, ""):
         val = "N/D"
@@ -19,6 +20,7 @@ def info_row(label, value):
 
 
 def _flatten_text(value):
+    """Flatten various metadata value formats into a simple string."""
     if value is None:
         return ""
     if isinstance(value, str):
@@ -115,11 +117,14 @@ def _render_metadata_grid(entries, title, max_rows=8):
             rows.append(info_row(label, value))
     if not rows:
         return None
-    return Div(
-        H4(title, cls="text-xs font-bold uppercase tracking-[0.3em] text-slate-400"),
-        Div(*rows, cls="grid gap-3 sm:grid-cols-2"),
-        cls="space-y-2 bg-slate-50 dark:bg-slate-900/40 p-4 rounded-2xl border border-dashed border-slate-200 dark:border-slate-700",
-    )
+        return Div(
+            H4(title, cls="text-xs font-bold uppercase tracking-[0.3em] text-slate-400"),
+            Div(*rows, cls="grid gap-3 sm:grid-cols-2"),
+            cls=(
+                "space-y-2 bg-slate-50 dark:bg-slate-900/40 p-4 rounded-2xl border "
+                "border-dashed border-slate-200 dark:border-slate-700",
+            ),
+        )
 
 
 def _render_see_also(entries, title):
@@ -188,6 +193,7 @@ def _render_providers(entries):
 
 
 def info_tab_content(meta, total_pages, manifest_json, page_idx, doc_id, library):
+    """Render the Info tab content."""
     manifest = manifest_json or {}
     title = _flatten_text(manifest.get("label")) or meta.get("title") or doc_id
     description = _flatten_text(manifest.get("description")) or meta.get("description") or ""
@@ -221,6 +227,8 @@ def info_tab_content(meta, total_pages, manifest_json, page_idx, doc_id, library
             service = _resolve_url(svc)
         elif isinstance(svc, str):
             service = svc
+    # ensure we compute a concrete URL string (or None) and use it for A(...)
+    resource_url = _resolve_url(resource) if resource else None
     thumbnail_url = _thumbnail_url(canvas.get("thumbnail")) or _thumbnail_url(manifest.get("thumbnail"))
     canvas_preview = (
         Div(
@@ -255,7 +263,7 @@ def info_tab_content(meta, total_pages, manifest_json, page_idx, doc_id, library
         info_row("Dimensioni immagine", resource_dims),
         info_row(
             "Immagine IIIF",
-            A("Apri risorsa", href=_resolve_url(resource), target="_blank", rel="noreferrer") if resource else "N/D",
+            A("Apri risorsa", href=resource_url, target="_blank", rel="noreferrer") if resource_url else "N/D",
         ),
         info_row(
             "Servizio IIIF",
@@ -285,7 +293,10 @@ def info_tab_content(meta, total_pages, manifest_json, page_idx, doc_id, library
                 canvas_preview and Div(canvas_preview, cls="block lg:hidden"),
                 cls="space-y-4",
             ),
-            cls="space-y-6 p-6 bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 shadow-lg",
+            cls=(
+                "space-y-6 p-6 bg-white dark:bg-gray-900 rounded-2xl border "
+                "border-gray-100 dark:border-gray-800 shadow-lg",
+            ),
         )
     ]
 
@@ -342,6 +353,7 @@ def _visual_control_row(label_text, control_id, min_val, max_val, step, value):
 
 
 def visual_tab_content():
+    """Render the Visual Filters tab content."""
     visual_cfg = get_setting("viewer.visual_filters", {}) or {}
     defaults = {**DEFAULT_VISUAL_STATE, **visual_cfg.get("defaults", {})}
     presets = visual_cfg.get("presets", DEFAULT_VISUAL_PRESETS)
@@ -359,8 +371,8 @@ def visual_tab_content():
                 '#mirador-viewer .mirador-viewer-window .mirador-window-center img',
             ].join(',');
             const styleId = 'studio-visual-filter-style';
-            const defaultState = %s;
-            const presets = %s;
+            const defaultState = __DEFAULT_STATE__;
+            const presets = __PRESETS__;
             const state = { ...defaultState };
 
             const ensureStyle = () => {
@@ -476,7 +488,7 @@ def visual_tab_content():
                 }
             });
         })();
-    """ % (default_state_json, presets_json)
+    """.replace("__DEFAULT_STATE__", default_state_json).replace("__PRESETS__", presets_json)
 
     return [
         Div(
@@ -498,13 +510,19 @@ def visual_tab_content():
                 Button(
                     "Inverti colori",
                     type="button",
-                    cls="flex-1 text-sm font-semibold uppercase tracking-[0.2em] px-3 py-2 rounded-full border border-slate-300 text-slate-700 dark:text-slate-100",
+                    cls=(
+                        "flex-1 text-sm font-semibold uppercase tracking-[0.2em] px-3 py-2 rounded-full "
+                        "border border-slate-300 text-slate-700 dark:text-slate-100"
+                    ),
                     **{"data-visual-toggle": "invert"},
                 ),
                 Button(
                     "B/N intenso",
                     type="button",
-                    cls="flex-1 text-sm font-semibold uppercase tracking-[0.2em] px-3 py-2 rounded-full border border-slate-300 text-slate-700 dark:text-slate-100",
+                    cls=(
+                        "flex-1 text-sm font-semibold uppercase tracking-[0.2em] px-3 py-2 rounded-full "
+                        "border border-slate-300 text-slate-700 dark:text-slate-100"
+                    ),
                     **{"data-visual-toggle": "grayscale"},
                 ),
                 cls="flex gap-3 mt-4",
@@ -513,19 +531,28 @@ def visual_tab_content():
                 Button(
                     "Default",
                     type="button",
-                    cls="text-xs font-bold uppercase px-3 py-2 rounded-full bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-100 transition",
+                    cls=(
+                        "text-xs font-bold uppercase px-3 py-2 rounded-full bg-slate-100 "
+                        "text-slate-800 dark:bg-slate-800 dark:text-slate-100 transition"
+                    ),
                     **{"data-visual-preset": "default"},
                 ),
                 Button(
                     "Lettura notturna",
                     type="button",
-                    cls="text-xs font-bold uppercase px-3 py-2 rounded-full bg-gradient-to-r from-indigo-500 to-slate-900 text-white shadow-lg",
+                    cls=(
+                        "text-xs font-bold uppercase px-3 py-2 rounded-full bg-gradient-to-r "
+                        "from-indigo-500 to-slate-900 text-white shadow-lg"
+                    ),
                     **{"data-visual-preset": "night"},
                 ),
                 Button(
                     "Contrasto +",
                     type="button",
-                    cls="text-xs font-bold uppercase px-3 py-2 rounded-full bg-gradient-to-r from-emerald-500 to-emerald-700 text-white shadow-lg",
+                    cls=(
+                        "text-xs font-bold uppercase px-3 py-2 rounded-full bg-gradient-to-r "
+                        "from-emerald-500 to-emerald-700 text-white shadow-lg"
+                    ),
                     **{"data-visual-preset": "contrast"},
                 ),
                 cls="flex flex-wrap gap-2 mt-4",
@@ -535,6 +562,9 @@ def visual_tab_content():
                 cls="text-xs text-slate-400 dark:text-slate-500 mt-3",
             ),
             Script(visual_script),
-            cls="p-4 bg-white dark:bg-gray-900/60 rounded-2xl border border-gray-200 dark:border-gray-800 shadow-lg space-y-4",
+            cls=(
+                "p-4 bg-white dark:bg-gray-900/60 rounded-2xl border "
+                "border-gray-200 dark:border-gray-800 shadow-lg space-y-4"
+            ),
         )
     ]

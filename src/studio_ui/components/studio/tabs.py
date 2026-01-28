@@ -147,7 +147,13 @@ def render_studio_tabs(
                 let resolved = false;
                 const timeoutId = window.setTimeout(() => {{
                     if (!resolved) {{
-                        console.warn('OCR poll appears stuck for doc', docId, 'lib', libId, 'page', pageIdx, 'after', timeoutMs, 'ms');
+                        console.warn(
+                            'OCR poll appears stuck for doc',
+                            docId,
+                            'lib', libId,
+                            'page', pageIdx,
+                            'after', timeoutMs, 'ms'
+                        );
                     }}
                 }}, timeoutMs);
 

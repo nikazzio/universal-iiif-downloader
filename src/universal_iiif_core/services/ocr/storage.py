@@ -77,7 +77,7 @@ class OCRStorage:
                     )
         return docs
 
-    def get_document_paths(self, doc_id: str, library: str = "Unknown") -> dict[str, Path]:
+    def get_document_paths(self, doc_id: str, library: str = "Unknown") -> dict[str, Path]:  # noqa: C901
         """Retrieve authoritative paths for a document from DB or FS fallback."""
         doc_path = None
 
