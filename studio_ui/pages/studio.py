@@ -5,10 +5,10 @@ from urllib.parse import quote
 
 from fasthtml.common import H2, H3, A, Button, Div, P, Script, Span
 
-from fasthtml_ui.components.studio.tabs import render_studio_tabs
-from fasthtml_ui.components.viewer import mirador_viewer
-from fasthtml_ui.ocr_state import is_ocr_job_running
 from iiif_downloader.ocr.storage import OCRStorage
+from studio_ui.components.studio.tabs import render_studio_tabs
+from studio_ui.components.viewer import mirador_viewer
+from studio_ui.ocr_state import is_ocr_job_running
 
 
 def document_picker():
@@ -41,6 +41,11 @@ def document_picker():
                             A(
                                 "Apri Studio",
                                 href=f"/studio?doc_id={quote(doc['id'])}&library={quote(doc['library'])}",
+                                hx_get=f"/studio?doc_id={quote(doc['id'])}&library={quote(doc['library'])}",
+                                hx_target="#app-main",
+                                hx_swap="innerHTML",
+                                hx_push_url="true",
+                                onclick="event.stopPropagation();",
                                 cls="bg-indigo-600 hover:bg-indigo-700 text-white dark:bg-indigo-500 "
                                 "dark:hover:bg-indigo-600 px-6 py-2 rounded-lg font-bold shadow-sm transition mr-3",
                             ),
@@ -48,10 +53,10 @@ def document_picker():
                                 "🗑️ Cancella",
                                 hx_delete=f"/studio/delete?doc_id={quote(doc['id'])}&library={quote(doc['library'])}",
                                 hx_confirm=f"Sei sicuro di voler eliminare DEFINITIVAMENTE '{doc.get('label', doc['id'])}'? Questa operazione non può essere annullata.",
-                                hx_target="closest .p-10", # Target the whole picker container to refresh the list
+                                hx_target="closest .p-10",  # Target the whole picker container to refresh the list
                                 cls="bg-red-50 hover:bg-red-100 text-red-600 dark:bg-red-900/20 "
                                 "dark:hover:bg-red-900/30 dark:text-red-400 px-4 py-2 rounded-lg font-medium transition",
-                                onclick="event.stopPropagation();", # Prevent card click from opening studio
+                                onclick="event.stopPropagation();",  # Prevent card click from opening studio
                             ),
                             cls="flex items-center",
                         ),
@@ -60,7 +65,10 @@ def document_picker():
                     cls="bg-white dark:bg-gray-800 p-6 rounded-xl border border-gray-100 "
                     "dark:border-gray-700 mb-4 shadow-sm hover:shadow-lg transition-all "
                     "transform hover:-translate-y-1 cursor-pointer",
-                    onclick=f"window.location='/studio?doc_id={quote(doc['id'])}&library={quote(doc['library'])}'",
+                    hx_get=f"/studio?doc_id={quote(doc['id'])}&library={quote(doc['library'])}",
+                    hx_target="#app-main",
+                    hx_swap="innerHTML",
+                    hx_push_url="true",
                 )
                 for doc in clean_docs
             ],
@@ -70,7 +78,7 @@ def document_picker():
     )
 
 
-def studio_layout(title, library, doc_id, page, manifest_url, initial_canvas, manifest_json, total_pages):
+def studio_layout(title, library, doc_id, page, manifest_url, initial_canvas, manifest_json, total_pages, meta):
     """Render the main Studio split-view layout."""
     return Div(
         Div(
@@ -88,13 +96,19 @@ def studio_layout(title, library, doc_id, page, manifest_url, initial_canvas, ma
                             Div(
                                 H2(title, cls="text-3xl font-black text-slate-900 dark:text-white tracking-tight"),
                                 Div(
-                                    Span(library, cls="bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 text-[11px] font-bold px-3 py-1 rounded uppercase tracking-wider"),
-                                    Span(doc_id, cls="bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-[9px] font-mono px-2 py-0.5 rounded"),
+                                    Span(
+                                        library,
+                                        cls="bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 text-[11px] font-bold px-3 py-1 rounded uppercase tracking-wider",
+                                    ),
+                                    Span(
+                                        doc_id,
+                                        cls="bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-[9px] font-mono px-2 py-0.5 rounded",
+                                    ),
                                     cls="flex gap-2 mt-1",
                                 ),
-                                cls="flex-1 min-w-0"
+                                cls="flex-1 min-w-0",
                             ),
-                            cls="flex items-start justify-between"
+                            cls="flex items-start justify-between",
                         ),
                         cls="px-6 py-8 border-b border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900/50",
                     ),
@@ -104,9 +118,10 @@ def studio_layout(title, library, doc_id, page, manifest_url, initial_canvas, ma
                             doc_id,
                             library,
                             int(page),
-                            manifest_json,
+                            meta,
                             total_pages,
-                            is_ocr_loading=is_ocr_job_running(doc_id, int(page))
+                            manifest_json=manifest_json,
+                            is_ocr_loading=is_ocr_job_running(doc_id, int(page)),
                         ),
                         id="studio-right-panel",
                         cls="flex-1 overflow-hidden h-full",
@@ -120,26 +135,40 @@ def studio_layout(title, library, doc_id, page, manifest_url, initial_canvas, ma
         ),
         # Modal placeholder
         Div(id="cropper-modal-container"),
+        # Global toast holder (outside of the right-panel so toasts survive panel swaps)
+        Div(
+            Div(id="studio-toast-stack", cls="flex flex-col gap-2 items-end"),
+            id="studio-toast-holder",
+            cls="pointer-events-none fixed top-4 right-4 z-60 flex w-[min(360px,95vw)] flex-col items-end px-4",
+        ),
         Script(f"""
-            document.addEventListener('mirador:page-changed', function(e) {{
-                const newPage = e.detail.page;
-                const library = {json.dumps(library)};
-                const docId = {json.dumps(doc_id)};
-                const totalPages = {total_pages};
+            (function() {{
+                if (window.__studioMiradorListenerBound) return;
+                window.__studioMiradorListenerBound = true;
 
-                console.log('📄 Page changed to:', newPage);
-                
-                // 1. Update URL History
-                const url = new URL(window.location);
-                url.searchParams.set('page', newPage);
-                window.history.pushState({{}}, '', url);
+                document.addEventListener('mirador:page-changed', function(e) {{
+                    const panel = document.getElementById('studio-right-panel');
+                    if (!panel) return;
 
-                const target = `/studio/partial/tabs?doc_id=${{encodeURIComponent(docId)}}&library=${{encodeURIComponent(library)}}&page=${{newPage}}`;
-                htmx.ajax('GET', target, {{
-                    target: '#studio-right-panel',
-                    swap: 'innerHTML'
+                    const newPage = e.detail.page;
+                    const library = {json.dumps(library)};
+                    const docId = {json.dumps(doc_id)};
+                    const totalPages = {total_pages};
+
+                    console.log('📄 Page changed to:', newPage);
+
+                    // 1. Update URL History
+                    const url = new URL(window.location);
+                    url.searchParams.set('page', newPage);
+                    window.history.pushState({{}}, '', url);
+
+                    const target = `/studio/partial/tabs?doc_id=${{encodeURIComponent(docId)}}&library=${{encodeURIComponent(library)}}&page=${{newPage}}`;
+                    htmx.ajax('GET', target, {{
+                        target: '#studio-right-panel',
+                        swap: 'innerHTML'
+                    }});
                 }});
-            }});
+            }})();
         """),
         cls="flex flex-col h-screen overflow-hidden",
     )

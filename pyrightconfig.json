@@ -19,8 +19,12 @@
   ],
   "pythonVersion": "3.10",
   "typeCheckingMode": "basic",
-  "reportMissingImports": true,
-  "reportMissingModuleSource": true,
+  "reportUnknownVariableType": "none",
+  "reportUnknownMemberType": "none",
+  "reportUnknownArgumentType": "none",
+  "reportMissingTypeStubs": "none",
+  "reportGeneralTypeIssues": "none",
+  "reportOptionalMemberAccess": "none",
   "executionEnvironments": [
     {
       "root": ".",

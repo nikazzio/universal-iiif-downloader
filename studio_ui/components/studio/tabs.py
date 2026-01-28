@@ -5,10 +5,10 @@ from urllib.parse import quote
 
 from fasthtml.common import Button, Div, Script, Span
 
-from fasthtml_ui.components.studio.history import history_tab_content
-from fasthtml_ui.components.studio.info import info_tab_content, visual_tab_content
-from fasthtml_ui.components.studio.snippets import snippets_tab_content
-from fasthtml_ui.components.studio.transcription import transcription_tab_content
+from studio_ui.components.studio.history import history_tab_content
+from studio_ui.components.studio.info import info_tab_content, visual_tab_content
+from studio_ui.components.studio.snippets import snippets_tab_content
+from studio_ui.components.studio.transcription import transcription_tab_content
 
 
 def render_studio_tabs(
@@ -17,6 +17,7 @@ def render_studio_tabs(
     page,
     meta,
     total_pages,
+    manifest_json=None,
     *,
     is_ocr_loading: bool = False,
     ocr_error: str | None = None,
@@ -69,7 +70,7 @@ def render_studio_tabs(
             Div(
                 *transcription_tab_content(doc_id, library, page_idx, error_msg=ocr_error, is_loading=is_ocr_loading),
                 id="transcription-container",
-                cls="relative h-full"
+                cls="relative h-full",
             ),
             id="tab-content-transcription",
             cls="tab-content h-full",
@@ -85,7 +86,11 @@ def render_studio_tabs(
             cls="tab-content hidden h-full",
         ),
         Div(*visual_tab_content(), id="tab-content-visual", cls="tab-content hidden h-full"),
-        Div(*info_tab_content(meta, total_pages), id="tab-content-info", cls="tab-content hidden h-full"),
+        Div(
+            *info_tab_content(meta, total_pages, manifest_json, page_idx, doc_id, library),
+            id="tab-content-info",
+            cls="tab-content hidden h-full",
+        ),
         cls="flex-1 overflow-y-auto p-4",
     )
 
@@ -103,12 +108,7 @@ def render_studio_tabs(
         }
     """)
 
-    main_panel = Div(
-        buttons,
-        tab_contents,
-        switch_script,
-        cls="flex flex-col h-full overflow-hidden"
-    )
+    main_panel = Div(buttons, tab_contents, switch_script, cls="flex flex-col h-full overflow-hidden")
 
     overlay = None
     overlay_script = None
@@ -121,10 +121,12 @@ def render_studio_tabs(
             Div(
                 Div(cls="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 mb-4"),
                 Span("AI in ascolto...", cls="text-indigo-600 font-bold tracking-widest uppercase text-[10px]"),
-                cls="flex flex-col items-center justify-center h-full"
+                cls="flex flex-col items-center justify-center h-full",
             ),
-            cls=("absolute inset-0 bg-white/90 dark:bg-gray-950/90 backdrop-blur-[2px] z-50 rounded-xl "
-                 "flex items-center justify-center pointer-events-auto"),
+            cls=(
+                "absolute inset-0 bg-white/90 dark:bg-gray-950/90 backdrop-blur-[2px] z-50 rounded-xl "
+                "flex items-center justify-center pointer-events-auto"
+            ),
             hx_get=hx_path,
             hx_trigger="every 2s",
             hx_target="#studio-right-panel",
@@ -163,19 +165,10 @@ def render_studio_tabs(
             }})();"""
         )
 
-    toast_holder = Div(
-        Div(id="studio-toast-stack", cls="flex flex-col gap-2 items-end"),
-        id="studio-toast-holder",
-        cls="pointer-events-none fixed top-4 right-4 z-60 flex w-[min(360px,95vw)] flex-col items-end px-4",
-    )
-
-    wrapper_children = [main_panel, toast_holder]
+    wrapper_children = [main_panel]
     if overlay:
         wrapper_children.append(overlay)
     if overlay_script:
         wrapper_children.append(overlay_script)
 
-    return Div(
-        *wrapper_children,
-        cls="relative h-full"
-    )
+    return Div(*wrapper_children, cls="relative h-full")

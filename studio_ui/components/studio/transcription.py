@@ -21,7 +21,7 @@ def transcription_tab_content(doc_id, library, page, error_msg: str = None, is_l
         openai_api_key=cfg.get_api_key("openai"),
         anthropic_api_key=cfg.get_api_key("anthropic"),
         google_api_key=cfg.get_api_key("google_vision"),
-        hf_token=cfg.get_api_key("huggingface")
+        hf_token=cfg.get_api_key("huggingface"),
     )
     is_ready = processor.is_provider_ready(selected_engine)
 
@@ -44,7 +44,7 @@ def transcription_tab_content(doc_id, library, page, error_msg: str = None, is_l
     if error_msg:
         error_alert = Div(
             Span(f"⚠️ {error_msg}", cls="text-[10px] font-medium"),
-            cls="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-800 text-red-700 dark:text-red-400 rounded-lg animate-in fade-in slide-in-from-top-1"
+            cls="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-800 text-red-700 dark:text-red-400 rounded-lg animate-in fade-in slide-in-from-top-1",
         )
 
     # Disable entire UI if loading
@@ -53,9 +53,12 @@ def transcription_tab_content(doc_id, library, page, error_msg: str = None, is_l
     ocr_panel = Div(
         Div(
             Div(
-                H3(f"AI Recognition: {selected_engine.upper()}", cls="text-[10px] font-bold text-indigo-400 uppercase tracking-widest"),
+                H3(
+                    f"AI Recognition: {selected_engine.upper()}",
+                    cls="text-[10px] font-bold text-indigo-400 uppercase tracking-widest",
+                ),
                 status_badge,
-                cls="flex items-center justify-between mb-3"
+                cls="flex items-center justify-between mb-3",
             ),
             error_alert,
             Form(
@@ -80,8 +83,8 @@ def transcription_tab_content(doc_id, library, page, error_msg: str = None, is_l
                         type="submit",
                         disabled=ui_disabled,
                         cls=f"bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold "
-                            f"py-2 px-4 rounded-lg shadow-sm transition-all active:scale-95 flex items-center gap-2 "
-                            f"{'opacity-100' if not ui_disabled else 'opacity-50 cursor-not-allowed'}",
+                        f"py-2 px-4 rounded-lg shadow-sm transition-all active:scale-95 flex items-center gap-2 "
+                        f"{'opacity-100' if not ui_disabled else 'opacity-50 cursor-not-allowed'}",
                     ),
                     cls="flex gap-2 items-center",
                 ),
@@ -89,7 +92,7 @@ def transcription_tab_content(doc_id, library, page, error_msg: str = None, is_l
                 hx_post="/api/run_ocr_async",
                 hx_target="#transcription-container",
                 hx_swap="outerHTML",
-                id="ocr-form"
+                id="ocr-form",
             ),
             cls="bg-gray-50/50 dark:bg-gray-900/30 p-4 rounded-xl border border-gray-100 dark:border-gray-800 shadow-sm mb-6",
         )
@@ -98,15 +101,15 @@ def transcription_tab_content(doc_id, library, page, error_msg: str = None, is_l
     info_line = Div(
         Span(
             f"PAGINA {page}",
-            cls="text-xs sm:text-sm font-semibold tracking-widest text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800/40 px-3 py-1 rounded-full shadow-inner"
+            cls="text-xs sm:text-sm font-semibold tracking-widest text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800/40 px-3 py-1 rounded-full shadow-inner",
         ),
         Div(
             Span(f"Motore: {engine_name}", cls="text-sm font-medium text-slate-500 dark:text-slate-300"),
             Span("•", cls="mx-2 text-slate-400"),
             Span(f"Ultimo salvataggio: {timestamp}", cls="text-sm text-slate-500 dark:text-slate-300"),
-            cls="flex flex-wrap items-center gap-1"
+            cls="flex flex-wrap items-center gap-1",
         ),
-        cls="flex flex-wrap items-center justify-between gap-3 border border-gray-100 dark:border-gray-800/60 rounded-2xl px-4 py-3 mb-3 bg-white/70 dark:bg-gray-900/50 shadow-sm"
+        cls="flex flex-wrap items-center justify-between gap-3 border border-gray-100 dark:border-gray-800/60 rounded-2xl px-4 py-3 mb-3 bg-white/70 dark:bg-gray-900/50 shadow-sm",
     )
 
     components = [
@@ -124,7 +127,7 @@ def transcription_tab_content(doc_id, library, page, error_msg: str = None, is_l
                     "transition-all backdrop-blur-sm"
                     f"{'' if not is_loading else ' opacity-50'}"
                 ),
-                placeholder="Nessuna trascrizione disponibile. Scrivi qui o usa l'OCR..."
+                placeholder="Nessuna trascrizione disponibile. Scrivi qui o usa l'OCR...",
             ),
             Input(type="hidden", name="doc_id", value=doc_id),
             Input(type="hidden", name="library", value=library),
@@ -133,11 +136,11 @@ def transcription_tab_content(doc_id, library, page, error_msg: str = None, is_l
                 "💾 Salva Modifiche",
                 type="submit",
                 disabled=is_loading,
-                cls="w-full mt-4 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-xl shadow-lg transition-all active:scale-[0.98] "
-                f"{'' if not is_loading else 'opacity-50'}",
+                cls="hidden",
             ),
             hx_post="/api/save_transcription",
             hx_target="#save-feedback",
+            hx_swap="innerHTML",
             id="transcription-form",
         ),
         Div(id="save-feedback"),
@@ -146,7 +149,7 @@ def transcription_tab_content(doc_id, library, page, error_msg: str = None, is_l
     simplemde_script = Script(f"""
 (function() {{
     const TEXTAREA_ID = 'transcription-simplemde';
-    const isLoading = {'true' if is_loading else 'false'};
+    const isLoading = {"true" if is_loading else "false"};
     const editorStyles = `
         .SimpleMDEContainer {{
             border-radius: 1.4rem !important;
@@ -298,5 +301,25 @@ def transcription_tab_content(doc_id, library, page, error_msg: str = None, is_l
 """)
 
     components.append(simplemde_script)
+
+    # Floating always-visible Save button: triggers the transcription form submit
+    floating_save = Div(
+        Button(
+            "💾 Salva",
+            type="button",
+            onclick=(
+                "(function(){"
+                "const f = document.getElementById('transcription-form');"
+                "if(window.simplemdeTranscription){ const ta=document.getElementById('transcription-simplemde'); ta.value = window.simplemdeTranscription.value(); }"
+                "if(f && f.requestSubmit) f.requestSubmit(); else if(f) f.submit();"
+                "})()"
+            ),
+            cls=(
+                "bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-full shadow-lg transition-all active:scale-95 pointer-events-auto"
+            ),
+        ),
+        cls="pointer-events-none fixed top-6 right-6 z-60",
+    )
+    components.append(floating_save)
 
     return components

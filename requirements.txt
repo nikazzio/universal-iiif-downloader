@@ -3,10 +3,6 @@ python-fasthtml
 uvicorn
 python-multipart
 python-dotenv
-streamlit
-streamlit-ace
-streamlit-antd-components
-streamlit-cropper
 defusedxml
 
 # Gestione Immagini e Dati

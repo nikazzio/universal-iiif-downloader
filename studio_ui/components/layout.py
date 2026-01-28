@@ -47,11 +47,15 @@ def base_layout(title: str, content, active_page: str = "") -> Html:
             Link(rel="stylesheet", href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.1/cropper.min.css"),
             Script(src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.1/cropper.min.js"),
 
-            # Theme initialization
+            # Theme + sidebar state initialization (run early to avoid layout flash)
             Script("""
                 (function() {
+                    const root = document.documentElement;
                     const theme = localStorage.getItem('theme') || 'light';
-                    if (theme === 'dark') document.documentElement.classList.add('dark');
+                    if (theme === 'dark') root.classList.add('dark');
+                    if (localStorage.getItem('sidebar-collapsed') === 'true') {
+                        root.classList.add('sidebar-collapsed');
+                    }
                 })();
             """),
 
@@ -61,7 +65,12 @@ def base_layout(title: str, content, active_page: str = "") -> Html:
         Body(
             Div(
                 _sidebar(active_page),
-                Main(content, cls="flex-1 overflow-auto bg-gray-50 dark:bg-gray-900 transition-colors duration-200"),
+                Main(
+                    content,
+                    id="app-main",
+                    hx_history_elt="true",
+                    cls="flex-1 overflow-auto bg-gray-50 dark:bg-gray-900 transition-colors duration-200",
+                ),
                 cls="flex h-screen overflow-hidden"
             ),
             cls="antialiased bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100"
@@ -85,11 +94,18 @@ def _sidebar(active_page: str = "") -> Nav:
                     Div(
                         Div("Universal IIIF", cls="text-xl font-bold text-white leading-tight"),
                         Div("Downloader & Studio", cls="text-xs uppercase tracking-[0.3em] text-gray-400"),
-                        cls="flex flex-col leading-tight sidebar-brand"
+                        cls="flex flex-col leading-tight sidebar-brand-text"
                     ),
                     cls="flex items-center gap-3"
                 ),
-                Button("☰", onclick="toggleSidebar()", cls="text-2xl focus:outline-none", id="sidebar-toggle"),
+                Button(
+                    "☰",
+                    onclick="toggleSidebar()",
+                    cls="text-2xl focus:outline-none",
+                    id="sidebar-toggle",
+                    aria_pressed="false",
+                    title="Comprimi/espandi menu",
+                ),
                 cls="flex items-center justify-between mb-6"
             ),
             cls="sidebar-brand mb-6 pb-4 border-b border-gray-700"
@@ -97,13 +113,16 @@ def _sidebar(active_page: str = "") -> Nav:
 
         Div(*[
             A(
-                Div(
-                    Div(icon, cls="sidebar-icon text-2xl"),
-                    Div(label, cls="sidebar-label font-medium"),
-                    cls="flex items-center gap-3"
-                ),
+                Div(icon, cls="sidebar-icon text-2xl"),
+                Div(label, cls="sidebar-label font-medium"),
                 href=url,
-                cls=_sidebar_link_classes(key == active_page)
+                hx_get=url,
+                hx_target="#app-main",
+                hx_swap="innerHTML",
+                hx_push_url="true",
+                data_nav_link="true",
+                cls=_sidebar_link_classes(),
+                **({"aria_current": "page"} if key == active_page else {}),
             )
             for key, label, url, icon in nav_items
         ], cls="space-y-1 flex-1"),
@@ -149,30 +168,45 @@ def _sidebar(active_page: str = "") -> Nav:
         """),
         Script("""
             function setSidebarCollapse(collapsed) {
-                const nav = document.getElementById('app-sidebar');
-                if (!nav) return;
-                nav.classList.toggle('sidebar-collapsed', collapsed);
+                const root = document.documentElement;
+                root.classList.toggle('sidebar-collapsed', collapsed);
                 localStorage.setItem('sidebar-collapsed', collapsed ? 'true' : 'false');
+                const toggle = document.getElementById('sidebar-toggle');
+                if (toggle) toggle.setAttribute('aria-pressed', collapsed ? 'true' : 'false');
             }
             function toggleSidebar() {
-                const nav = document.getElementById('app-sidebar');
-                if (!nav) return;
-                setSidebarCollapse(!nav.classList.contains('sidebar-collapsed'));
+                const root = document.documentElement;
+                setSidebarCollapse(!root.classList.contains('sidebar-collapsed'));
+            }
+            function syncActiveNav(pathname) {
+                const links = document.querySelectorAll('[data-nav-link]');
+                links.forEach((link) => {
+                    const isActive = link.getAttribute('href') === pathname;
+                    if (isActive) {
+                        link.setAttribute('aria-current', 'page');
+                    } else {
+                        link.removeAttribute('aria-current');
+                    }
+                });
             }
             window.addEventListener('DOMContentLoaded', () => {
-                const collapsed = localStorage.getItem('sidebar-collapsed') === 'true';
-                setSidebarCollapse(collapsed);
+                setSidebarCollapse(document.documentElement.classList.contains('sidebar-collapsed'));
+                syncActiveNav(window.location.pathname);
+            });
+            document.addEventListener('htmx:afterSwap', (event) => {
+                if (event.detail?.target?.id !== 'app-main') return;
+                syncActiveNav(window.location.pathname);
+            });
+            window.addEventListener('popstate', () => {
+                syncActiveNav(window.location.pathname);
             });
         """),
         id="app-sidebar",
         cls="sidebar w-64 bg-gray-800 dark:bg-gray-950 text-white p-6 flex flex-col transition-all duration-200"
     )
 
-
-def _sidebar_link_classes(is_active: bool) -> str:
-    base = "sidebar-link block py-3 px-4 rounded mb-2 transition-all duration-200"
-    if is_active: return f"{base} bg-primary-600 border-l-4 border-white"
-    return f"{base} hover:bg-gray-700 hover:translate-x-1"
+def _sidebar_link_classes() -> str:
+    return "sidebar-link flex items-center gap-3 py-3 px-4 rounded mb-2 transition-all duration-200"
 
 
 def _style_tag():
@@ -190,12 +224,16 @@ def _style_tag():
         .dark ::-webkit-scrollbar-thumb { background: #475569; }
         
         .sidebar { width: 16rem; }
-        .sidebar-collapsed { width: 3.5rem !important; }
-        .sidebar-collapsed .sidebar-label { display: none; }
-        .sidebar-collapsed .sidebar-icon { margin-right: 0; }
-        .sidebar-collapsed .sidebar-link { justify-content: center; }
-        .sidebar-collapsed .sidebar-footer,
-        .sidebar-collapsed .sidebar-brand { display: none; }
+        .sidebar-link:hover { background: #374151; transform: translateX(0.25rem); }
+        .sidebar-link[aria-current="page"] { background: #4f46e5; border-left: 4px solid #ffffff; transform: none; }
+        .sidebar-icon { width: 2rem; text-align: center; }
+        .sidebar-collapsed #app-sidebar { width: 3.5rem !important; padding-left: 0.75rem; padding-right: 0.75rem; }
+        .sidebar-collapsed #app-sidebar .sidebar-label { display: none; }
+        .sidebar-collapsed #app-sidebar .sidebar-link { justify-content: center; padding-left: 0.5rem; padding-right: 0.5rem; gap: 0; }
+        .sidebar-collapsed #app-sidebar .sidebar-link:hover { transform: none; }
+        .sidebar-collapsed #app-sidebar .sidebar-link[aria-current="page"] { border-left: 0; }
+        .sidebar-collapsed #app-sidebar .sidebar-footer { display: none; }
+        .sidebar-collapsed #app-sidebar .sidebar-brand-text { display: none; }
         #sidebar-toggle { background: transparent; border: none; color: inherit; }
         #sidebar-toggle:focus-visible { outline: 2px solid #6366f1; outline-offset: 2px; }
 

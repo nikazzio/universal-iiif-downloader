@@ -1,6 +1,11 @@
-from iiif_downloader.ui.pages.export_studio.thumbnail_grid import _selection_key
+import json
+
+from studio_ui.common.mirador import window_config_json
 
 
-def test_selection_key_stable():
-    """Ensure thumbnail grid keys remain deterministic."""
-    assert _selection_key("DOC", 2) == "export_page_DOC_2"
+def test_window_config_includes_manifest_url():
+    """Mirador helper should embed the manifest URL in the config."""
+    manifest_url = "https://example.org/iiif/manifest.json"
+    cfg = json.loads(window_config_json(manifest_url))
+
+    assert cfg["manifestId"] == manifest_url

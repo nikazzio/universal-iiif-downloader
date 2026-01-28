@@ -18,13 +18,7 @@ from iiif_downloader.export_studio import build_professional_pdf
 from iiif_downloader.iiif_tiles import stitch_iiif_tiles_to_jpeg
 from iiif_downloader.logger import get_download_logger
 from iiif_downloader.storage.vault_manager import VaultManager
-from iiif_downloader.utils import (
-    DEFAULT_HEADERS,
-    clean_dir,
-    ensure_dir,
-    get_json,
-    save_json,
-)
+from iiif_downloader.utils import DEFAULT_HEADERS, clean_dir, ensure_dir, get_json, save_json
 
 # Constants
 MAX_DOWNLOAD_RETRIES = 5
@@ -519,12 +513,12 @@ class IIIFDownloader:
 
     def run_batch_ocr(self, image_files: list[str], model_name: str):
         """Run OCR processing on the finalized image files."""
+        from iiif_downloader.ocr.model_manager import ModelManager
         from iiif_downloader.ocr.processor import KRAKEN_AVAILABLE, OCRProcessor
-        from iiif_downloader.ui.state import get_model_manager
 
         if not KRAKEN_AVAILABLE:
             return
-        manager = get_model_manager()
+        manager = ModelManager()
         model_path = manager.get_model_path(model_name)
         proc = OCRProcessor(model_path)
         aggregated = {

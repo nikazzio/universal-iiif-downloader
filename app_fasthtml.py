@@ -4,11 +4,11 @@ from fasthtml.common import fast_app, serve
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.staticfiles import StaticFiles
 
-from fasthtml_ui.routes.api import setup_api_routes
-from fasthtml_ui.routes.discovery import setup_discovery_routes
-from fasthtml_ui.routes.studio import setup_studio_routes
 from iiif_downloader.config_manager import get_config_manager
 from iiif_downloader.logger import get_logger, setup_logging
+from studio_ui.routes.api import setup_api_routes
+from studio_ui.routes.discovery import setup_discovery_routes
+from studio_ui.routes.studio import setup_studio_routes
 
 # Initialize logging
 setup_logging()
@@ -45,10 +45,12 @@ if downloads_path.exists():
 # Request Logging Middleware
 class LoggingMiddleware(BaseHTTPMiddleware):
     """Middleware to log incoming requests."""
+
     async def dispatch(self, request, call_next):
         """Dispatch the request and log the response."""
         logger.info(f"🌐 [{request.method}] {request.url.path}")
         return await call_next(request)
+
 
 app.add_middleware(LoggingMiddleware)
 
@@ -58,7 +60,6 @@ logger.info("🔧 Setting up routes...")
 
 # API routes (manifest serving) FIRST
 setup_api_routes(app)
-
 
 
 # Studio page routes
