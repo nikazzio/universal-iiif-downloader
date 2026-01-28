@@ -1,6 +1,7 @@
 # 🤖 Agent Guidelines
 
 **Current Context**: You are working on the **Universal IIIF Downloader & Studio** (FastHTML/HTMX UI + Python core + CLI). The FastHTML experience and CLI packages are the only supported front ends.
+
 # 🤖 Agent Guidelines
 
 **Current Context**: You are working on the **Universal IIIF Downloader & Studio** (FastHTML/HTMX UI + Python core + CLI). The FastHTML experience and CLI packages are the only supported front ends.
@@ -95,14 +96,14 @@ FastHTML UI refactor is mid-flight. The Studio UI is now FastHTML/HTMX based; th
   - `pdf/` exported PDFs
   - `data/` `metadata.json`, `manifest.json`, `image_stats.json`, `transcription.json`
 - `data/vault.db` is the SQLite vault (manuscripts + snippets).
- - `data/local/` (top-level runtime folder)
-   - `data/local/downloads/{Library}/{ms_id}/` (scans, pdf, data)
-   - `data/local/snippets/` (ritagli locali per analisi — NON versionare)
-   - `data/local/models/` (modelli OCR scaricati/allenati localmente)
-   - `data/local/temp_images/` (immagini temporanee di lavoro)
-   - `data/local/logs/` (log runtime)
- - `data/vault.db` is the SQLite vault (manuscripts + snippets).
- - `assets/`, `data/local/downloads/`, `data/local/models/`, `data/local/temp_images/`, `data/local/logs/`, `data/local/snippets/` are mutable user data directories and should stay out of version control.
+- `data/local/` (top-level runtime folder)
+  - `data/local/downloads/{Library}/{ms_id}/` (scans, pdf, data)
+  - `data/local/snippets/` (ritagli locali per analisi — NON versionare)
+  - `data/local/models/` (modelli OCR scaricati/allenati localmente)
+  - `data/local/temp_images/` (immagini temporanee di lavoro)
+  - `data/local/logs/` (log runtime)
+- `data/vault.db` is the SQLite vault (manuscripts + snippets).
+- `assets/`, `data/local/downloads/`, `data/local/models/`, `data/local/temp_images/`, `data/local/logs/`, `data/local/snippets/` are mutable user data directories and should stay out of version control.
 
 Note: ensure `data/local/` (or at least the subfolders above) is present in `.gitignore` to avoid committing user data. `data/local/snippets/` contains local clipping artifacts used for analysis and should be kept local; export any shareable datasets explicitly instead of committing raw snippets.
 

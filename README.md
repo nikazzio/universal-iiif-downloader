@@ -56,7 +56,6 @@ Per linting e testing automatizzati puoi installare anche le dipendenze di svilu
 Se hai bisogno di condividere estratti o dataset con altri contributori, esportali in una cartella separata
 con istruzioni e metadata, invece di committare i file grezzi in `data/local/`.
 
-
 ```bash
 pip install -r requirements-dev.txt
 ```
