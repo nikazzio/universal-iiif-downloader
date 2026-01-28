@@ -106,6 +106,12 @@ FastHTML UI refactor is mid-flight. The Studio UI is now FastHTML/HTMX based; th
 
 Note: ensure `data/local/` (or at least the subfolders above) is present in `.gitignore` to avoid committing user data. `data/local/snippets/` contains local clipping artifacts used for analysis and should be kept local; export any shareable datasets explicitly instead of committing raw snippets.
 
+Directory roles (recommended):
+
+- `data/local/`: runtime data (downloads, snippets, models, temp_images, logs). NON versionato.
+- `assets/`: page assets (favicon, logos, small UI images) committate.
+- `static/`: vendor libraries and static front-end packages (e.g., Mirador distribution).
+
 Note: ensure `data/local/` (or at least the subfolders above) is present in `.gitignore` to avoid committing user data. `data/local/snippets/` contains local clipping artifacts used for analysis and should be kept local; export any shareable datasets explicitly instead of committing raw snippets.
 
 ## Configuration & Secrets (Single Source of Truth)
