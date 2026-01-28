@@ -1,6 +1,6 @@
 {
     "paths": {
-        "downloads_dir": "downloads",
+        "downloads_dir": "var/downloads",
         "temp_dir": "temp_images",
         "models_dir": "models",
         "logs_dir": "logs"

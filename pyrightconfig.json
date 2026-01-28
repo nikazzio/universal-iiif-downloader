@@ -2,7 +2,7 @@
   "include": [
     "app.py",
     "main.py",
-    "iiif_downloader",
+    "src",
     "tests"
   ],
   "exclude": [

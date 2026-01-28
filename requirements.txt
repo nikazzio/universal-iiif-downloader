@@ -1,19 +1,2 @@
-# UI e Framework
-python-fasthtml
-uvicorn
-python-multipart
-python-dotenv
-defusedxml
-
-# Gestione Immagini e Dati
-Pillow>=10.0.0
-pandas
-requests>=2.31.0
-beautifulsoup4
-tqdm>=4.66.0
-
-# PDF e OCR Engines
-PyMuPDF
-img2pdf>=0.5.1
-openai
-anthropic
+# Install the editable package (dependencies declared in pyproject.toml)
+-e .

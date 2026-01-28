@@ -5,7 +5,7 @@ from pathlib import Path
 import pymupdf as fitz
 from PIL import Image
 
-from iiif_downloader.export_studio import build_professional_pdf
+from universal_iiif_core.export_studio import build_professional_pdf
 
 
 def _write_scan(scans_dir: Path, idx0: int, size=(800, 1200), color=(240, 240, 240)) -> Path:

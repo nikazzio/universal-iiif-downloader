@@ -8,13 +8,13 @@ Il progetto è a metà di un importante refactoring della **UI FastHTML**. L'arc
 
 ## 🏗️ Struttura del Progetto (Sintesi)
 
-- `app_fasthtml.py`: Punto di ingresso principale dell'applicazione web.
+- `studio_app.py`: Punto di ingresso principale dell'applicazione web FastHTML/Mirador.
 - `studio_ui/`: Logica dell'interfaccia utente FastHTML.
   - `pages/`: Layout delle pagine (Studio, Discovery).
   - `routes/`: Definizione degli endpoint HTTP e orchestrazione.
   - `components/`: Componenti UI riutilizzabili (Viewer, Editor, Tab).
   - `common/`: Helper condivisi per toasts, trigger HTMX e preset Mirador.
-- `iiif_downloader/`: Core logico dell'applicazione (Python puro).
+- `src/universal_iiif_core/`: Core logico dell'applicazione (Python puro).
   - `ocr/`: Gestione OCR e persistenza dati (`storage.py`, `processor.py`).
   - `storage/`: Gestione database SQLite e file system (`vault_manager.py`).
   - `resolvers/`: Logica per risolvere URL IIIF (Vaticana, etc.).
@@ -125,11 +125,11 @@ Per mantenere il codice manutenibile e scalabile, segui sempre queste regole:
 
 ## 📄 Documenti Rilevanti
 
-- `/home/niki/work/personal/universal-iiif-downloader/FIXES.md`
-- `/home/niki/work/personal/universal-iiif-downloader/STUDIO_REFACTOR.md`
+- `/home/niki/work/personal/Universal IIIF/FIXES.md`
+- `/home/niki/work/personal/Universal IIIF/STUDIO_REFACTOR.md`
 - `/home/niki/.gemini/antigravity/brain/f8ac515a-1c78-42e2-8e72-7fd4e3619021/implementation_plan.md`
-- `/home/niki/work/personal/universal-iiif-downloader/docs/ARCHITECTURE.md` *(aggiornato per riflettere FastHTML + htmx + Studio tabs)*
-- `/home/niki/work/personal/universal-iiif-downloader/docs/DOCUMENTAZIONE.md` *(rivisto per descrivere SimpleMDE, toasts e history live)*
+- `/home/niki/work/personal/Universal IIIF/docs/ARCHITECTURE.md` *(aggiornato per riflettere FastHTML + htmx + Studio tabs)*
+- `/home/niki/work/personal/Universal IIIF/docs/DOCUMENTAZIONE.md` *(rivisto per descrivere SimpleMDE, toasts e history live)*
 
 ---
 ---

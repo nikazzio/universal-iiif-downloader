@@ -12,7 +12,7 @@ Tutte le modifiche notevoli a questo progetto saranno documentate in questo file
 
 ### Added
 
-- **Rich Text Editor**: Sostituito il vecchio editor di testo con un editor RTF avanzato (basato su `streamlit-quill`).
+- **Rich Text Editor**: Sostituito il vecchio editor di testo con un editor RTF avanzato (basato su un wrapper Quill dedicato).
   - Supporto per formattazione (Grassetto, Corsivo, Sottolineato).
   - Elenchi puntati e numerati.
   - Apici e pedici.
@@ -27,7 +27,7 @@ Tutte le modifiche notevoli a questo progetto saranno documentate in questo file
 ### Fixed
 
 - Risolti conflitti di merge critici durante l'integrazione del branch `add-rich-text`.
-- Corretti bug minori nella gestione degli stati di sessione di Streamlit durante il salvataggio.
+- Corretti bug minori nella gestione degli stati di sessione della UI legacy durante il salvataggio.
 
 ## [v0.4.0]
 

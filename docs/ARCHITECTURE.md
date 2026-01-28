@@ -2,17 +2,17 @@
 
 ## Overview
 
-Universal IIIF Downloader & Studio now separates a **FastHTML/htmx-based UI shell** (studio_ui/) from the pure Python core (`iiif_downloader/`). The UI renders HTML elements, wires HTMX for asynchronous swaps, and embeds Mirador, while the back-end keeps all metadata, storage and OCR logic untouched.
+Universal IIIF Downloader & Studio now separates a **FastHTML/htmx-based UI shell** (studio_ui/) from the pure Python core (`universal_iiif_core/`). The UI renders HTML elements, wires HTMX for asynchronous swaps, and embeds Mirador, while the back-end keeps all metadata, storage and OCR logic untouched.
 
 ## Module Structure
 
 ```
 graph TD
     FastHTML[studio_ui/pages & components] --> StudioRoutes[studio_ui/routes/studio]
-    StudioRoutes --> OCR[iiif_downloader/ocr]
-    StudioRoutes --> Storage[iiif_downloader/ocr/storage]
+    StudioRoutes --> OCR[universal_iiif_core/ocr]
+    StudioRoutes --> Storage[universal_iiif_core/ocr/storage]
     Campus[studio_ui/components/viewer] --> Mirador[Mirador Viewer]
-    OCR --> Models[iiif_downloader/ocr/processor]
+    OCR --> Models[universal_iiif_core/ocr/processor]
     Storage --> Vault[VaultManager + SQLite]
 ```
 
@@ -26,7 +26,7 @@ graph TD
 - **Viewer config**: the `settings.viewer` section of `config.json` now holds the Mirador/openSeadragon options and the Visual tab defaults/presets so future UI controls can edit them without touching code, and the sidebar is now collapsible with only icons in compact mode (button `☰`, `localStorage` persistence).
 - **Mirador zoom**: the viewer configuration feeds `openSeadragonOptions` (higher `maxZoomPixelRatio`, `maxZoomLevel`) so study sessions can zoom deeper into scans without losing the minimized toolbar/thumbnail setup.
 
-### iiif_downloader
+### universal_iiif_core
 
 - **ocr/**: processor, storage, logger helpers (history snapshots, `compute_text_diff_stats`).
 - **storage/**: VaultManager keeps metadata, snippets, and manuscript registry.
@@ -42,6 +42,6 @@ graph TD
 
 ## Key Design Decisions
 
-- **Pure HTTP front-end**: No Streamlit sessions; the UI load is served via FastHTML and HTMX-managed partials for responsiveness.
-- **Separation of concerns**: `iiif_downloader` remains business/core logic, studio_ui handles presentation and htmx orchestration.
+- **Pure HTTP front-end**: The UI load is served via FastHTML and HTMX-managed partials for responsiveness; there are no legacy session frameworks.
+- **Separation of concerns**: `universal_iiif_core` remains business/core logic, studio_ui handles presentation and htmx orchestration.
 - **Resilient UX**: Floating toast container, SimpleMDE styling, and history diffing keep the editing experience predictable even when background OCR jobs overlap.

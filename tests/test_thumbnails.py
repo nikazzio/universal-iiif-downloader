@@ -2,7 +2,7 @@ from pathlib import Path
 
 from PIL import Image as PILImage
 
-from iiif_downloader.thumbnail_utils import ensure_thumbnail, guess_available_pages
+from universal_iiif_core.thumbnail_utils import ensure_thumbnail, guess_available_pages
 
 
 def test_guess_available_pages(tmp_path: Path) -> None:

@@ -8,7 +8,7 @@ import pytest
 import requests
 from requests import RequestException
 
-from iiif_downloader.config_manager import get_config_manager
+from universal_iiif_core.config_manager import get_config_manager
 
 pytestmark = pytest.mark.skipif(
     not bool(get_config_manager().get_setting("testing.run_live_tests", False)),

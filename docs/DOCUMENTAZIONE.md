@@ -2,7 +2,7 @@
 
 ## 1. Introduzione
 
-Universal IIIF Downloader & Studio ora espone una SPA-like experience costruita con FastHTML/htmx: `/studio` serve la UI con Mirador a sinistra e i tab (Trascrizione, Snippets, History, Visual, Info) a destra; ogni tab è gestita come un componente HTML ri-renderizzabile tramite HTMX, mantenendo la logica core (download, OCR, storage) nel modulo `iiif_downloader`.
+Universal IIIF Downloader & Studio ora espone una SPA-like experience costruita con FastHTML/htmx: `/studio` serve la UI con Mirador a sinistra e i tab (Trascrizione, Snippets, History, Visual, Info) a destra; ogni tab è gestita come un componente HTML ri-renderizzabile tramite HTMX, mantenendo la logica core (download, OCR, storage) nel modulo `universal_iiif_core`.
 
 ## 2. Configurazione Dettagliata (`config.json`)
 
@@ -62,5 +62,5 @@ API key settate in `api_keys`: `openai`, `anthropic`, `google_vision`, `huggingf
 
 * Per comprare la guida Architettura aggiornata, leggi `docs/ARCHITECTURE.md`.
 * Per aggiungere nuovi tool all’editor, aggiorna `studio_ui/components/studio/transcription.py` (SimpleMDE) e considera di esporre ulteriori toolbar/shortcuts qui.
-* Il core OCR resta in `iiif_downloader/ocr`; tutto ciò che riguarda la UI (toasts, overlay, htmx) è in `studio_ui/`.
+* Il core OCR resta in `universal_iiif_core/ocr`; tutto ciò che riguarda la UI (toasts, overlay, htmx) è in `studio_ui/`.
 * **Configurazione viewer**: `settings.viewer.mirador.openSeadragonOptions` governa i limiti di zoom/stabilità mentre `settings.viewer.visual_filters` scrive i default/preset di luminosità/contrast/saturazione/hue/invert; la UI aspetta questi valori nella scheda Visual.

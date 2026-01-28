@@ -3,7 +3,7 @@
 import sys
 from pathlib import Path
 
-from iiif_downloader.resolvers.discovery import resolve_shelfmark
+from universal_iiif_core.resolvers.discovery import resolve_shelfmark
 
 # Add project root to sys.path
 project_root = Path(__file__).parent.parent

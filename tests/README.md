@@ -1,6 +1,6 @@
 # Test Directory
 
-This directory contains test scripts and fixtures for the universal-iiif-downloader project.
+This directory contains test scripts and fixtures for the Universal IIIF project.
 
 ## Structure
 
