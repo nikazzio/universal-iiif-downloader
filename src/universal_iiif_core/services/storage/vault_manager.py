@@ -1,6 +1,7 @@
 import sqlite3
 from contextlib import suppress
 from pathlib import Path
+from typing import Any
 
 import fitz  # PyMuPDF
 
@@ -73,6 +74,22 @@ class VaultManager:
                 notes TEXT,
                 coords_json TEXT,
                 timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        # Tabella per i Job di Download
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS download_jobs (
+                job_id TEXT PRIMARY KEY,
+                doc_id TEXT NOT NULL,
+                library TEXT NOT NULL,
+                manifest_url TEXT,
+                status TEXT DEFAULT 'pending',  -- pending, running, completed, error
+                current_page INTEGER DEFAULT 0,
+                total_pages INTEGER DEFAULT 0,
+                error_message TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
 
@@ -214,14 +231,14 @@ class VaultManager:
         finally:
             conn.close()
 
-    def update_status(self, manuscript_id: str, status: str, error: str = None):
+    def update_status(self, manuscript_id: str, status: str, error: str | None = None):
         """Update the status of a manuscript, optionally with an error log."""
         kwargs = {"status": status}
         if error:
             kwargs["error_log"] = error
         self.upsert_manuscript(manuscript_id, **kwargs)
 
-    def register_manuscript(self, manuscript_id: str, title: str = None):
+    def register_manuscript(self, manuscript_id: str, title: str | None = None):
         """Ensures manuscript exists in DB."""
         conn = self._get_conn()
         cursor = conn.cursor()
@@ -231,7 +248,7 @@ class VaultManager:
         finally:
             conn.close()
 
-    def extract_image_snippet(self, image_path: str, coordinates: tuple) -> bytes:
+    def extract_image_snippet(self, image_path: str, coordinates: tuple) -> bytes | None:
         """Extracts a crop from an image using PyMuPDF (fitz).
 
         coordinates: (x0, y0, x1, y1) relative to the original image size.
@@ -257,10 +274,10 @@ class VaultManager:
         ms_name: str,
         page_num: int,
         image_path: str,
-        category: str = None,
-        transcription: str = None,
-        notes: str = None,
-        coords: list = None,
+        category: str = "Uncategorized",
+        transcription: str | None = None,
+        notes: str | None = None,
+        coords: list[Any] | None = None,
     ):
         """Saves the snippet to the database.
 
@@ -296,7 +313,7 @@ class VaultManager:
         finally:
             conn.close()
 
-    def get_snippets(self, ms_name: str, page_num: int = None):
+    def get_snippets(self, ms_name: str, page_num: int | None = None):
         """Retrieve snippets for a manuscript, optionally filtered by page.
 
         Args:
@@ -373,5 +390,192 @@ class VaultManager:
             # Delete from DB
             cursor.execute("DELETE FROM snippets WHERE id = ?", (snippet_id,))
             conn.commit()
+        finally:
+            conn.close()
+
+    def create_download_job(self, job_id: str, doc_id: str, library: str, manifest_url: str):
+        """Crea traccia del download nel DB."""
+        conn = self._get_conn()
+        cursor = conn.cursor()
+        # Creiamo la tabella al volo se non esiste (safety check)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS download_jobs (
+                job_id TEXT PRIMARY KEY, doc_id TEXT, library TEXT,
+                manifest_url TEXT, status TEXT, current_page INTEGER,
+                total_pages INTEGER, error_message TEXT, updated_at TIMESTAMP
+            )
+        """)
+        cursor.execute(
+            """
+            INSERT OR REPLACE INTO download_jobs (
+                job_id, doc_id, library, manifest_url, status,
+                current_page, total_pages, updated_at
+            )
+            VALUES (?, ?, ?, ?, 'pending', 0, 0, CURRENT_TIMESTAMP)
+        """,
+            (job_id, doc_id, library, manifest_url),
+        )
+        conn.commit()
+
+    def update_download_job(
+        self, job_id: str, current: int, total: int, status: str = "running", error: str | None = None
+    ):
+        """Aggiorna lo stato."""
+        conn = self._get_conn()
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            UPDATE download_jobs
+            SET current_page = ?, total_pages = ?, status = ?, error_message = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE job_id = ?
+        """,
+            (current, total, status, error, job_id),
+        )
+        # Log progress with reference to the manuscript title when available
+        try:
+            cursor.execute("SELECT doc_id FROM download_jobs WHERE job_id = ?", (job_id,))
+            row = cursor.fetchone()
+            doc_id = row[0] if row else None
+            title = None
+            if doc_id:
+                try:
+                    ms = self.get_manuscript(doc_id)
+                    title = ms.get("title") if ms else None
+                except Exception:
+                    title = None
+
+            logger.info(
+                "Download update: job=%s doc=%s title=%s %s/%s status=%s",
+                job_id,
+                doc_id or "-",
+                title or "-",
+                current,
+                total,
+                status,
+            )
+        except Exception:
+            logger.debug("Failed to log download update for job %s", job_id, exc_info=True)
+
+        conn.commit()
+
+    def get_active_download(self):
+        """Trova un download attivo."""
+        conn = self._get_conn()
+        cursor = conn.cursor()
+        # Controlla se la tabella esiste prima di fare select
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='download_jobs'")
+        if not cursor.fetchone():
+            return None
+
+        cursor.execute("""
+            SELECT job_id, doc_id, library, status, current_page, total_pages, error_message
+            FROM download_jobs
+            WHERE status = 'running' OR status = 'pending'
+            ORDER BY updated_at DESC LIMIT 1
+        """)
+        row = cursor.fetchone()
+        if row:
+            return {
+                "job_id": row[0],
+                "doc_id": row[1],
+                "library": row[2],
+                "status": row[3],
+                "current": row[4],
+                "total": row[5],
+                "error": row[6],
+            }
+        return None
+
+    def get_active_downloads(self):
+        """Return a list of active (pending/running) download jobs ordered by recent update.
+
+        This is used by the UI to render all concurrent downloads.
+        """
+        conn = self._get_conn()
+        cursor = conn.cursor()
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='download_jobs'")
+        if not cursor.fetchone():
+            return []
+
+        cursor.execute(
+            """
+            SELECT job_id, doc_id, library, status, current_page, total_pages, error_message
+            FROM download_jobs
+            WHERE status IN ('running', 'pending')
+            ORDER BY updated_at DESC
+        """
+        )
+        rows = cursor.fetchall()
+        conn.close()
+        results = []
+        for row in rows:
+            results.append(
+                {
+                    "job_id": row[0],
+                    "doc_id": row[1],
+                    "library": row[2],
+                    "status": row[3],
+                    "current": row[4],
+                    "total": row[5],
+                    "error": row[6],
+                }
+            )
+        return results
+
+    def get_download_job(self, job_id: str):
+        """Return a specific download job by its job_id, or None if not found."""
+        conn = self._get_conn()
+        conn.row_factory = None
+        cursor = conn.cursor()
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='download_jobs'")
+        if not cursor.fetchone():
+            return None
+        cursor.execute(
+            """
+            SELECT job_id, doc_id, library, manifest_url, status, current_page, total_pages, error_message
+            FROM download_jobs
+            WHERE job_id = ?
+        """,
+            (job_id,),
+        )
+        row = cursor.fetchone()
+        conn.close()
+        if not row:
+            return None
+        return {
+            "job_id": row[0],
+            "doc_id": row[1],
+            "library": row[2],
+            "manifest_url": row[3],
+            "status": row[4],
+            "current": row[5],
+            "total": row[6],
+            "error": row[7],
+        }
+
+    def reset_active_downloads(self, mark: str = "error", message: str = "Server restarted"):
+        """Mark any downloads left in 'pending' or 'running' state as stopped.
+
+        This is intended to be called at application startup so that stale
+        download jobs don't cause the UI to continue polling indefinitely.
+        """
+        conn = self._get_conn()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='download_jobs'")
+            if not cursor.fetchone():
+                return 0
+
+            cursor.execute(
+                """
+                UPDATE download_jobs
+                SET status = ?, error_message = COALESCE(error_message, ?) || ' (server restart)', updated_at = CURRENT_TIMESTAMP
+                WHERE status IN ('pending', 'running')
+            """,
+                (mark, message),
+            )
+            count = cursor.rowcount
+            conn.commit()
+            return count
         finally:
             conn.close()

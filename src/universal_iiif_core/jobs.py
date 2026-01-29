@@ -45,6 +45,9 @@ class JobManager:
                 "result": None,
                 "error": None,
                 "created_at": time.time(),
+                "cancel_requested": False,
+                # optional mapping to external DB job id
+                "db_job_id": kwargs.get("db_job_id") if isinstance(kwargs, dict) else None,
             }
 
         def worker_wrapper():
@@ -61,6 +64,14 @@ class JobManager:
                 # We assume task_func can accept 'progress_callback' kwarg
                 if "progress_callback" not in kwargs:
                     kwargs["progress_callback"] = update_progress
+
+                # Inject a cancel-check callable so task can cooperatively stop
+                def _cancel_check():
+                    with self._lock:
+                        return bool(self._jobs.get(job_id, {}).get("cancel_requested"))
+
+                if "should_cancel" not in kwargs:
+                    kwargs["should_cancel"] = _cancel_check
 
                 with self._lock:
                     self._jobs[job_id]["status"] = "running"
@@ -79,6 +90,32 @@ class JobManager:
                     self._jobs[job_id]["status"] = "failed"
                     self._jobs[job_id]["error"] = str(e)
                     self._jobs[job_id]["message"] = f"Error: {e}"
+
+        thread = threading.Thread(target=worker_wrapper, daemon=True)
+        thread.start()
+
+        return job_id
+
+    def request_cancel(self, id_or_db_id: str) -> bool:
+        """Request cancellation for a job by either job_id or external db_job_id.
+
+        Returns True if a matching job was found and cancel requested.
+        """
+        with self._lock:
+            # Direct match
+            if id_or_db_id in self._jobs:
+                self._jobs[id_or_db_id]["cancel_requested"] = True
+                return True
+            # Search by db_job_id
+            for jid, info in self._jobs.items():
+                if info.get("db_job_id") == id_or_db_id:
+                    info["cancel_requested"] = True
+                    return True
+        return False
+
+    def is_cancel_requested(self, job_id: str) -> bool:
+        with self._lock:
+            return bool(self._jobs.get(job_id, {}).get("cancel_requested"))
 
         thread = threading.Thread(target=worker_wrapper, daemon=True)
         thread.start()

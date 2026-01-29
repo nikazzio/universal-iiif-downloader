@@ -6,7 +6,7 @@ from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from secrets import SystemRandom
-from typing import Any
+from typing import Any, Optional
 
 import requests
 from PIL import Image
@@ -434,11 +434,24 @@ class IIIFDownloader:
             self.logger.debug("Native PDF download failed", exc_info=True)
             return False
 
-    def run(self):
-        """Execute the download workflow for the manifest."""
+    def run(
+        self,
+        progress_callback: Optional[Callable[[int, int], None]] = None,
+        should_cancel: Optional[Callable[[], bool]] = None,
+    ):
+        """Execute the download workflow for the manifest.
+
+        Args:
+            progress_callback: Optional callable that receives (current, total)
+                and will be invoked as pages are downloaded. If provided it
+                overrides any instance-level `progress_callback` set at init.
+        """
         self.extract_metadata()
         canvases = self.get_canvases()
-        self.vault.upsert_manuscript(self.ms_id, status="downloading", total_canvases=len(canvases))
+
+        total_pages = len(canvases)
+        # Register total pages upfront so the DB/UI can display a stable total
+        self.vault.upsert_manuscript(self.ms_id, status="downloading", total_canvases=total_pages)
 
         if self.clean_cache:
             clean_dir(self.temp_dir)
@@ -446,7 +459,10 @@ class IIIFDownloader:
         native_pdf_url = self.get_pdf_url()
         should_download_native_pdf = self._should_download_native_pdf()
 
-        downloaded, page_stats = self._download_canvases(canvases)
+        # Prefer runtime provided callback over instance attribute
+        cb = progress_callback or self.progress_callback
+
+        downloaded, page_stats = self._download_canvases(canvases, progress_callback=cb, should_cancel=should_cancel)
         self._store_page_stats(page_stats)
 
         valid = [f for f in downloaded if f]
@@ -472,7 +488,12 @@ class IIIFDownloader:
         except (OSError, ValueError, TypeError):
             return True
 
-    def _download_canvases(self, canvases: list[dict[str, Any]]):
+    def _download_canvases(
+        self,
+        canvases: list[dict[str, Any]],
+        progress_callback: Optional[Callable[[int, int], None]] = None,
+        should_cancel: Optional[Callable[[], bool]] = None,
+    ):
         downloaded: list[str | None] = [None] * len(canvases)
         page_stats = []
         with ThreadPoolExecutor(max_workers=self.workers) as executor:
@@ -487,9 +508,28 @@ class IIIFDownloader:
                     downloaded[idx] = fname
                     if stats:
                         page_stats.append(stats)
-                if self.progress_callback:
+                if progress_callback:
                     completed = sum(1 for f in downloaded if f)
-                    self.progress_callback(completed, len(canvases))
+                    try:
+                        progress_callback(completed, len(canvases))
+                    except Exception:
+                        # Never allow progress hooks to interrupt downloads
+                        self.logger.debug("Progress callback raised an exception", exc_info=True)
+
+                # Cooperative cancellation check
+                if should_cancel and should_cancel():
+                    completed = sum(1 for f in downloaded if f)
+                    try:
+                        self.vault.update_download_job(
+                            self.ms_id,
+                            current=completed,
+                            total=len(canvases),
+                            status="cancelled",
+                            error="Cancelled by user",
+                        )
+                    except Exception:
+                        self.logger.debug("Failed to mark job cancelled in DB", exc_info=True)
+                    break
         return downloaded, page_stats
 
     def _store_page_stats(self, page_stats):

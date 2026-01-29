@@ -9,6 +9,7 @@ from starlette.staticfiles import StaticFiles
 
 from studio_ui.routes.api import setup_api_routes
 from studio_ui.routes.discovery import setup_discovery_routes
+from studio_ui.routes.settings import setup_settings_routes
 from studio_ui.routes.studio import setup_studio_routes
 from universal_iiif_core import __version__
 from universal_iiif_core.config_manager import get_config_manager
@@ -20,6 +21,17 @@ logger = get_logger(__name__)
 
 # Initialize configuration
 config = get_config_manager()
+
+# On startup, reset any stale download jobs left as pending/running by previous process.
+try:
+    from universal_iiif_core.services.storage.vault_manager import VaultManager
+
+    vm = VaultManager()
+    reset_count = vm.reset_active_downloads()
+    if reset_count:
+        logger.info(f"Marked {reset_count} stale download job(s) as errored on startup")
+except Exception:
+    logger.debug("Failed to reset stale download jobs on startup", exc_info=True)
 
 # Create FastHTML app
 app, rt = fast_app(
@@ -76,6 +88,9 @@ setup_studio_routes(app)
 
 # Discovery page routes
 setup_discovery_routes(app)
+
+# Settings page routes
+setup_settings_routes(app)
 
 
 # Root redirect
