@@ -42,22 +42,11 @@ def test_gallica():
 
 
 def test_oxford():
-    """Attempt to call the Oxford search API and log output."""
-    query = "dante"
-    print(f"\nTesting Oxford with query: {query}")
-    url = "https://digital.bodleian.ox.ac.uk/api/search/"
-    params = {"q": query, "format": "json", "rows": 5}
-    try:
-        r = requests.get(url, params=params, timeout=10)
-        print(f"Status Code: {r.status_code}")
-        if r.status_code == 200:
-            data = r.json()
-            docs = data.get("response", {}).get("docs", [])
-            print(f"Found {len(docs)} documents.")
-            for doc in docs:
-                print(f"- {doc.get('title_ssm', [doc.get('title')])[0]} (UUID: {doc.get('uuid')})")
-    except (RequestException, ValueError) as e:
-        print(f"Error: {e}")
+    """Oxford search API has been deprecated — ensure our stub behaves."""
+    from universal_iiif_core.resolvers.discovery import search_oxford
+
+    results = search_oxford("dante")
+    assert results == []
 
 
 if __name__ == "__main__":

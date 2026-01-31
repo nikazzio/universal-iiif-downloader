@@ -2,65 +2,115 @@
 
 ## 1. Introduzione
 
-Universal IIIF Downloader & Studio ora espone una SPA-like experience costruita con FastHTML/htmx: `/studio` serve la UI con Mirador a sinistra e i tab (Trascrizione, Snippets, History, Visual, Info) a destra; ogni tab è gestita come un componente HTML ri-renderizzabile tramite HTMX, mantenendo la logica core (download, OCR, storage) nel modulo `universal_iiif_core`.
+Universal IIIF Downloader & Studio è una piattaforma modulare per lo studio di manoscritti digitali.
+L'architettura separa nettamente il backend (Python core) dall'interfaccia (FastHTML/HTMX).
+L'esperienza utente è quella di una SPA (Single Page Application): `/studio` serve la UI con Mirador a sinistra e i pannelli operativi (Trascrizione, Snippets, History, Visual) a destra, aggiornati dinamicamente senza ricaricamenti.
 
 ## 2. Configurazione Dettagliata (`config.json`)
 
-### ⚙️ Sistema e Performance
+Il file `config.json` è la singola fonte di verità.
 
-* `settings.system.download_workers`: thread per download paralleli (4-8).
-* `settings.images.tile_stitch_max_ram_gb`: controllo RAM per il tile stitching.
+### ⚙️ Sistema e Download
+
+* `settings.defaults.auto_generate_pdf`: **(Nuovo)** Se `true`, genera un PDF dalle immagini scaricate *solo se* la biblioteca non fornisce già un PDF ufficiale.
+* `settings.system.download_workers`: Numero di thread per il download parallelo delle immagini (default: 4).
+* `settings.images.tile_stitch_max_ram_gb`: Limite RAM per l'assemblaggio di immagini IIIF giganti (Tile Stitching).
 
 ### 🤖 Motori OCR
 
-API key settate in `api_keys`: `openai`, `anthropic`, `google_vision`, `huggingface`. Il modulo `ocr.processor` decide il provider in base a `settings.ocr.ocr_engine`.
+Le API key vanno in `api_keys`: `openai`, `anthropic`, `google_vision`, `huggingface`.
+
+* `settings.ocr.ocr_engine`: Seleziona il motore attivo (es. `"openai"` o `"kraken"`).
 
 ### 🎨 Preferenze UI
 
-* `settings.ui.theme_color`: colore d’accento usato per bottoni e badge nello Studio.
-* `settings.ui.toast_duration`: durata (ms) dei toast floating, usata da `build_toast` per mostrare salvataggi/errore.
+* `settings.ui.theme_color`: Colore d’accento per l'interfaccia.
+* `settings.ui.toast_duration`: Durata in ms delle notifiche a scomparsa.
 
-## 3. Funzionalità Studio
+## 3. Discovery e Download (Novità v0.7)
 
-### 🖼️ Viewer e layout
+Il sistema di download è stato completamente riscritto per essere intelligente e resiliente.
 
-* Mirador occupa il 55% sinistro, con configurazione minimale (toolbar disattivata, workspace controls off).
-* La parte destra usa tab HTMX per caricare i contenuti senza ricaricare tutta la pagina (`/studio/partial/tabs` + `/studio/partial/history`).
-* Mirador riceve `openSeadragonOptions` che aumentano `maxZoomPixelRatio` e `maxZoomLevel`, così i conservatori possono zoomare più a fondo sulle pagine senza perdere menu o thumbnails.
-* Il layout espone la favicon/logo `assets/morte_tamburo.png` e una barra laterale riducibile: il pulsante ☰ collassa la sidebar a un collettore di icone, lo stato viene salvato in `localStorage` e il contenuto principale resta largo anche in modalità conversazione compatta.
+### 🛰️ Smart Resolvers
+
+Il campo di ricerca accetta input "sporchi". Il sistema normalizza automaticamente:
+
+* **Vaticana**: `Urb. lat. 123` → `MSS_Urb.lat.123`
+* **Gallica**: Accetta Short ID (`bpt6k...`), ARK completi e URL di visualizzazione.
+* **Oxford**: Riconosce UUID (case-insensitive) e URL del portale `digital.bodleian`.
+
+### ⚡ Il "Golden Flow" di Download
+
+Quando avvii un download, il sistema decide la strategia migliore:
+
+1. **Controllo PDF Nativo**: Cerca se la biblioteca offre un PDF ufficiale.
+   * **Se c'è**: Lo scarica e **estrae automaticamente** le pagine in immagini JPG ad alta risoluzione (nella cartella `scans/`). Questo garantisce che lo Studio funzioni anche con i PDF.
+   * **Se non c'è**: Scarica le immagini dai server IIIF una per una.
+2. **Generazione PDF**: Se (e solo se) il download è avvenuto per immagini sciolte, il sistema genera un PDF compilativo se `auto_generate_pdf` è attivo.
+
+### 🛡️ Resilienza di Rete
+
+Il downloader ora "imita" un browser reale (Firefox/Chrome) e gestisce le compressioni (Brotli/Gzip) per aggirare i blocchi (WAF) di biblioteche severe come Gallica.
+
+## 4. Funzionalità Studio
+
+### 🖼️ Viewer e Layout
+
+* **Mirador**: Configurato per "Deep Zoom" (`maxZoomLevel` aumentato) per analisi paleografiche dettagliate.
+* **Sidebar**: Collassabile (tasto ☰), lo stato persiste tra le sessioni.
+* **Navigation**: Slider e pulsanti sincronizzati tra Viewer e Editor.
 
 ### 🎚️ Visual Tab
 
-* La scheda Visual ora offre slider per luminosità, contrasto, saturazione e hue, toggle per 'Inverti colori' e 'Bianco & Nero intenso' e preset rapidi (Default, Lettura notturna, Contrasto+).
-* Un piccolo script creato nel tab inietta un tag `<style>` dedicato e applica i filtri direttamente ai canvas/img che compongono la pagina attiva di Mirador, lasciando menu e miniature inalterati.
-* Il controllo è a risposta immediata e legge i valori dai range input per aggiornare anche l'etichetta numerica accanto a ogni slider; ogni preset riporta anche lo stato dei pulsanti toggle.
+* **Filtri Real-time**: Slider per Luminosità, Contrasto, Saturazione, Tonalità e Inversione.
+* **Tecnologia**: I filtri sono applicati via CSS direttamente al Canvas di Mirador, senza modificare i file su disco.
+* **Preset**: Modalità "Notte", "Contrasto Elevato" e "Default".
 
 ### ✍️ Trascrizione & OCR
 
-* L’editor principale ora usa SimpleMDE: tema scuro, toolbar personalizzate, `forceSync` e `text-area` in readOnly quando OCR è in corso.
-* `hx-post="/api/run_ocr_async"` avvia un worker Python; `/api/check_ocr_status` mantiene l’overlay (“AI in ascolto”) visibile fino a esito.
-* I toast flottanti (`#studio-toast-holder`) mostrano messaggi success/info/error tramite `build_toast` e si auto-dismettono dopo qualche secondo.
-* `/api/save_transcription` verifica se il testo è cambiato (solo salva se diverso), invia un toast flottante e include un trigger HTMX nascosto che rifà il GET a `/studio/partial/history` (con messaggio informativo quando non serve salvare) per mantenere la scheda History aggiornato senza refresh manuale.
+* **Editor**: SimpleMDE (Markdown) con toolbar personalizzata.
+* **OCR Asincrono**:
+  * Cliccando "Run OCR", un worker in background elabora l'immagine.
+  * L'overlay "AI in ascolto" fa polling sullo stato ogni 2 secondi.
+* **Salvataggio Intelligente**:
+  * Il tasto Salva (o Ctrl+S) invia il testo al server.
+  * Il sistema calcola il "Diff": se il testo non è cambiato, evita scritture inutili nel DB.
+  * Feedback visivo immediato tramite Toast.
 
 ### 📜 History
 
-* I record mostrano badge engine/status, timestamp formattato e snippet di 220 caratteri con diff di caratteri aggiunti/rimossi (+ verde, – rosso).
-* Ogni entry ha un pulsante `↺ Ripristina versione` che chiama `/api/restore_transcription`; un history-message/banner conferma l’operazione.
+* **Versionamento**: Ogni salvataggio crea uno snapshot.
+* **Visualizzazione**: Badge colorati indicano il motore usato (es. "OpenAI", "Manual").
+* **Ripristino**: Il tasto `↺ Ripristina` riporta l'editor a una versione precedente.
 
-## 4. Snippets e utilities
+## 5. Snippets e Dati
 
-* La creazione di snippet salva metadata + ritaglio nel vault SQLite e permette di ritrovarli rapidamente nella tab Snippets.
-* Lo storage mantiene `transcription.json`, `history/` e `vault.db` per auditing e ripristino.
+* **Snippet**: Ritagli salvati in `data/local/snippets` e indicizzati nel DB SQLite.
+* **File System**:
+  * `downloads/{Lib}/{ID}/scans/`: Immagini JPG (Sorgente di verità).
+  * `downloads/{Lib}/{ID}/data/`: Metadati JSON e trascrizioni.
+  * `data/vault.db`: Database SQLite per lo stato dei job e ricerche globali.
 
-## 5. Troubleshooting
+## 6. Troubleshooting
 
-* **Overlay “AI in ascolto” non sparisce**: controlla i log `studio_ui/routes/studio.py` e la console browser per eventuali errori HTMX; l’overlay si disfa quando `/api/check_ocr_status` risponde con la trascrizione aggiornata.
-* **Toast non appaiono**: verifica che `hx-swap-oob` riceva il `Div` con `id="studio-toast-stack"` e che HTMX non filtrino gli script; eventuali errori di script vengono loggati nella console del browser.
-* **History non aggiornata**: il trigger nascosto dopo il salvataggio fa una request GET a `/studio/partial/history`; se la tab non cambia, controllare `logs/app.log` per errori o per `info_message` malformato.
+* **Errore "Connection Reset" o 403 su Gallica**:
+  * Il tuo IP potrebbe essere stato bloccato temporaneamente. Il sistema ora include un sistema di "Backoff" (attesa esponenziale), ma se il blocco persiste, prova a cambiare rete (es. Hotspot).
+* **Overlay OCR bloccato**:
+  * Controlla i log (`logs/app.log`). Se il worker Python crasha, l'overlay potrebbe non ricevere il segnale di stop. Ricarica la pagina.
+* **PDF scaricato ma Studio vuoto**:
+  * Verifica che l'estrazione delle immagini sia avvenuta. Controlla se la cartella `scans/` contiene file `pag_xxxx.jpg`.
 
-## 6. Developer Notes
+## 7. Developer Notes
 
-* Per comprare la guida Architettura aggiornata, leggi `docs/ARCHITECTURE.md`.
-* Per aggiungere nuovi tool all’editor, aggiorna `studio_ui/components/studio/transcription.py` (SimpleMDE) e considera di esporre ulteriori toolbar/shortcuts qui.
-* Il core OCR resta in `universal_iiif_core/ocr`; tutto ciò che riguarda la UI (toasts, overlay, htmx) è in `studio_ui/`.
-* **Configurazione viewer**: `settings.viewer.mirador.openSeadragonOptions` governa i limiti di zoom/stabilità mentre `settings.viewer.visual_filters` scrive i default/preset di luminosità/contrast/saturazione/hue/invert; la UI aspetta questi valori nella scheda Visual.
+* **Architecture**: Vedi `docs/ARCHITECTURE.md` per il diagramma dei moduli.
+* **Network Layer**: Tutta la logica HTTP è centralizzata in `src/universal_iiif_core/utils.py` (Session, Headers, Retry).
+* **Testing**:
+  * Unit test offline: `pytest tests/test_discovery_resolvers_unit.py`
+  * Live test (Rete richiesta): `pytest tests/test_live.py` (Abilitare in config).
+
+## 8. Gestione dei dati locali
+
+- I dati runtime (cartelle `downloads/`, `data/local/`, `logs/`, `temp_images/`) sono ritenuti rigenerabili e restano nel `.gitignore`. Il contenuto di `config.json` è invece trattato come fonte primaria e non viene mai cancellato automaticamente.
+- Per cancellare in tutta sicurezza i dati rigenerabili, usa lo script `scripts/clean_user_data.py`. Passa `--dry-run` per vedere cosa verrebbe rimosso, `--yes` per confermare la rimozione e `--include-data-local` solo se devi resettare anche `data/local/models`, `data/local/snippets` o altri componenti generati.
+- Lo script usa `universal_iiif_core.config_manager` per risolvere i percorsi configurati; se aggiungi nuove directory runtime, registra sempre il path tramite il manager e aggiornane `.gitignore`.
+- Come workflow consigliato prima di una PR: (1) `python scripts/clean_user_data.py --dry-run`, (2) `python scripts/clean_user_data.py --yes`, (3) `pytest tests/`, (4) `ruff check . --select C901` + `ruff format .`. Queste istruzioni sono ripetute anche in `AGENTS.md`.

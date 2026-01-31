@@ -4,6 +4,7 @@ Gestisce la grafica della pagina di ricerca, le card di anteprima,
 i messaggi di errore e la barra di avanzamento del download.
 """
 
+# ... (altri import esistenti)
 from fasthtml.common import (
     H2,
     H3,
@@ -11,6 +12,7 @@ from fasthtml.common import (
     Button,
     Div,
     Form,
+    Img,
     Input,
     Label,
     Option,
@@ -23,6 +25,74 @@ from fasthtml.common import (
     Th,
     Tr,
 )
+
+
+def render_search_results_list(results: list) -> Div:
+    """Renderizza una lista di risultati di ricerca (es. Gallica)."""
+    cards = []
+
+    for item in results:
+        # Estraiamo i dati
+        title = item.get("title", "Senza titolo")
+        # Tronchiamo la descrizione se troppo lunga
+        desc_text = item.get("description", "") or ""
+        desc = desc_text[:150] + "..." if len(desc_text) > 150 else desc_text
+
+        thumb = item.get("thumbnail")
+        doc_id = item.get("id")
+        manifest_url = item.get("manifest")
+        library = item.get("library", "Gallica")
+
+        # Azione: Avvia Download
+        # Usiamo gli stessi endpoint della card singola
+        hx_vals = f'{{"manifest_url": "{manifest_url}", "doc_id": "{doc_id}", "library": "{library}"}}'
+
+        btn = Button(
+            "⬇️ Scarica",
+            cls="bg-slate-700 hover:bg-slate-600 text-white text-xs px-3 py-1 rounded transition-colors",
+            hx_post="/discovery/download",
+            hx_vals=hx_vals,
+            hx_target="#download-status-area",
+            hx_swap="innerHTML",
+        )
+
+        # Layout Card Orizzontale Compatta
+        img_col = Div(
+            Img(src=thumb, cls="w-16 h-16 object-cover rounded border border-slate-600")
+            if thumb
+            else Div(
+                "No IMG",
+                cls="w-16 h-16 bg-slate-800 rounded flex items-center justify-center text-[10px] text-slate-500",
+            ),
+            cls="flex-shrink-0 mr-4",
+        )
+
+        txt_col = Div(
+            H3(title, cls="text-sm font-bold text-slate-200 mb-1 leading-tight"),
+            P(desc, cls="text-xs text-slate-400 mb-2 line-clamp-2"),
+            Div(btn, cls="flex justify-end"),
+            cls="flex-grow min-w-0",
+        )
+
+        card = Div(
+            img_col,
+            txt_col,
+            cls=(
+                "flex items-start p-3 bg-slate-800/40 hover:bg-slate-800/80 rounded-lg border border-slate-700/50 "
+                "hover:border-slate-600 transition-all mb-2"
+            ),
+        )
+        cards.append(card)
+
+    return Div(
+        Div(
+            H3(f"Trovati {len(results)} risultati", cls="text-md font-bold text-slate-100"),
+            Span("Clicca su scarica per importare", cls="text-xs text-slate-500"),
+            cls="flex justify-between items-baseline mb-4 border-b border-slate-700 pb-2",
+        ),
+        Div(*cards, cls="space-y-2 max-h-[600px] overflow-y-auto pr-2 custom-scrollbar"),
+        id="discovery-preview",  # Rimpiazza l'area di preview
+    )
 
 
 def render_error_message(title: str, details: str = "") -> Div:

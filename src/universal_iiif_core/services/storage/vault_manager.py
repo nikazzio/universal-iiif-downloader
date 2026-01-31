@@ -1,3 +1,4 @@
+import shutil
 import sqlite3
 from contextlib import suppress
 from pathlib import Path
@@ -27,6 +28,7 @@ class VaultManager:
 
         self._ensure_db_dir()
         self._init_db()
+        self._download_progress_cache: dict[str, tuple[int, int, str]] = {}
 
     def _ensure_db_dir(self):
         if not self.db_path.parent.exists():
@@ -198,11 +200,22 @@ class VaultManager:
             conn.close()
 
     def delete_manuscript(self, ms_id: str):
-        """Deletes a manuscript and all associated snippets from the database and disk."""
+        """Delete manuscript DB record, snippets, and the manuscript folder on disk.
+
+        The method removes snippet files, snippet rows, the manuscript row and
+        — if the recorded `local_path` points inside the configured downloads
+        directory — the whole manuscript folder on disk. This prevents accidental
+        removal outside the app data directories.
+        """
         conn = self._get_conn()
         cursor = conn.cursor()
         try:
-            # 1. Get all snippet paths for this manuscript
+            # Read recorded local_path for safety deletion later
+            cursor.execute("SELECT local_path FROM manuscripts WHERE id = ?", (ms_id,))
+            row = cursor.fetchone()
+            local_path = row[0] if row and row[0] else None
+
+            # 1. Get snippet paths for this manuscript
             cursor.execute("SELECT id, image_path FROM snippets WHERE ms_name = ?", (ms_id,))
             snippets = cursor.fetchall()
 
@@ -215,10 +228,37 @@ class VaultManager:
                             p.unlink()
                 cursor.execute("DELETE FROM snippets WHERE id = ?", (s_id,))
 
-            # 3. Delete the manuscript entry
+            # 3. Delete the manuscript DB entry
             cursor.execute("DELETE FROM manuscripts WHERE id = ?", (ms_id,))
             deleted = cursor.rowcount > 0
             conn.commit()
+
+            # 4. Remove manuscript folder from disk if it's under configured downloads dir
+            if local_path:
+                try:
+                    from ...config_manager import get_config_manager
+
+                    cm = get_config_manager()
+                    downloads_base = Path(cm.get_downloads_dir()).resolve()
+                    candidate = Path(local_path).resolve()
+
+                    # Safety: only remove when candidate is inside downloads_base
+                    if downloads_base in candidate.parents or candidate == downloads_base:
+                        if candidate.exists() and candidate.is_dir():
+                            try:
+                                shutil.rmtree(candidate)
+                                logger.info("Removed manuscript folder from disk: %s", candidate)
+                            except Exception:
+                                logger.debug("Failed to remove manuscript folder %s", candidate, exc_info=True)
+                    else:
+                        logger.debug(
+                            "Refusing to remove manuscript folder outside downloads dir: %s (base=%s)",
+                            candidate,
+                            downloads_base,
+                        )
+                except Exception:
+                    logger.debug("Error while attempting to remove manuscript folder", exc_info=True)
+
             return deleted
         finally:
             conn.close()
@@ -440,30 +480,34 @@ class VaultManager:
         """,
             (current, total, status, error, job_id),
         )
-        # Log progress with reference to the manuscript title when available
-        try:
-            cursor.execute("SELECT doc_id FROM download_jobs WHERE job_id = ?", (job_id,))
-            row = cursor.fetchone()
-            doc_id = row[0] if row else None
-            title = None
-            if doc_id:
-                try:
-                    ms = self.get_manuscript(doc_id)
-                    title = ms.get("title") if ms else None
-                except Exception:
-                    title = None
+        progress_key = (current, total, status)
+        cached = self._download_progress_cache.get(job_id)
+        if cached != progress_key:
+            try:
+                cursor.execute("SELECT doc_id FROM download_jobs WHERE job_id = ?", (job_id,))
+                row = cursor.fetchone()
+                doc_id = row[0] if row else None
+                title = None
+                if doc_id:
+                    try:
+                        ms = self.get_manuscript(doc_id)
+                        title = ms.get("title") if ms else None
+                    except Exception:
+                        title = None
 
-            logger.info(
-                "Download update: job=%s doc=%s title=%s %s/%s status=%s",
-                job_id,
-                doc_id or "-",
-                title or "-",
-                current,
-                total,
-                status,
-            )
-        except Exception:
-            logger.debug("Failed to log download update for job %s", job_id, exc_info=True)
+                logger.info(
+                    "Download update: job=%s doc=%s title=%s %s/%s status=%s",
+                    job_id,
+                    doc_id or "-",
+                    title or "-",
+                    current,
+                    total,
+                    status,
+                )
+            except Exception:
+                logger.debug("Failed to log download update for job %s", job_id, exc_info=True)
+            finally:
+                self._download_progress_cache[job_id] = progress_key
 
         conn.commit()
 

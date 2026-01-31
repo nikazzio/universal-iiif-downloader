@@ -5,22 +5,23 @@ from .base import BaseResolver
 
 class OxfordResolver(BaseResolver):
     """Resolver for Digital Bodleian (Oxford) UUID-based manifests."""
-    def can_resolve(self, url_or_id):
-        """Return True when the input references digital.bodleian.ox.ac.uk."""
-        return "digital.bodleian.ox.ac.uk" in url_or_id
 
-    def get_manifest_url(self, url_or_id):
-        """Build the canonical Bodleian manifest URL from a UUID input."""
-        # Input: https://digital.bodleian.ox.ac.uk/objects/080f88f5-7586-4b8a-8064-63ab3495393c/
-        # Output: https://iiif.bodleian.ox.ac.uk/iiif/manifest/080f88f5-7586-4b8a-8064-63ab3495393c.json
+    def can_resolve(self, url_or_id: str) -> bool:
+        """Check if the input can be resolved by this resolver."""
+        s = url_or_id or ""
+        if "digital.bodleian.ox.ac.uk" in s:
+            return True
+        # Also accept bare UUIDs
+        uuid_re = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", re.I)
+        return bool(uuid_re.search(s))
 
-        # Regex to extract UUID: 8-4-4-4-12 hex digits
-        uuid_pattern = r"([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"
-        match = re.search(uuid_pattern, url_or_id)
-
-        if match:
-            uuid = match.group(1)
-            manifest_url = f"https://iiif.bodleian.ox.ac.uk/iiif/manifest/{uuid}.json"
-            return manifest_url, uuid
-
-        return None, None
+    def get_manifest_url(self, url_or_id: str) -> tuple[str | None, str | None]:
+        """Return the IIIF manifest URL and document ID for a given Oxford shelfmark or URL."""
+        s = url_or_id or ""
+        uuid_re = re.compile(r"([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})", re.I)
+        m = uuid_re.search(s)
+        if not m:
+            return None, None
+        uuid = m.group(1).lower()
+        manifest_url = f"https://iiif.bodleian.ox.ac.uk/iiif/manifest/{uuid}.json"
+        return manifest_url, uuid

@@ -64,14 +64,44 @@ Il progetto ha adottato un **Modern Package Layout (SRC Layout)**. La logica è 
 
 ---
 
+## 🧹 User-Data Workflow
+
+- **Cleanup script**: `scripts/clean_user_data.py` usa il `ConfigManager` per individuare `downloads`, `temp_images`, `logs` e (se richiesto) l’intero `data/local`. Esegui `python scripts/clean_user_data.py --dry-run` per valutare l’impatto e aggiungi `--include-data-local` solo quando serve resettare anche modelli e snippet generati.
+- **Checklist prima della PR**:
+  1. Aggiorna `.gitignore` per includere nuove directory di runtime e registra il path nel `config.json` solo tramite `universal_iiif_core.config_manager`.
+  2. Conferma cosa verrebbe rimosso con `python scripts/clean_user_data.py --dry-run`.
+  3. Esegui `python scripts/clean_user_data.py --yes` (aggiungi `--include-data-local` se hai toccato config o resolver di storage) e poi `pytest tests/`.
+  4. Termina con `ruff check . --select C901` e `ruff format .` per assicurarti che le modifiche rispettino le regole di complessità.
+- **Quando pulire**: prima di lanciarе test locali completi, dopo modifiche ai resolver/storage e quando ti servono dati freschi per debugging. Lo script preserva `config.json` e richiede conferma a meno che non passi `--yes`.
+
 ## 🚀 GitHub & PR Strategy (MANDATORY)
 
 - **Use GitHub CLI**: Usa sempre `gh` per le operazioni remote.
 - **PR Creation**: Esegui `gh pr create --fill` per ogni modifica.
-- **Branching**: **Mai committare su `main`**. Crea sempre un feature branch.
+- **Branching**: **Mai committare su `main`**. Crea sempre un feature branch. Nomina i branch seguendo `feat/`, `fix/`, `docs/`, `chore/` + descrizione corta.
 - **Conventional Commits**: Usa prefissi `feat:`, `fix:`, `docs:`, `chore:`.
+- **PR Readiness**: Prima di aprire un PR, conferma lo stato locale con `gh pr status` e correggi eventuali controlli falliti; usa `gh pr view --web` solo dopo aver rivisto i risultati.
 
 ## 📦 Semantic Release
 
 - L'automazione dei rilasci si basa sui commit messaggi. Assicurati che siano descrittivi.
 - La versione è centralizzata in `src/universal_iiif_core/__init__.py`.
+
+## 🧑‍💻 Coding Expectations
+
+- **Complexity (C901)**: Ogni funzione o metodo deve restare sotto la soglia 10. Spezzetta in helper chiari con responsabilità singole e testabili se la logica cresce.
+- **Code Style**: Usa `pathlib.Path` per i percorsi, evita API legacy (`os.path`, moduli rimossi) a meno che non sia giustificato e approvato. Favorisci funzioni pure e separa effetti collaterali in helper dedicati.
+- **Ruff & Tooling**: Esegui `ruff check . --select C901` e `ruff format .` prima di committare; qualsiasi failure di complessità va corretto o giustificato nel PR.
+- **Design moderno**: Prediligi tipizzazione esplicita, data classes/`attrs` quando gestisci strutture dati, e `async` solo dove necessario. Fornisci docstring tipo Google/NumPy per API pubbliche.
+- **Examples**:
+  - Breaking up complex work:
+    ```python
+    def download_manifest(manifest_url: str) -> DownloadResult:
+        manifest = fetch_manifest(manifest_url)
+        return handle_download(manifest)
+
+    def handle_download(manifest: Manifest) -> DownloadResult:
+        # helper anticipa le eccezioni e tiene il body concentrato
+        ...
+    ```
+  - Evitare funzioni con troppi branch: converte in piccoli step sequenziali chiaramente nominati (e.g. `validate_manifest`, `resolve_storage_path`).

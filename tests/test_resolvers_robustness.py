@@ -40,10 +40,28 @@ def test_vatican_cross_protection():
 
     m_url, d_id = resolve_shelfmark("Vaticana", uuid)
     print(f"Input UUID to Vatican: {uuid}")
-    if m_url is None and "Oxford" in d_id:
+    if m_url is None and d_id is not None and "Oxford" in d_id:
         print(f"  ✅ Protected: {d_id}")
     else:
         print(f"  ❌ Failed to protect: {m_url} (ID: {d_id})")
+
+
+def test_vatican_normalization_cases():
+    """Verify Vatican shelfmark normalization handles flexible inputs."""
+    print("\n--- Testing Vatican Normalization ---")
+    cases = [
+        ("Vat lat 123", "MSS_Vat.lat.123"),
+        ("urb lat 123", "MSS_Urb.lat.123"),
+        ("urb   lat   123", "MSS_Urb.lat.123"),
+        ("urb-lat-123", "MSS_Urb.lat.123"),
+        ("MSS_Urb.lat.123", "MSS_Urb.lat.123"),
+    ]
+
+    for inp, expected in cases:
+        m_url, d_id = resolve_shelfmark("Vaticana", inp)
+        print(f"Input: {inp} -> {d_id}")
+        assert d_id == expected, f"Expected {expected}, got {d_id} for input {inp}"
+        assert m_url and expected in m_url
 
 
 def test_gallica_bpt():

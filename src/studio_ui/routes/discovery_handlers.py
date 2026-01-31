@@ -14,11 +14,12 @@ from studio_ui.components.discovery import (
     render_download_status,
     render_error_message,
     render_preview,
+    render_search_results_list,
 )
 from studio_ui.components.layout import base_layout
 from studio_ui.routes.discovery_helpers import analyze_manifest, start_downloader_thread
 from universal_iiif_core.logger import get_logger
-from universal_iiif_core.resolvers.discovery import resolve_shelfmark
+from universal_iiif_core.resolvers.discovery import resolve_shelfmark, smart_search
 from universal_iiif_core.services.storage.vault_manager import VaultManager
 
 logger = get_logger(__name__)
@@ -105,9 +106,47 @@ def resolve_manifest(library: str, shelfmark: str):
     try:
         # Controllo Input Vuoto
         if not shelfmark or not shelfmark.strip():
-            return render_error_message("Input mancante", "Inserisci una segnatura (es. Urb.lat.1779) o un URL valido.")
+            return render_error_message("Input mancante", "Inserisci una segnatura o una parola chiave.")
 
-        logger.info("Resolving: lib=%s shelf=%s", library, shelfmark)
+        logger.info("Resolving: lib=%s input=%s", library, shelfmark)
+
+        # === RAMO A: GALLICA (Ricerca Smart o ID) ===
+        if "Gallica" in library:
+            try:
+                # smart_search restituisce SEMPRE una lista (di 1 o N elementi)
+                results = smart_search(shelfmark)
+            except Exception as e:
+                return render_error_message("Errore Gallica", str(e))
+
+            if not results:
+                return render_error_message(
+                    "Nessun risultato", f"Nessun manoscritto trovato per '{shelfmark}' su Gallica."
+                )
+
+            # CASO 1: ID DIRETTO (Lista con 1 elemento flaggato come match esatto)
+            # Se è un URL specifico o un ID, smart_search restituisce 1 risultato con i dettagli completi
+            is_direct = results[0].get("raw", {}).get("_is_direct_match", False)
+
+            if len(results) == 1 and is_direct:
+                # È un manoscritto singolo: usiamo la vista standard di anteprima
+                item = results[0]
+                preview_data = {
+                    "id": item.get("id"),
+                    "library": "Gallica",
+                    "url": item.get("manifest"),
+                    "label": item.get("title", "Senza Titolo"),
+                    "description": item.get("description", ""),
+                    "pages": 0,  # Gallica SRU a volte non dà il conteggio pagine, ma va bene
+                    "thumbnail": item.get("thumbnail"),
+                }
+                return render_preview(preview_data)
+
+            # CASO 2: RISULTATI DI RICERCA (Lista di N elementi)
+            # Se smart_search restituisce più risultati o non è un match diretto
+            return render_search_results_list(results)
+
+        # === RAMO B: VATICANA / OXFORD (Logica Classica) ===
+        # Per ora Vaticana non supporta la ricerca testuale, solo ID diretti
 
         # 1. Risoluzione URL
         try:
@@ -117,26 +156,19 @@ def resolve_manifest(library: str, shelfmark: str):
             return render_error_message("Errore nel Resolver", str(e))
 
         if not manifest_url:
-            # Suggerimenti specifici in base alla biblioteca
-            hint = "Verifica che la segnatura sia corretta."
+            hint = "Verifica la segnatura."
             if library == "Vaticana":
-                hint += " Prova formati come 'Urb.lat.1779' o 'Vat.gr.123'."
-            elif library == "Gallica":
-                hint += " Inserisci un ID ARK o cerca per titolo."
+                hint += " Prova formati come 'Urb.lat.1779'."
 
             return render_error_message(
-                "Manoscritto non trovato", f"Impossibile risolvere '{shelfmark}' per la biblioteca {library}. {hint}"
+                "Manoscritto non trovato", f"Impossibile risolvere '{shelfmark}' per {library}. {hint}"
             )
 
         # 2. Analisi del Manifest (Download leggero)
         try:
             manifest_info = analyze_manifest(manifest_url)
-        except Exception as e:
-            logger.error(f"Manifest analysis error: {e}")
-            return render_error_message(
-                "Errore lettura Manifest",
-                "Il documento esiste ma il file Manifest IIIF sembra corrotto o irraggiungibile.",
-            )
+        except Exception:
+            return render_error_message("Errore Manifest", "Manifest IIIF corrotto o irraggiungibile.")
 
         # 3. Preparazione Dati Anteprima
         preview_data = {
@@ -144,7 +176,7 @@ def resolve_manifest(library: str, shelfmark: str):
             "library": library,
             "url": manifest_url,
             "label": manifest_info.get("label", "Senza Titolo"),
-            "description": manifest_info.get("description", "Nessuna descrizione disponibile."),
+            "description": manifest_info.get("description", "Nessuna descrizione."),
             "pages": manifest_info.get("canvases", 0),
         }
 
@@ -152,7 +184,7 @@ def resolve_manifest(library: str, shelfmark: str):
 
     except Exception as e:
         logger.exception("Unexpected error in resolve_manifest")
-        return render_error_message("Errore di Sistema Imprevisto", str(e))
+        return render_error_message("Errore Critico", str(e))
 
 
 def start_download(manifest_url: str, doc_id: str, library: str):

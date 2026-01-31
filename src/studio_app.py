@@ -5,6 +5,7 @@ from pathlib import Path
 
 from fasthtml.common import RedirectResponse, fast_app, serve
 from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.cors import CORSMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
 from starlette.staticfiles import StaticFiles
@@ -74,6 +75,14 @@ app, rt = fast_app(
         # Additional headers if needed
     ),
     lifespan=lifespan,
+)
+
+# Allow cross-origin requests for static assets (Mirador/OpenSeadragon image loads)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["GET", "HEAD"],
+    allow_headers=["*"],
 )
 
 # Setup static file serving

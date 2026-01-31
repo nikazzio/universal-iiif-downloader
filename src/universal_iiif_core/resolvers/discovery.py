@@ -1,169 +1,161 @@
-import re
+from __future__ import annotations
+
+from typing import Final
 
 import requests
-from defusedxml import ElementTree
 
 from ..logger import get_logger
-from ..utils import DEFAULT_HEADERS
+from .gallica import GallicaResolver
+from .models import SearchResult
+from .parsers import GallicaXMLParser, IIIFManifestParser
+from .registry import resolve_shelfmark as registry_resolve
 
 logger = get_logger(__name__)
 
+# Constants
+TIMEOUT_SECONDS: Final = 20
+GALLICA_BASE_URL: Final = "https://gallica.bnf.fr/SRU"
+
+# HEADER REALI PER EVITARE IL BAN (Errore 500/403)
+# Gallica blocca le richieste se non sembrano provenire da un browser.
+REAL_BROWSER_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/120.0.0.0 Safari/537.36"
+    ),
+    "Accept": "application/xml,text/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Connection": "keep-alive",
+}
+
+
+def smart_search(input_text: str) -> list[SearchResult]:
+    """PUNTO DI INGRESSO PRINCIPALE (Logica Ibrida).
+
+    Logica:
+    1. Pulisce l'input.
+    2. Controlla se è un ID o URL valido (Gallica, Vatican, Oxford, ecc).
+       Se SÌ -> Restituisce subito il manifesto (lista con 1 elemento).
+    3. Se NO -> Esegue una ricerca testuale su Gallica (lista con N elementi).
+    """
+    text = (input_text or "").strip()
+    if not text:
+        return []
+
+    # 1. TENTATIVO RISOLUZIONE DIRETTA (ID o LINK)
+    # Usiamo il resolver Gallica specifico per catturare short ID (es. bpt6k...)
+    gallica_resolver = GallicaResolver()
+
+    # Se sembra un link/ID Gallica valido
+    if gallica_resolver.can_resolve(text):
+        logger.info("Input '%s' riconosciuto come ID/URL Gallica.", text)
+        manifest_url, doc_id = gallica_resolver.get_manifest_url(text)
+
+        if manifest_url:
+            # Scarichiamo i dettagli del singolo manifesto
+            details = get_manifest_details(manifest_url)
+            if details:
+                # Flagghiamo per la UI che è un match esatto
+                details["raw"] = details.get("raw", {})
+                details["raw"]["_is_direct_match"] = True
+                return [details]
+            else:
+                logger.warning("URL risolto ma manifesto non scaricabile: %s", manifest_url)
+
+    # Potresti aggiungere qui controlli per Vaticana/Oxford se vuoi supportarli nello stesso campo
+    # ma per ora ci concentriamo su Gallica come richiesto.
+
+    # 2. RICERCA TESTUALE (FALLBACK)
+    logger.info("Input '%s' interpretato come ricerca SRU.", text)
+    return search_gallica(text)
+
 
 def resolve_shelfmark(library: str, shelfmark: str) -> tuple[str | None, str | None]:
-    """Resolve a library name and shelfmark/ID into a IIIF Manifest URL.
+    """Resolve a shelfmark into (manifest_url, id) using the registry.
 
-    Returns (manifest_url, doc_id).
+    Errors are logged with exc_info at the service boundary.
     """
-    s = shelfmark.strip()
-    logger.debug("Resolving shelfmark for %s: %r", library, s)
+    s = (shelfmark or "").strip()
+    lib = (library or "").strip()
 
-    if library == "Vaticana":
-        # Handle full URL if pasted accidentally
-        if "digi.vatlib.it" in s:
-            ms_id = s.strip("/").split("/")[-1]
-            return f"https://digi.vatlib.it/iiif/{ms_id}/manifest.json", ms_id
+    logger.debug("Resolving shelfmark for Library=%r input=%r", lib, s)
 
-        # SAFETY: Protect against Oxford UUIDs being pasted here
-        uuid_pattern = r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
-        if re.search(uuid_pattern, s.lower()):
-            logger.warning("Oxford UUID %r provided to Vaticana resolver", s)
-            return (
-                None,
-                "L'ID sembra un UUID Oxford. Seleziona 'Bodleian (Oxford)' come biblioteca.",
-            )
-
-        # Standardize shelfmark: "Urb. Lat. 1779" -> "MSS_Urb.lat.1779"
-        # 1. Remove all spaces
-        clean_s = s.replace(" ", "")
-        # 2. Case normalization (BAV often uses 'lat.' instead of 'Lat.')
-        clean_s = (
-            clean_s.replace("Lat.", "lat.").replace("Gr.", "gr.").replace("Vat.", "vatic.").replace("Pal.", "pal.")
-        )
-
-        clean_id = clean_s if clean_s.startswith("MSS_") else f"MSS_{clean_s}"
-        return f"https://digi.vatlib.it/iiif/{clean_id}/manifest.json", clean_id
-
-    if library == "Gallica (BnF)":
-        # Cleanup input
-        s = s.strip().strip("/")
-        # Handle cases where user pastes just the ID
-        if "ark:/" not in s:
-            if s and len(s) > 3 and s[0] in ("b", "c"):
-                s = f"ark:/12148/{s}"
-            else:
-                return (
-                    None,
-                    "Gallica richiede un ID ARK o un identificatore Gallica (es. btv1b10033406t, bpt6k9761787t)",
-                )
-
-        doc_id = s.split("/")[-1]
-        return f"https://gallica.bnf.fr/iiif/{s}/manifest.json", doc_id
-
-    if library == "Bodleian (Oxford)":
-        # UUID or full URL
-        # Robustness: strip trailing slashes to avoid empty ms_id
-        ms_id = s.strip("/").split("/")[-1].replace(".json", "")
-        uuid_pattern = r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
-        if re.search(uuid_pattern, ms_id.lower()):
-            return (
-                f"https://iiif.bodleian.ox.ac.uk/iiif/manifest/{ms_id.lower()}.json",
-                ms_id,
-            )
-
-        return None, "Bodleian richiede un UUID valido (es. 080f88f5...)"
-
-    return None, None
+    try:
+        manifest_url, doc_id = registry_resolve(lib, s)
+        if manifest_url:
+            logger.info("Resolved '%s' -> %s", s, manifest_url)
+        else:
+            logger.warning("No manifest for '%s' (lib=%s)", s, lib)
+        return manifest_url, doc_id
+    except Exception as exc:
+        logger.error("Resolver crashed for %r/%r: %s", lib, s, exc, exc_info=True)
+        return None, None
 
 
-def search_gallica(query: str, max_records: int = 10) -> list[dict]:
-    """Search Gallica manuscripts using the official SRU API.
+def search_gallica(query: str, max_records: int = 15) -> list[SearchResult]:
+    """Search Gallica SRU and return parsed SearchResult entries.
 
-    Uses the BnF SRU (Search/Retrieve via URL) protocol with CQL queries.
-    Documentation: https://api.bnf.fr/fr/api-gallica-de-recherche
-
-    Args:
-        query: Search term (searches in title field)
-        max_records: Maximum number of results to return (1-50)
-
-    Returns:
-        List of dictionaries containing manuscript information
+    Network errors are logged here; parser returns structured results or
+    raises parsing errors back to the caller which we convert to empty
+    results to keep the public API stable.
     """
-    url = "https://gallica.bnf.fr/SRU"
+    if not (q := (query or "").strip()):
+        return []
 
-    # Build CQL query: search in title and filter by manuscript type
-    # Note: 'manuscrit' is the correct French term used by Gallica
-    cql_query = f'(dc.title all "{query}") and (dc.type all "manuscrit")'
+    # FIX QUERY: Puliamo le virgolette per evitare errori SRU 500
+    clean_q = q.replace('"', "'")
+
+    # FIX QUERY: Usiamo 'gallica all' che cerca ovunque nel testo/metadati
+    # e filtriamo per tipo 'manuscrit'
+    cql = f'gallica all "{clean_q}" and dc.type any "manuscrit"'
 
     params = {
         "operation": "searchRetrieve",
         "version": "1.2",
-        "query": cql_query,
-        "maximumRecords": str(min(max_records, 50)),  # API limit is 50
+        "query": cql,
+        "maximumRecords": str(min(max_records, 50)),
         "startRecord": "1",
+        "collapsing": "true",  # Raggruppa versioni simili
     }
 
-    results: list[dict] = []
     try:
-        r = requests.get(url, params=params, headers=DEFAULT_HEADERS, timeout=15)
-        r.raise_for_status()
-        root = ElementTree.fromstring(r.text)
+        logger.debug("Searching Gallica SRU: %s", cql)
 
-        # Define XML namespaces for parsing
-        ns = {
-            "srw": "http://www.loc.gov/zing/srw/",
-            "dc": "http://purl.org/dc/elements/1.1/",
-            "oai_dc": "http://www.openarchives.org/OAI/2.0/oai_dc/",
-        }
+        # FIX HEADERS: Usiamo quelli reali definiti in alto per evitare il ban
+        resp = requests.get(GALLICA_BASE_URL, params=params, headers=REAL_BROWSER_HEADERS, timeout=TIMEOUT_SECONDS)
+        resp.raise_for_status()
 
-        # Parse each result record
-        for record in root.findall(".//srw:record", ns):
-            title_elem = record.find(".//dc:title", ns)
-            identifier_elem = record.find(".//dc:identifier", ns)
+        # Delegate XML parsing to the parser module
+        resolver = GallicaResolver()
+        return GallicaXMLParser.parse_sru(resp.content, resolver)
 
-            if title_elem is not None and identifier_elem is not None:
-                identifier = identifier_elem.text
-
-                # Extract ARK identifier from the URL
-                if identifier and "ark:/" in identifier:
-                    ark = identifier[identifier.find("ark:/") :]
-                    doc_id = ark.split("/")[-1]  # Extract btv... ID
-
-                    results.append(
-                        {
-                            "id": doc_id,
-                            "title": title_elem.text or "Sans titre",
-                            "manifest_url": f"https://gallica.bnf.fr/iiif/{ark}/manifest.json",
-                            "preview_url": f"https://gallica.bnf.fr/{ark}.thumbnail",
-                        }
-                    )
-
-    except requests.RequestException as e:
-        logger.error("Network error searching Gallica: %s", e)
-    except ElementTree.ParseError as e:
-        logger.error("XML parsing error from Gallica: %s", e)
-    except Exception as e:  # pylint: disable=broad-exception-caught
-        logger.error("Unexpected error searching Gallica: %s", e)
-
-    return results
+    except Exception as exc:
+        logger.error("Gallica search failed: %s", exc, exc_info=True)
+        return []
 
 
-def search_oxford(_query: str) -> list[dict]:
-    """Oxford/Bodleian search is currently unavailable.
+def get_manifest_details(manifest_url: str) -> SearchResult | None:
+    """Fetch a manifest URL and return a parsed SearchResult or None.
 
-    The Digital Bodleian public search API has been removed (returns 404).
-    As of January 2026, there is no publicly documented API endpoint for
-    searching the Bodleian manuscript collection programmatically.
-
-    Alternative: Users should search manually at https://digital.bodleian.ox.ac.uk/
-    and paste the manifest URL or UUID directly into the resolver.
-
-    Args:
-        query: Search term (currently unused)
-
-    Returns:
-        Empty list (API no longer available)
+    All network errors are logged here; the parser focuses on data shape only.
     """
-    logger.warning(
-        "Oxford search API not available. Users should search manually at https://digital.bodleian.ox.ac.uk/"
-    )
-    return []
+    url = (manifest_url or "").strip()
+    if not url:
+        return None
+
+    try:
+        # FIX HEADERS: Anche qui servono headers reali per scaricare il JSON
+        resp = requests.get(url, headers=REAL_BROWSER_HEADERS, timeout=TIMEOUT_SECONDS)
+        resp.raise_for_status()
+        manifest = resp.json()
+
+        # Attempt to find a document id from manifest or fallback to URL
+        doc_id = manifest.get("id") if isinstance(manifest, dict) else None
+        return IIIFManifestParser.parse_manifest(manifest, url, doc_id=doc_id)
+    except Exception as exc:
+        logger.error("Failed to fetch/parse manifest %r: %s", url, exc, exc_info=True)
+        return None
+
+
+__all__ = ["resolve_shelfmark", "search_gallica", "get_manifest_details", "smart_search", "TIMEOUT_SECONDS"]
