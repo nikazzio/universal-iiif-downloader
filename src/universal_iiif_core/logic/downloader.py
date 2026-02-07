@@ -209,29 +209,30 @@ class IIIFDownloader:
         self.library = library
         self.job_id: str | None = job_id
 
-        # load manifest and derive human label
+        # load manifest and derive human label (for display, NOT for storage)
         self.manifest: dict[str, Any] = get_json(manifest_url) or {}
         self.label = self.manifest.get("label", "unknown_manuscript")
         if isinstance(self.label, list):
             self.label = self.label[0] if self.label else "unknown_manuscript"
-
-        sanitized_label = sanitize_filename(str(self.label))
-        self.ms_id = (
-            output_name[:-4] if output_name and output_name.endswith(".pdf") else output_name
-        ) or sanitized_label
-        self.logger = get_download_logger(self.ms_id)
 
         # Resolve where downloads live
         cm = get_config_manager()
         self.cm = cm
         out_base = self._resolve_out_base(output_dir, cm)
 
-        # Compute compact folder identifier and ensure structure
+        # UNIFIED IDENTIFIER: same value for folder name, DB id, and internal reference
+        # Priority: output_folder_name (from UI) > extracted from URL > sanitized label
         identifier = derive_identifier(self.manifest_url, output_folder_name, self.library, self.label)
+        
+        # ms_id = identifier (ATOMIC: folder = DB key = internal ID)
+        self.ms_id = identifier
+        self.logger = get_download_logger(self.ms_id)
+
+        # Setup directory structure
         self.doc_dir = out_base / self.library / identifier
         self._ensure_dir_structure()
 
-        # temp dir
+        # temp dir uses the unified identifier
         base_temp = cm.get_temp_dir()
         self.temp_dir = base_temp / self.ms_id
         ensure_dir(self.temp_dir)
@@ -287,7 +288,8 @@ class IIIFDownloader:
         try:
             self.vault.upsert_manuscript(
                 self.ms_id,
-                title=str(self.label),
+                display_title=str(self.label),  # Human-readable for UI
+                title=str(self.label),  # Legacy compat
                 library=self.library,
                 manifest_url=self.manifest_url,
                 local_path=str(self.doc_dir),

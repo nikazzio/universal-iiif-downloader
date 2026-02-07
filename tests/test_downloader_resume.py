@@ -2,7 +2,7 @@ from pathlib import Path
 
 from PIL import Image
 
-from universal_iiif_core.logic.downloader import IIIFDownloader
+from universal_iiif_core.logic.downloader import PageDownloader
 
 
 def test_resume_existing_scan_detects_valid_image(tmp_path, monkeypatch):
@@ -14,22 +14,26 @@ def test_resume_existing_scan_detects_valid_image(tmp_path, monkeypatch):
     img = Image.new("RGB", (100, 100), color=(255, 255, 255))
     img.save(img_path, format="JPEG")
 
-    # Instantiate downloader with harmless manifest_url and output_dir
-    # Prevent network call to fetch manifest by patching the symbol imported into downloader
-    import universal_iiif_core.logic.downloader as dl_mod
+    # Create a minimal mock downloader with required attributes
+    class MockDownloader:
+        def __init__(self, temp_dir):
+            self.temp_dir = temp_dir
+            self.logger = type('Logger', (), {'info': lambda self, m: None, 'warning': lambda *a, **k: None})()
+            self.cm = type('CM', (), {'get_setting': lambda self, k, d=None: d})()
 
-    monkeypatch.setattr(dl_mod, "get_json", lambda url: {})
+        def _get_thumbnail_url(self, canvas):
+            return None
 
-    d = IIIFDownloader(
-        manifest_url="http://example.invalid/manifest.json", output_dir=str(tmp_path), output_name="testdoc"
-    )
-    # Force temp_dir to our test folder
-    d.temp_dir = temp_dir
+    mock_downloader = MockDownloader(temp_dir)
 
     # Minimal canvas placeholder
     canvas = {"thumbnail": None}
 
-    res = d._resume_existing_scan(img_path, base_url="", canvas=canvas, index=0)
+    # Instantiate PageDownloader
+    pd = PageDownloader(mock_downloader, canvas, index=0, folder=temp_dir)
+    pd.filename = img_path  # Override to point at our test file
+
+    res = pd._resume_existing_scan("http://example.invalid/image")
     assert res is not None
     fname, stats = res
     assert Path(fname).name == "pag_0000.jpg"

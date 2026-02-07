@@ -15,7 +15,7 @@ from universal_iiif_core.logger import get_logger
 from universal_iiif_core.logic.downloader import IIIFDownloader
 from universal_iiif_core.resolvers.parsers import IIIFManifestParser
 from universal_iiif_core.services.storage.vault_manager import VaultManager
-from universal_iiif_core.utils import generate_folder_name, generate_job_id, get_json
+from universal_iiif_core.utils import generate_job_id, get_json
 
 logger = get_logger(__name__)
 
@@ -64,10 +64,11 @@ def start_downloader_thread(manifest_url: str, doc_id: str, library: str) -> str
     # 1. GENERA ID ROBUSTO (Hash) per evitare 404 sulle API
     job_id = generate_job_id(library, manifest_url)
 
-    # 2. GENERA NOME CARTELLA PULITO per il filesystem
-    folder_name = generate_folder_name(library, doc_id)
+    # 2. Usa doc_id direttamente come nome cartella (senza abbellimenti)
+    # Il doc_id dovrebbe già essere l'ID tecnico pulito dal resolver
+    # (es. btv1b10033406t per Gallica, MSS_Urb.lat.1775 per Vaticana)
 
-    logger.info(f"Starting Download: JobID={job_id} | Folder='{folder_name}'")
+    logger.info(f"Starting Download: JobID={job_id} | DocID='{doc_id}'")
 
     job_manager.submit_job(
         _download_task,
@@ -76,7 +77,7 @@ def start_downloader_thread(manifest_url: str, doc_id: str, library: str) -> str
             "doc_id": doc_id,
             "library": library,
             "db_job_id": job_id,  # Chiave per API/DB
-            "folder_name": folder_name,  # Nome cartella fisica
+            "folder_name": doc_id,  # Usa doc_id direttamente come nome cartella
         },
         job_type="download",
     )

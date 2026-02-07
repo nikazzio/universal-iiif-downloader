@@ -46,7 +46,7 @@ class VaultManager:
         try:
             cursor.execute("PRAGMA table_info(manuscripts)")
             columns = {row[1] for row in cursor.fetchall()}
-            required_cols = {"status", "local_path", "updated_at"}
+            required_cols = {"status", "local_path", "updated_at", "display_title"}
             if columns and not required_cols.issubset(columns):
                 logger.warning("Old DB schema detected. Recreating 'manuscripts' table (Beta reset).")
                 force_recreate = True
@@ -57,9 +57,13 @@ class VaultManager:
             cursor.execute("DROP TABLE IF EXISTS manuscripts")
 
         # Table for manuscripts (simple reference)
+        # - id: technical storage identifier (folder name, DB key) e.g. "btv1b10033406t"
+        # - display_title: human-readable title for UI e.g. "Dante, Il Convito"
+        # - title: legacy field, kept for compatibility
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS manuscripts (
                 id TEXT PRIMARY KEY,
+                display_title TEXT,
                 title TEXT,
                 library TEXT,
                 manifest_url TEXT,
@@ -110,6 +114,7 @@ class VaultManager:
     def upsert_manuscript(self, manuscript_id: str, **kwargs):
         """Insert or update a manuscript record."""
         valid_keys = (
+            "display_title",
             "title",
             "library",
             "manifest_url",
@@ -124,6 +129,10 @@ class VaultManager:
         # Enforce library name standardization
         if updates.get("library") == "Vaticana (BAV)":
             updates["library"] = "Vaticana"
+
+        # If display_title not set but title is, use title as display_title
+        if "title" in updates and "display_title" not in updates:
+            updates["display_title"] = updates["title"]
 
         if not updates:
             self.register_manuscript(manuscript_id)
@@ -140,6 +149,7 @@ class VaultManager:
                     """
                     INSERT INTO manuscripts (
                         id,
+                        display_title,
                         title,
                         library,
                         manifest_url,
@@ -148,7 +158,7 @@ class VaultManager:
                         total_canvases,
                         downloaded_canvases,
                         error_log
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     values,
                 )
@@ -157,7 +167,8 @@ class VaultManager:
                 cursor.execute(
                     """
                     UPDATE manuscripts
-                    SET title = ?,
+                    SET display_title = ?,
+                        title = ?,
                         library = ?,
                         manifest_url = ?,
                         local_path = ?,

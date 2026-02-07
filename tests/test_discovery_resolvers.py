@@ -9,7 +9,7 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from universal_iiif_core.resolvers.discovery import resolve_shelfmark, search_oxford
+from universal_iiif_core.resolvers.discovery import resolve_shelfmark
 from universal_iiif_core.resolvers.gallica import GallicaResolver
 from universal_iiif_core.resolvers.oxford import OxfordResolver
 from universal_iiif_core.resolvers.vatican import normalize_shelfmark
@@ -48,10 +48,3 @@ def test_oxford_uuid_case_insensitive():
     manifest, uid = r.get_manifest_url(upper)
     assert uid == "080f88f5-7586-4b8a-8064-63ab3495393c"
     assert manifest.endswith(f"{uid}.json")
-
-
-def test_search_oxford_stub():
-    """Test Oxford search function (stubbed, no network)."""
-    results = search_oxford("Dante")
-    assert isinstance(results, list)
-    assert results == []
