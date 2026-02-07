@@ -36,7 +36,7 @@ def smart_search(input_text: str) -> list[SearchResult]:
     Logica:
     1. Pulisce l'input.
     2. Controlla se è un ID o URL valido (Gallica, Vatican, Oxford, ecc).
-       Se SÌ -> Restituisce subito il manifesto (lista con 1 elemento).
+       Se SÌ -> Cerca tramite SRU con dc.identifier (più affidabile del manifest diretto).
     3. Se NO -> Esegue una ricerca testuale su Gallica (lista con N elementi).
     """
     text = (input_text or "").strip()
@@ -52,16 +52,18 @@ def smart_search(input_text: str) -> list[SearchResult]:
         logger.info("Input '%s' riconosciuto come ID/URL Gallica.", text)
         manifest_url, doc_id = gallica_resolver.get_manifest_url(text)
 
-        if manifest_url:
-            # Scarichiamo i dettagli del singolo manifesto
-            details = get_manifest_details(manifest_url)
-            if details:
-                # Flagghiamo per la UI che è un match esatto
-                details["raw"] = details.get("raw", {})
-                details["raw"]["_is_direct_match"] = True
-                return [details]
+        if manifest_url and doc_id:
+            # STRATEGIA ANTI-BAN: Invece di scaricare il manifest diretto (403),
+            # usiamo la ricerca SRU per identifier che è l'API ufficiale
+            logger.info("Searching via SRU for document ID: %s", doc_id)
+            results = search_gallica_by_id(doc_id)
+            if results:
+                # Flagghiamo il primo risultato come match diretto
+                results[0]["raw"] = results[0].get("raw", {})
+                results[0]["raw"]["_is_direct_match"] = True
+                return results
             else:
-                logger.warning("URL risolto ma manifesto non scaricabile: %s", manifest_url)
+                logger.warning("No SRU results for ID: %s", doc_id)
 
     # Potresti aggiungere qui controlli per Vaticana/Oxford se vuoi supportarli nello stesso campo
     # ma per ora ci concentriamo su Gallica come richiesto.
@@ -93,6 +95,39 @@ def resolve_shelfmark(library: str, shelfmark: str) -> tuple[str | None, str | N
         return None, None
 
 
+def search_gallica_by_id(doc_id: str) -> list[SearchResult]:
+    """Search Gallica SRU by document identifier (ARK ID).
+    
+    This is more reliable than fetching the manifest directly as it uses
+    the official SRU API instead of the IIIF endpoint which gets blocked.
+    """
+    if not doc_id:
+        return []
+    
+    # Search by identifier field
+    cql = f'dc.identifier all "{doc_id}"'
+    
+    params = {
+        "operation": "searchRetrieve",
+        "version": "1.2",
+        "query": cql,
+        "maximumRecords": "5",
+        "startRecord": "1",
+    }
+    
+    try:
+        logger.debug("Searching Gallica SRU by ID: %s", doc_id)
+        resp = requests.get(GALLICA_BASE_URL, params=params, headers=REAL_BROWSER_HEADERS, timeout=TIMEOUT_SECONDS)
+        resp.raise_for_status()
+        
+        resolver = GallicaResolver()
+        return GallicaXMLParser.parse_sru(resp.content, resolver)
+    
+    except Exception as exc:
+        logger.error("Gallica ID search failed for %s: %s", doc_id, exc, exc_info=True)
+        return []
+
+
 def search_gallica(query: str, max_records: int = 15) -> list[SearchResult]:
     """Search Gallica SRU and return parsed SearchResult entries.
 
@@ -106,9 +141,8 @@ def search_gallica(query: str, max_records: int = 15) -> list[SearchResult]:
     # FIX QUERY: Puliamo le virgolette per evitare errori SRU 500
     clean_q = q.replace('"', "'")
 
-    # FIX QUERY: Usiamo 'gallica all' che cerca ovunque nel testo/metadati
-    # e filtriamo per tipo 'manuscrit'
-    cql = f'gallica all "{clean_q}" and dc.type any "manuscrit"'
+    # Cerca nel titolo e filtra per tipo 'manuscrit'
+    cql = f'dc.title all "{clean_q}" and dc.type all "manuscrit"'
 
     params = {
         "operation": "searchRetrieve",
@@ -158,4 +192,4 @@ def get_manifest_details(manifest_url: str) -> SearchResult | None:
         return None
 
 
-__all__ = ["resolve_shelfmark", "search_gallica", "get_manifest_details", "smart_search", "TIMEOUT_SECONDS"]
+__all__ = ["resolve_shelfmark", "search_gallica", "search_gallica_by_id", "get_manifest_details", "smart_search", "TIMEOUT_SECONDS"]
