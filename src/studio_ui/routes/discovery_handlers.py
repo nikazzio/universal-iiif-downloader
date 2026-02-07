@@ -115,8 +115,16 @@ def resolve_manifest(library: str, shelfmark: str):
             try:
                 # smart_search restituisce SEMPRE una lista (di 1 o N elementi)
                 results = smart_search(shelfmark)
-            except Exception as e:
+            except ValueError as e:
+                # Known input validation errors: safe to expose
                 return render_error_message("Errore Gallica", str(e))
+            except Exception as e:
+                # Unknown errors: log but don't expose details
+                logger.exception("Gallica search failed for shelfmark: %s", shelfmark)
+                return render_error_message(
+                    "Errore Gallica", 
+                    "Ricerca temporaneamente non disponibile. Riprova più tardi."
+                )
 
             if not results:
                 return render_error_message(
@@ -192,8 +200,15 @@ def resolve_manifest(library: str, shelfmark: str):
         # 3. Analisi del Manifest (Download leggero)
         try:
             manifest_info = analyze_manifest(manifest_url)
-        except Exception:
-            return render_error_message("Errore Manifest", "Manifest IIIF corrotto o irraggiungibile.")
+        except ValueError as e:
+            # Known validation errors (empty manifest, parse errors): safe to expose
+            return render_error_message("Errore Manifest", str(e))
+        except Exception as e:
+            logger.exception("Manifest analysis failed for URL: %s", manifest_url)
+            return render_error_message(
+                "Errore Manifest", 
+                "Manifest IIIF non accessibile. Verifica l'URL o riprova più tardi."
+            )
 
         # 4. Preparazione Dati Anteprima
         preview_data = {
@@ -207,9 +222,16 @@ def resolve_manifest(library: str, shelfmark: str):
 
         return render_preview(preview_data)
 
+    except ValueError as e:
+        # Known input validation errors: safe to expose
+        logger.warning("Validation error in resolve_manifest: %s", e)
+        return render_error_message("Errore Input", str(e))
     except Exception as e:
         logger.exception("Unexpected error in resolve_manifest")
-        return render_error_message("Errore Critico", str(e))
+        return render_error_message(
+            "Errore Interno", 
+            "Si è verificato un errore imprevisto. Riprova più tardi."
+        )
 
 
 def start_download(manifest_url: str, doc_id: str, library: str):
@@ -225,9 +247,16 @@ def start_download(manifest_url: str, doc_id: str, library: str):
         initial_status = {"status": "starting", "current": 0, "total": 0, "percent": 0}
         return render_download_status(download_id, doc_id, library, initial_status)
 
+    except ValueError as e:
+        # Known validation errors: safe to expose
+        logger.warning("Download validation error: %s", e)
+        return render_error_message("Errore Input", str(e))
     except Exception as e:
         logger.exception("Download start failed")
-        return render_error_message("Impossibile avviare il download", str(e))
+        return render_error_message(
+            "Errore Download", 
+            "Impossibile avviare il download. Riprova più tardi."
+        )
 
 
 def get_download_status(download_id: str, doc_id: str = "", library: str = ""):

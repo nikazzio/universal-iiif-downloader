@@ -32,16 +32,23 @@ def setup_api_routes(app) -> None:
         logger.info("serve_download_file called with path: %s", path)
         config = get_config_manager()
         downloads_dir = config.get_downloads_dir()
-        file_path = downloads_dir / path
         
-        logger.info("Looking for file: %s (exists: %s)", file_path, file_path.exists())
+        # Security: Resolve to absolute path and validate it's within downloads_dir
+        try:
+            requested_path = (downloads_dir / path).resolve()
+            requested_path.relative_to(downloads_dir.resolve())
+        except (ValueError, RuntimeError):
+            logger.warning("Path traversal attempt blocked: %s", path)
+            return Response("403 Forbidden", status_code=403)
         
-        if not file_path.exists():
-            logger.warning("Download file not found: %s", file_path)
+        logger.info("Looking for file: %s (exists: %s)", requested_path, requested_path.exists())
+        
+        if not requested_path.exists():
+            logger.warning("Download file not found: %s", requested_path)
             return Response("404 Not Found", status_code=404)
         
         # Determine content type
-        suffix = file_path.suffix.lower()
+        suffix = requested_path.suffix.lower()
         content_types = {
             ".jpg": "image/jpeg",
             ".jpeg": "image/jpeg",
@@ -51,9 +58,9 @@ def setup_api_routes(app) -> None:
         }
         media_type = content_types.get(suffix, "application/octet-stream")
         
-        logger.info("Serving file: %s as %s", file_path, media_type)
+        logger.info("Serving file: %s as %s", requested_path, media_type)
         return FileResponse(
-            str(file_path),
+            str(requested_path),
             media_type=media_type,
             headers={"Access-Control-Allow-Origin": "*"},
         )
