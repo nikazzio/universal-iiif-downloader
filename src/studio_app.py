@@ -83,9 +83,11 @@ if app.routes and "static_route" in getattr(app.routes[0], "name", ""):
     app.routes.pop(0)
 
 # Allow cross-origin requests for static assets (Mirador/OpenSeadragon image loads)
+# In development, CORS is permissive. In production, restrict via config.json security.allowed_origins
+allowed_origins = config.data.get("security", {}).get("allowed_origins", ["*"])
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=allowed_origins,
     allow_methods=["GET", "HEAD"],
     allow_headers=["*"],
 )
