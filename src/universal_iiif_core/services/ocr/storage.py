@@ -42,12 +42,15 @@ class OCRStorage:
                     if not path:
                         path = str(self.base_dir / (row.get("library") or "Unknown") / row["id"])
 
+                    # Use display_title for UI, fallback to title, then ID
+                    label = row.get("display_title") or row.get("title") or row["id"]
+
                     docs.append(
                         {
                             "id": row["id"],
                             "library": row.get("library", "Unknown"),
                             "path": path,
-                            "label": row.get("label", row["id"]),
+                            "label": label,
                             "status": row.get("status", "unknown"),
                         }
                     )

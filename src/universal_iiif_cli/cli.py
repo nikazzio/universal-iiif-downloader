@@ -12,7 +12,7 @@ from universal_iiif_core.resolvers.vatican import VaticanResolver
 logger = get_logger(__name__)
 
 
-def resolve_url(input_str):
+def resolve_url_with_library(input_str):
     """Finds the right resolver for the input and returns (manifest_url, id, library_name)."""
     resolvers = [
         (VaticanResolver(), "Vaticana (BAV)"),
@@ -27,6 +27,15 @@ def resolve_url(input_str):
             if result[0]:
                 return result[0], result[1], lib_name
     return None, None, "Unknown"
+
+
+def resolve_url(input_str):
+    """Backward-compatible resolver: returns (manifest_url, id).
+
+    Prefer tests and external callers that expect two return values.
+    """
+    manifest_url, ms_id, _lib = resolve_url_with_library(input_str)
+    return manifest_url, ms_id
 
 
 def wizard_mode():

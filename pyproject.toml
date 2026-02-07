@@ -24,6 +24,7 @@ dependencies = [
   "img2pdf>=0.5.1",
   "openai",
   "anthropic",
+  "Brotli",
 ]
 
 [project.urls]

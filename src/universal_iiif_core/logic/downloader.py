@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import shutil
 import time
+from collections import deque
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from contextlib import suppress
 from pathlib import Path
 from secrets import SystemRandom
 from typing import Any
@@ -19,6 +21,7 @@ from ..iiif_tiles import stitch_iiif_tiles_to_jpeg
 from ..logger import get_download_logger
 from ..services.storage.vault_manager import VaultManager
 from ..utils import DEFAULT_HEADERS, clean_dir, ensure_dir, get_json, save_json
+from .download_helpers import derive_identifier, sanitize_filename
 
 # Constants
 MAX_DOWNLOAD_RETRIES = 5
@@ -31,9 +34,151 @@ NORMAL_MAX_DELAY = 1.2
 SECURE_RANDOM = SystemRandom()
 
 
-def _sanitize_filename(label: str) -> str:
-    safe = "".join([c for c in str(label) if c.isalnum() or c in (" ", ".", "_", "-")])
-    return safe.strip().replace(" ", "_")
+class CanvasServiceLocator:
+    """Helper that locates the IIIF service URL nested inside a canvas."""
+
+    _SEARCH_KEYS = ("body", "resource", "resources", "items", "images", "annotations", "target")
+
+    @staticmethod
+    def locate(canvas: Any) -> str | None:
+        """Traverse canvas nodes to find a usable service base URL."""
+        if not isinstance(canvas, dict):
+            return None
+        queue = deque([canvas])
+        seen: set[int] = set()
+
+        while queue:
+            node = queue.popleft()
+            if not isinstance(node, dict):
+                continue
+            node_id = id(node)
+            if node_id in seen:
+                continue
+            seen.add(node_id)
+
+            if service_url := CanvasServiceLocator._service_from_node(node):
+                return service_url
+
+            CanvasServiceLocator._enqueue_children(queue, node)
+
+            if normalized := CanvasServiceLocator._normalize_candidate(node):
+                return normalized
+
+        return None
+
+    @staticmethod
+    def _service_from_node(node: dict[str, Any]) -> str | None:
+        service = node.get("service")
+        if not service:
+            return None
+        candidate = service[0] if isinstance(service, list) else service
+        return (candidate or {}).get("@id") or (candidate or {}).get("id")
+
+    @staticmethod
+    def _enqueue_children(queue: deque, node: dict[str, Any]) -> None:
+        for key in CanvasServiceLocator._SEARCH_KEYS:
+            child = node.get(key)
+            if isinstance(child, (list, tuple)):
+                queue.extend(child)
+            elif child:
+                queue.append(child)
+
+    @staticmethod
+    def _normalize_candidate(node: dict[str, Any]) -> str | None:
+        base_url = node.get("@id") or node.get("id")
+        if isinstance(base_url, str) and "/full/" in base_url:
+            return base_url.split("/full/")[0]
+        return None
+
+
+class PageDownloader:
+    """Encapsulate the per-canvas download workflow."""
+
+    def __init__(self, downloader: IIIFDownloader, canvas: dict[str, Any], index: int, folder: Path | str):
+        """Initialize the helper with downloader context and canvas metadata."""
+        self.downloader = downloader
+        self.canvas = canvas
+        self.index = index
+        self.folder = Path(folder)
+        self.filename = Path(downloader.temp_dir) / f"pag_{index:04d}.jpg"
+        self.cm = downloader.cm
+        self.base_url = CanvasServiceLocator.locate(canvas)
+
+    def fetch(self) -> tuple[str, dict[str, Any]] | None:
+        """Download (or resume) the requested canvas."""
+        if not self.base_url:
+            return None
+        base_url = self.base_url
+
+        if resumed := self.resume_cached():
+            return resumed
+
+        iiif_q = self.cm.get_setting("images.iiif_quality", "default")
+        strategy = self._get_strategy()
+        urls_to_try = [
+            f"{base_url}/full/{self._format_dimension(s)}/0/{iiif_q}.jpg" for s in strategy
+        ]
+
+        downloaded = self.downloader._download_with_retries(
+            urls_to_try, self.filename, self.canvas, self.index, base_url
+        )
+        if downloaded:
+            return downloaded
+
+        return self.downloader._stitch_tiles_from_service(
+            self.cm, self.filename, base_url, self.canvas, self.index, iiif_q
+        )
+
+    def _get_strategy(self) -> list[str]:
+        raw = self.cm.get_setting("images.download_strategy", ["max", "3000", "1740"])
+        return [str(item) for item in raw if item]
+
+    @staticmethod
+    def _format_dimension(value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            return "max"
+        if cleaned.lower() == "max":
+            return "max"
+        if cleaned.endswith(","):
+            cleaned = cleaned[:-1]
+        if cleaned.isdigit():
+            return f"{cleaned},0"
+        return cleaned
+
+    def _resume_existing_scan(self, base_url: str) -> tuple[str, dict[str, Any]] | None:
+        if not self.filename.exists() or self.filename.stat().st_size == 0 or not base_url:
+            return None
+        try:
+            with Image.open(self.filename) as img:
+                img.verify()
+
+            with Image.open(self.filename) as img:
+                width, height = img.size
+
+            stats = {
+                "page_index": self.index,
+                "filename": self.filename.name,
+                "original_url": f"{base_url} (cached)",
+                "thumbnail_url": self.downloader._get_thumbnail_url(self.canvas),
+                "size_bytes": self.filename.stat().st_size,
+                "width": width,
+                "height": height,
+                "resolution_category": "High" if width > 2500 else "Medium",
+            }
+            self.downloader.logger.info(f"Resuming valid file: {self.filename}")
+            return str(self.filename), stats
+        except Exception as exc:
+            self.downloader.logger.warning(
+                "Found corrupt file %s, re-downloading. Error: %s", self.filename, exc, exc_info=True
+            )
+            return None
+
+    def resume_cached(self) -> tuple[str, dict[str, Any]] | None:
+        """Expose resume logic so callers can avoid a full download."""
+        if not self.base_url:
+            return None
+        return self._resume_existing_scan(self.base_url)
 
 
 class IIIFDownloader:
@@ -49,9 +194,12 @@ class IIIFDownloader:
         prefer_images: bool = False,
         ocr_model: str | None = None,
         progress_callback: Callable[[int, int], None] | None = None,
+        output_folder_name: str | None = None,
         library: str = "Unknown",
+        job_id: str | None = None,
     ):
         """Initialize the IIIFDownloader."""
+        # basic configuration
         self.manifest_url = manifest_url
         self.workers = workers
         self.clean_cache = clean_cache
@@ -59,88 +207,40 @@ class IIIFDownloader:
         self.ocr_model: str | None = ocr_model
         self.progress_callback: Callable[[int, int], None] | None = progress_callback
         self.library = library
+        self.job_id: str | None = job_id
 
+        # load manifest and derive human label (for display, NOT for storage)
         self.manifest: dict[str, Any] = get_json(manifest_url) or {}
         self.label = self.manifest.get("label", "unknown_manuscript")
         if isinstance(self.label, list):
             self.label = self.label[0] if self.label else "unknown_manuscript"
 
-        sanitized_label = _sanitize_filename(str(self.label))
+        # Resolve where downloads live
+        cm = get_config_manager()
+        self.cm = cm
+        out_base = self._resolve_out_base(output_dir, cm)
 
-        self.ms_id = (
-            (output_name[:-4] if output_name.endswith(".pdf") else output_name) if output_name else sanitized_label
-        )
+        # UNIFIED IDENTIFIER: same value for folder name, DB id, and internal reference
+        # Priority: output_folder_name (from UI) > extracted from URL > sanitized label
+        identifier = derive_identifier(self.manifest_url, output_folder_name, self.library, self.label)
+        
+        # ms_id = identifier (ATOMIC: folder = DB key = internal ID)
+        self.ms_id = identifier
         self.logger = get_download_logger(self.ms_id)
 
-        # Resolve output base directory. Prefer explicit param; otherwise use config manager.
-        cm = get_config_manager()
-        if output_dir is None:
-            out_base = cm.get_downloads_dir()
-        else:
-            out_base = Path(output_dir).expanduser()
-            if not out_base.is_absolute():
-                out_base = (Path.cwd() / out_base).resolve()
-            # Ensure we have an absolute, resolved path
-            out_base = out_base.resolve()
+        # Setup directory structure
+        self.doc_dir = out_base / self.library / identifier
+        self._ensure_dir_structure()
 
-        lib_dir = out_base / self.library
-        ensure_dir(lib_dir)
-        self.doc_dir = lib_dir / self.ms_id
-        ensure_dir(self.doc_dir)
-
-        # New structure
-        self.scans_dir = self.doc_dir / "scans"
-        self.pdf_dir = self.doc_dir / "pdf"
-        self.data_dir = self.doc_dir / "data"
-
-        ensure_dir(self.scans_dir)
-        ensure_dir(self.pdf_dir)
-        ensure_dir(self.data_dir)
-
-        self.output_path = self.pdf_dir / f"{self.ms_id}.pdf"
-        self.meta_path = self.data_dir / "metadata.json"
-        self.stats_path = self.data_dir / "image_stats.json"
-        self.ocr_path = self.data_dir / "transcription.json"
-        self.manifest_path = self.data_dir / "manifest.json"
-
-        # Use true temp dir for atomic download
-        cm = get_config_manager()
+        # temp dir uses the unified identifier
         base_temp = cm.get_temp_dir()
         self.temp_dir = base_temp / self.ms_id
         ensure_dir(self.temp_dir)
 
-        # Database registration
+        # db and session setup
         self.vault = VaultManager()
-        try:
-            # Just initial registration, details updated in run()
-            self.vault.upsert_manuscript(
-                self.ms_id,
-                title=str(self.label),
-                library=self.library,
-                manifest_url=self.manifest_url,
-                local_path=str(self.doc_dir),
-                status="pending",
-            )
-        except Exception as e:
-            self.logger.warning(f"Failed to register manuscript in DB: {e}")
-
-        import threading
-
-        self._lock = threading.Lock()
-        self._tile_stitch_sem = threading.Semaphore(1)
-        self._backoff_until = 0
-        self.session = requests.Session()
-        self.session.headers.update(DEFAULT_HEADERS)
-
-        if "vatlib.it" in self.manifest_url.lower():
-            viewer_url = self.manifest_url.replace("/iiif/", "/view/").replace("/manifest.json", "")
-            try:
-                self.session.get(viewer_url, timeout=20)
-                self.session.headers.update(
-                    {"Referer": viewer_url, "Accept": "image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8"}
-                )
-            except Exception:
-                self.logger.debug("Unable to pre-warm Vatican viewer session", exc_info=True)
+        self._register_vault()
+        self._init_session()
 
     def get_pdf_url(self):
         """Check the manifest for a native PDF URL in the rendering section."""
@@ -155,6 +255,69 @@ class IIIFDownloader:
             if fmt == "application/pdf" or url.endswith(".pdf"):
                 return item.get("@id") or item.get("id")
         return None
+
+    def _resolve_out_base(self, output_dir: str | Path | None, cm):
+        """Return an absolute download base directory.
+
+        Keeps logic isolated for easier testing.
+        """
+        if output_dir is None:
+            return cm.get_downloads_dir()
+        out_base = Path(output_dir).expanduser()
+        if not out_base.is_absolute():
+            out_base = (Path.cwd() / out_base).resolve()
+        return out_base.resolve()
+
+    def _ensure_dir_structure(self):
+        """Create scans/pdf/data folders under `self.doc_dir` and set path attributes."""
+        self.scans_dir = self.doc_dir / "scans"
+        self.pdf_dir = self.doc_dir / "pdf"
+        self.data_dir = self.doc_dir / "data"
+
+        ensure_dir(self.scans_dir)
+        ensure_dir(self.pdf_dir)
+        ensure_dir(self.data_dir)
+
+        self.output_path = self.pdf_dir / f"{self.ms_id}.pdf"
+        self.meta_path = self.data_dir / "metadata.json"
+        self.stats_path = self.data_dir / "image_stats.json"
+        self.ocr_path = self.data_dir / "transcription.json"
+        self.manifest_path = self.data_dir / "manifest.json"
+
+    def _register_vault(self):
+        try:
+            self.vault.upsert_manuscript(
+                self.ms_id,
+                display_title=str(self.label),  # Human-readable for UI
+                title=str(self.label),  # Legacy compat
+                library=self.library,
+                manifest_url=self.manifest_url,
+                local_path=str(self.doc_dir),
+                status="pending",
+            )
+        except Exception as e:
+            with suppress(Exception):
+                self.logger.warning(f"Failed to register manuscript in DB: {e}")
+
+    def _init_session(self):
+        import threading
+
+        self._lock = threading.Lock()
+        self._tile_stitch_sem = threading.Semaphore(1)
+        self._backoff_until = 0
+        self.session = requests.Session()
+        self.session.headers.update(DEFAULT_HEADERS)
+
+        # Pre-warm certain viewers (Vatican specific)
+        if "vatlib.it" in self.manifest_url.lower():
+            viewer_url = self.manifest_url.replace("/iiif/", "/view/").replace("/manifest.json", "")
+            try:
+                self.session.get(viewer_url, timeout=20)
+                self.session.headers.update(
+                    {"Referer": viewer_url, "Accept": "image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8"}
+                )
+            except Exception:
+                self.logger.debug("Unable to pre-warm Vatican viewer session", exc_info=True)
 
     def extract_metadata(self):
         """Extract and save basic metadata from the manifest."""
@@ -182,76 +345,11 @@ class IIIFDownloader:
     def download_page(self, canvas: dict[str, Any], index: int, folder: Path | str):
         """Download a single page image from a canvas."""
         try:
-            base_url = self._resolve_canvas_base_url(canvas)
-            if not base_url:
-                return None
-
-            cm = get_config_manager()
-            iiif_q = cm.get_setting("images.iiif_quality", "default")
-            strategy = cm.get_setting("images.download_strategy", ["max", "3000", "1740"])
-            urls_to_try = [f"{base_url}/full/{s},/0/{iiif_q}.jpg" for s in strategy]
-
-            folder_p = Path(folder)
-            filename = folder_p / f"pag_{index:04d}.jpg"
-
-            resumed = self._resume_existing_scan(filename, base_url, canvas, index)
-            if resumed:
-                return resumed
-
-            downloaded = self._download_with_retries(urls_to_try, filename, canvas, index, base_url)
-            if downloaded:
-                return downloaded
-
-            return self._stitch_tiles_from_service(cm, filename, base_url, canvas, index, iiif_q)
+            return PageDownloader(self, canvas, index, folder).fetch()
         except Exception:
             self.logger.debug("Failed to download page %s", index, exc_info=True)
             return None
 
-    def _resolve_canvas_base_url(self, canvas: dict[str, Any]):
-        images = canvas.get("images") or canvas.get("items") or []
-        if not images:
-            return None
-
-        img_obj = images[0]
-        annotation_type = img_obj.get("@type") or img_obj.get("type") or ""
-        resource = img_obj.get("resource") or img_obj.get("body") if "Annotation" in annotation_type else img_obj
-        if not resource:
-            return None
-
-        service = resource.get("service")
-        if isinstance(service, list):
-            service = service[0]
-        base_url = (service or {}).get("@id") or (service or {}).get("id")
-        if not base_url:
-            val = resource.get("@id") or resource.get("id") or ""
-            base_url = val.split("/full/")[0] if "/full/" in val else val
-        return base_url
-
-    def _resume_existing_scan(self, filename: Path, base_url: str, canvas: dict[str, Any], index: int):
-        if not filename.exists() or filename.stat().st_size == 0:
-            return None
-        try:
-            with Image.open(filename) as img:
-                img.verify()
-
-            with Image.open(filename) as img:
-                width, height = img.size
-
-            stats = {
-                "page_index": index,
-                "filename": filename.name,
-                "original_url": f"{base_url} (cached)",
-                "thumbnail_url": self._get_thumbnail_url(canvas),
-                "size_bytes": filename.stat().st_size,
-                "width": width,
-                "height": height,
-                "resolution_category": "High" if width > 2500 else "Medium",
-            }
-            self.logger.info(f"Resuming valid file: {filename}")
-            return str(filename), stats
-        except Exception as exc:
-            self.logger.warning("Found corrupt file %s, re-downloading. Error: %s", filename, exc, exc_info=True)
-            return None
 
     def _download_with_retries(
         self,
@@ -292,6 +390,14 @@ class IIIFDownloader:
                             "resolution_category": "High" if width > 2500 else "Medium",
                         }
                         return str(filename), stats
+                    if r.status_code != 200:
+                        self.logger.debug(
+                            "Canvas %s returned status %s for %s: %s",
+                            index,
+                            r.status_code,
+                            url,
+                            r.text[:200],
+                        )
                     if r.status_code == 429:
                         with self._lock:
                             wait = (2**attempt) * THROTTLE_BASE_WAIT
@@ -300,7 +406,27 @@ class IIIFDownloader:
                 except Exception as exc:
                     self.logger.debug("Download attempt failed for %s: %s", url, exc, exc_info=True)
                     continue
+        if attempt == MAX_DOWNLOAD_RETRIES - 1:
+            message = (
+                f"Failed to download canvas {index} after {MAX_DOWNLOAD_RETRIES} attempts; URLs tried: {urls_to_try}"
+            )
+            self.logger.warning(message)
+            self._mark_job_error(index, message)
         return None
+
+    def _mark_job_error(self, current_index: int, message: str) -> None:
+        if not self.job_id:
+            return
+        try:
+            self.vault.update_download_job(
+                job_id=self.job_id,
+                current=current_index,
+                total=self.total_canvases,
+                status="error",
+                error=message,
+            )
+        except Exception:
+            self.logger.debug("Failed to mark job %s as error: %s", self.job_id, message, exc_info=True)
 
     def _stitch_tiles_from_service(
         self,
@@ -472,6 +598,10 @@ class IIIFDownloader:
 
         native_pdf_url = self.get_pdf_url()
         should_download_native_pdf = self._should_download_native_pdf()
+        if native_pdf_url:
+            self.logger.info("Manifest advertises native PDF: %s", native_pdf_url)
+        else:
+            self.logger.info("No native PDF rendering found; proceeding canvas-by-canvas download.")
 
         # Prefer runtime provided callback over instance attribute
         cb = progress_callback or self.progress_callback
@@ -508,24 +638,7 @@ class IIIFDownloader:
         progress_callback: Callable[[int, int], None] | None = None,
         should_cancel: Callable[[], bool] | None = None,
     ):
-        downloaded: list[str | None] = [None] * len(canvases)
-        page_stats = []
-        # Pre-scan temp_dir for resumable files so progress can reflect existing data
-        to_download = []
-        for i, canvas in enumerate(canvases):
-            filename = Path(self.temp_dir) / f"pag_{i:04d}.jpg"
-            resumed = None
-            try:
-                resumed = self._resume_existing_scan(filename, self._resolve_canvas_base_url(canvas) or "", canvas, i)
-            except Exception:
-                resumed = None
-            if resumed:
-                fname, stats = resumed
-                downloaded[i] = fname
-                if stats:
-                    page_stats.append(stats)
-            else:
-                to_download.append((i, canvas))
+        downloaded, page_stats, to_download = self._prescan_canvases(canvases)
 
         # Initial progress reflecting pre-existing files
         if progress_callback:
@@ -535,41 +648,79 @@ class IIIFDownloader:
             except Exception:
                 self.logger.debug("Initial progress callback failed", exc_info=True)
 
-        # Submit only missing pages to the executor
+        self.total_canvases = len(canvases)
+        downloaded, page_stats = self._download_missing_canvases(
+            to_download, downloaded, page_stats, progress_callback, should_cancel, len(canvases)
+        )
+        return downloaded, page_stats
+
+    def _prescan_canvases(self, canvases: list[dict[str, Any]]):
+        """Check temp dir for existing valid images and build download list."""
+        downloaded: list[str | None] = [None] * len(canvases)
+        page_stats: list[dict[str, Any]] = []
+        to_download: list[tuple[int, dict[str, Any]]] = []
+        for i, canvas in enumerate(canvases):
+            downloader = PageDownloader(self, canvas, i, self.temp_dir)
+            resumed = downloader.resume_cached()
+            if resumed:
+                fname, stats = resumed
+                downloaded[i] = fname
+                if stats:
+                    page_stats.append(stats)
+            else:
+                to_download.append((i, canvas))
+        return downloaded, page_stats, to_download
+
+    def _download_missing_canvases(
+        self,
+        to_download: list[tuple[int, dict[str, Any]]],
+        downloaded: list[str | None],
+        page_stats: list[dict[str, Any]],
+        progress_callback: Callable[[int, int], None] | None,
+        should_cancel: Callable[[], bool] | None,
+        total_canvases: int,
+    ):
+        """Download missing pages using ThreadPoolExecutor and update progress and stats."""
+        if not to_download:
+            return downloaded, page_stats
+
         with ThreadPoolExecutor(max_workers=self.workers) as executor:
             future_to_index = {
                 executor.submit(self.download_page, canvas, i, self.temp_dir): i for i, canvas in to_download
             }
-            for future in tqdm(as_completed(future_to_index), total=len(to_download) if to_download else 0):
+            for future in tqdm(as_completed(future_to_index), total=len(to_download)):
                 idx = future_to_index[future]
-                result = future.result()
+                try:
+                    result = future.result()
+                except Exception:
+                    result = None
                 if result:
                     fname, stats = result
                     downloaded[idx] = fname
                     if stats:
                         page_stats.append(stats)
+
                 if progress_callback:
                     completed = sum(1 for f in downloaded if f)
                     try:
-                        progress_callback(completed, len(canvases))
+                        progress_callback(completed, total_canvases)
                     except Exception:
-                        # Never allow progress hooks to interrupt downloads
                         self.logger.debug("Progress callback raised an exception", exc_info=True)
 
-                # Cooperative cancellation check
                 if should_cancel and should_cancel():
                     completed = sum(1 for f in downloaded if f)
                     try:
                         self.vault.update_download_job(
                             self.ms_id,
                             current=completed,
-                            total=len(canvases),
+                            total=total_canvases,
                             status="cancelled",
                             error="Cancelled by user",
                         )
                     except Exception:
                         self.logger.debug("Failed to mark job cancelled in DB", exc_info=True)
                     break
+
         return downloaded, page_stats
 
     def _store_page_stats(self, page_stats):
@@ -589,6 +740,15 @@ class IIIFDownloader:
                 pass
             final_files.append(str(dest))
         self.vault.upsert_manuscript(self.ms_id, status="complete", downloaded_canvases=len(final_files))
+        # Clean up the temporary directory that held the downloaded images.
+        # This removes the folder that contained the images (and any remaining files).
+        try:
+            clean_dir(self.temp_dir)
+        except Exception:
+            # Avoid raising during cleanup; log and continue.
+            with suppress(Exception):
+                self.logger.debug("Failed to clean temp dir %s", self.temp_dir, exc_info=True)
+
         return final_files
 
     def run_batch_ocr(self, image_files: list[str], model_name: str):

@@ -5,6 +5,7 @@ from pathlib import Path
 
 from fasthtml.common import RedirectResponse, fast_app, serve
 from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.cors import CORSMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
 from starlette.staticfiles import StaticFiles
@@ -76,6 +77,21 @@ app, rt = fast_app(
     lifespan=lifespan,
 )
 
+# Remove FastHTML's default static route (/{fname:path}.{ext:static}) that intercepts
+# all requests with file extensions before our custom routes can handle them.
+if app.routes and "static_route" in getattr(app.routes[0], "name", ""):
+    app.routes.pop(0)
+
+# Allow cross-origin requests for static assets (Mirador/OpenSeadragon image loads)
+# In development, CORS is permissive. In production, restrict via config.json security.allowed_origins
+allowed_origins = config.data.get("security", {}).get("allowed_origins", ["*"])
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=allowed_origins,
+    allow_methods=["GET", "HEAD"],
+    allow_headers=["*"],
+)
+
 # Setup static file serving
 BASE_DIR = Path(__file__).resolve().parent.parent
 static_dir = BASE_DIR / "static"
@@ -93,9 +109,10 @@ app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 # (stored in runtime `data/local/snippets`) are served at `/assets/snippets/...`.
 app.mount("/assets/snippets", StaticFiles(directory=str(snippets_path)), name="assets_snippets")
 
-if downloads_path.exists():
-    app.mount("/downloads", StaticFiles(directory=str(downloads_path)), name="downloads")
-    logger.info(f"📂 Mounted downloads directory: {downloads_path}")
+# NOTE: Downloads are served via explicit route in api.py (/downloads/{path:path})
+# because FastHTML's routing takes precedence over Starlette mounts.
+downloads_path.mkdir(parents=True, exist_ok=True)
+logger.info(f"📂 Downloads directory: {downloads_path}")
 
 
 # Request Logging Middleware

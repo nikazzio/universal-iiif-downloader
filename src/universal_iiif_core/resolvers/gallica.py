@@ -1,41 +1,75 @@
+from __future__ import annotations
+
+import re
+
 from .base import BaseResolver
+
+# Regex per catturare l'ARK ID dentro un URL lungo.
+# Cerca "ark:/12148/" seguito da caratteri alfanumerici.
+# Si ferma appena incontra uno slash, un punto interrogativo o la fine della stringa.
+_ARK_CAPTURE_RE = re.compile(r"ark:/(12148)/([a-z0-9]+)", flags=re.IGNORECASE)
+
+# Regex per validare un Short ID incollato direttamente (es. bpt6k9604118j)
+# Deve iniziare con caratteri tipici Gallica (spesso b) ed essere lungo almeno 6 char.
+_SHORT_ID_RE = re.compile(r"^[a-z0-9]{6,}$", flags=re.IGNORECASE)
 
 
 class GallicaResolver(BaseResolver):
-    """Resolver tailored to Gallica (BnF) URLs and ARK identifiers."""
-    def can_resolve(self, url_or_id):
-        """Return True when a Gallica URL or ID is provided."""
-        return "gallica.bnf.fr" in url_or_id
+    """Resolver for Gallica (BnF) tailored to extract ARK IDs reliably.
 
-    def get_manifest_url(self, url_or_id):
-        """Build the manifest URL from a Gallica ARK or manifest input."""
-        # Input: https://gallica.bnf.fr/ark:/12148/btv1b84260335
-        # Output: https://gallica.bnf.fr/iiif/ark:/12148/btv1b84260335/manifest.json
+    Supported Inputs:
+    - View URL: https://gallica.bnf.fr/ark:/12148/bpt6k9604118j
+    - Page URL: https://gallica.bnf.fr/ark:/12148/bpt6k9604118j/f1.image
+    - Manifest: https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9604118j/manifest.json
+    - Short ID: bpt6k9604118j
 
-        clean_url = url_or_id.split("?")[0].strip("/")
+    Returns:
+    - Canonical IIIF Manifest URL
+    """
 
-        # Extract ARK ID part (everything after ark:/...)
-        if "ark:/" not in clean_url:
+    def can_resolve(self, url_or_id: str) -> bool:
+        """Check if the input can be resolved by Gallica Resolver."""
+        s = (url_or_id or "").strip()
+        if not s:
+            return False
+        # Se è un dominio Gallica
+        if "gallica.bnf.fr" in s:
+            return True
+        # Se contiene un pattern ARK esplicito
+        if "ark:/" in s:
+            return True
+        # Se sembra uno short ID valido
+        return bool(_SHORT_ID_RE.match(s))
+
+    def get_manifest_url(self, url_or_id: str) -> tuple[str | None, str | None]:
+        """Extract the ID and reconstruct the canonical manifest URL."""
+        s = (url_or_id or "").strip()
+        if not s:
             return None, None
 
-        parts = clean_url.split("ark:/")
-        if len(parts) <= 1:
-            return None, None
+        # 1. Tentativo ARK Extraction (Il metodo più sicuro)
+        # Funziona per qualsiasi URL che contenga "ark:/12148/..."
+        match = _ARK_CAPTURE_RE.search(s)
+        if match:
+            # group(1) è 12148 (NAAN), group(2) è l'ID del documento (es. bpt6k...)
+            repo_naan = match.group(1)
+            doc_id = match.group(2)
 
-        ark_suffix = parts[1]
+            # FIX: Assicuriamoci che l'ID non abbia "code" sporche
+            if "." in doc_id:
+                doc_id = doc_id.split(".")[0]
 
-        # If it already looks like a manifest URL
-        if clean_url.endswith("/manifest.json"):
-            ms_id = ark_suffix.replace("/manifest.json", "").split("/")[-1]
-            return clean_url, ms_id
+            # Ricostruzione Canonica
+            # Pattern ufficiale: https://gallica.bnf.fr/iiif/ark:/{NAAN}/{ID}/manifest.json
+            manifest_url = f"https://gallica.bnf.fr/iiif/ark:/{repo_naan}/{doc_id}/manifest.json"
+            return manifest_url, doc_id
 
-        ark_components = ark_suffix.split("/")
-        if len(ark_components) < 2:
-            return None, None
+        # 2. Tentativo Short ID
+        # Se l'utente ha incollato solo "bpt6k9604118j" e non è un URL
+        if _SHORT_ID_RE.match(s) and "/" not in s:
+            doc_id = s
+            # Assumiamo il repo standard BnF (12148)
+            manifest_url = f"https://gallica.bnf.fr/iiif/ark:/12148/{doc_id}/manifest.json"
+            return manifest_url, doc_id
 
-        repo_id = ark_components[0]  # 12148
-        doc_id = ark_components[1]  # btv1b84260335
-
-        full_ark = f"ark:/{repo_id}/{doc_id}"
-        manifest_url = f"https://gallica.bnf.fr/iiif/{full_ark}/manifest.json"
-        return manifest_url, doc_id
+        return None, None
