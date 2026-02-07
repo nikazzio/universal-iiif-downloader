@@ -77,6 +77,11 @@ app, rt = fast_app(
     lifespan=lifespan,
 )
 
+# Remove FastHTML's default static route (/{fname:path}.{ext:static}) that intercepts
+# all requests with file extensions before our custom routes can handle them.
+if app.routes and "static_route" in getattr(app.routes[0], "name", ""):
+    app.routes.pop(0)
+
 # Allow cross-origin requests for static assets (Mirador/OpenSeadragon image loads)
 app.add_middleware(
     CORSMiddleware,
@@ -102,10 +107,10 @@ app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 # (stored in runtime `data/local/snippets`) are served at `/assets/snippets/...`.
 app.mount("/assets/snippets", StaticFiles(directory=str(snippets_path)), name="assets_snippets")
 
-# Ensure downloads directory exists and mount it
+# NOTE: Downloads are served via explicit route in api.py (/downloads/{path:path})
+# because FastHTML's routing takes precedence over Starlette mounts.
 downloads_path.mkdir(parents=True, exist_ok=True)
-app.mount("/downloads", StaticFiles(directory=str(downloads_path)), name="downloads")
-logger.info(f"📂 Mounted downloads directory: {downloads_path}")
+logger.info(f"📂 Downloads directory: {downloads_path}")
 
 
 # Request Logging Middleware

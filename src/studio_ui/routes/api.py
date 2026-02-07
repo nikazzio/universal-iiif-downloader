@@ -28,14 +28,13 @@ def setup_api_routes(app) -> None:
 
     @app.get("/downloads/{path:path}")
     def serve_download_file(path: str) -> Response:
-        """Serve files from the downloads directory.
-        
-        This explicit route is needed because FastHTML's default static
-        route may intercept requests before Starlette's mount handlers.
-        """
+        """Serve files from the downloads directory."""
+        logger.info("serve_download_file called with path: %s", path)
         config = get_config_manager()
         downloads_dir = config.get_downloads_dir()
         file_path = downloads_dir / path
+        
+        logger.info("Looking for file: %s (exists: %s)", file_path, file_path.exists())
         
         if not file_path.exists():
             logger.warning("Download file not found: %s", file_path)
@@ -52,6 +51,7 @@ def setup_api_routes(app) -> None:
         }
         media_type = content_types.get(suffix, "application/octet-stream")
         
+        logger.info("Serving file: %s as %s", file_path, media_type)
         return FileResponse(
             str(file_path),
             media_type=media_type,
