@@ -2,59 +2,120 @@
 
 from __future__ import annotations
 
-import json
+import re
 
-from fasthtml.common import Div, Script
+from fasthtml.common import Button, Div, Span
 
-_TONE_STYLES = {
-    "success": "bg-emerald-900/95 border border-emerald-500/70 text-emerald-50 shadow-emerald-500/40",
-    "info": "bg-slate-900/90 border border-slate-600/80 text-slate-50 shadow-slate-700/50",
-    "danger": "bg-rose-900/90 border border-rose-500/70 text-rose-50 shadow-rose-500/40",
-}
+from studio_ui.config import get_setting
+
 _ICONS = {"success": "✅", "info": "ℹ️", "danger": "⚠️"}
+_MIN_TIMEOUT_MS = 1000
+_MAX_TIMEOUT_MS = 15000
+_HEX_RE = re.compile(r"^#?[0-9a-fA-F]{6}$")
+
+_TONE_ANCHORS = {
+    "success": "#10b981",
+    "info": "#0ea5e9",
+    "danger": "#ef4444",
+}
 
 
-def build_toast(message: str, tone: str = "success") -> tuple[Div, Script]:
-    """Return hidden placeholder and script that appends a toast to the stack."""
-    tone_classes = _TONE_STYLES.get(tone, _TONE_STYLES["info"])
+def _coerce_timeout_ms(duration_ms: int | None) -> int:
+    """Return a bounded timeout used by the global toast animation manager."""
+    configured = duration_ms if duration_ms is not None else get_setting("ui.toast_duration", 3000)
+    try:
+        timeout = int(configured)
+    except (TypeError, ValueError):
+        timeout = 3000
+    return max(_MIN_TIMEOUT_MS, min(timeout, _MAX_TIMEOUT_MS))
 
-    js_msg = json.dumps(message)
-    js_icon = json.dumps(_ICONS.get(tone, "ℹ️"))
-    js_tone = json.dumps(tone_classes)
 
-    parts = [
-        "(function () {",
-        "try {",
-        " const stack = document.getElementById('studio-toast-stack');",
-        " if (!stack) return;",
-        " const toast = document.createElement('div');",
-        " toast.className = 'pointer-events-auto studio-toast-entry flex items-center gap-3 '",
-        " + 'rounded-2xl border px-4 py-3 '",
-        " + 'shadow-2xl backdrop-blur-sm opacity-0 -translate-y-3 scale-95 '",
-        " + 'transition-all duration-300 ' + ",
-        js_tone,
-        ";",
-        " toast.setAttribute('role', 'status');",
-        " toast.setAttribute('aria-live', 'polite');",
-        ' toast.innerHTML = `<span class="text-lg leading-none">${{ ',
-        js_icon,
-        ' }}</span><span class="text-sm font-semibold text-current">${{ ',
-        js_msg,
-        " }}</span>`;",
-        " stack.appendChild(toast);",
-        " requestAnimationFrame(() => {",
-        "  toast.classList.remove('opacity-0', '-translate-y-3', 'scale-95');",
-        "  toast.classList.add('opacity-100', 'translate-y-0', 'scale-100');",
-        " });",
-        " const dismiss = () => {",
-        "  toast.classList.add('opacity-0', 'translate-y-3');",
-        "  toast.classList.remove('opacity-100', 'translate-y-0');",
-        " };",
-        " setTimeout(dismiss, 4800);",
-        " setTimeout(() => { if (stack.contains(toast)) toast.remove(); }, 5600);",
-        "} catch (err) { console.error('Toast render error', err); }",
-        "})();",
-    ]
-    script = Script("".join(parts))
+def _normalize_hex(color: str | None, fallback: str = "#6366f1") -> str:
+    """Return a normalized #RRGGBB value for CSS usage."""
+    raw = str(color or "").strip()
+    if not _HEX_RE.match(raw):
+        return fallback
+    return raw if raw.startswith("#") else f"#{raw}"
 
-    return Div("", cls="hidden"), script
+
+def _hex_to_rgb(hex_color: str) -> tuple[int, int, int]:
+    value = _normalize_hex(hex_color).lstrip("#")
+    return int(value[0:2], 16), int(value[2:4], 16), int(value[4:6], 16)
+
+
+def _mix_hex(color_a: str, color_b: str, ratio: float) -> str:
+    """Mix two hex colors with ratio in [0, 1]."""
+    ratio = max(0.0, min(1.0, ratio))
+    a = _hex_to_rgb(color_a)
+    b = _hex_to_rgb(color_b)
+    mixed = (
+        int(a[0] * (1.0 - ratio) + b[0] * ratio),
+        int(a[1] * (1.0 - ratio) + b[1] * ratio),
+        int(a[2] * (1.0 - ratio) + b[2] * ratio),
+    )
+    return f"#{mixed[0]:02x}{mixed[1]:02x}{mixed[2]:02x}"
+
+
+def _rgba(hex_color: str, alpha: float) -> str:
+    r, g, b = _hex_to_rgb(hex_color)
+    return f"rgba({r}, {g}, {b}, {alpha:.3f})"
+
+
+def _toast_style(tone: str) -> str:
+    """Inline style for reliable gradient/background rendering."""
+    site_theme = _normalize_hex(get_setting("ui.theme_color", "#6366f1"))
+    anchor = _normalize_hex(_TONE_ANCHORS.get(tone, _TONE_ANCHORS["info"]))
+    start = _mix_hex(site_theme, anchor, 0.28 if tone == "info" else 0.48)
+    end = _mix_hex(site_theme, "#0f172a", 0.62)
+    edge = _mix_hex(anchor, "#ffffff", 0.22)
+    shadow = _mix_hex(anchor, "#000000", 0.35)
+    return (
+        f"background: linear-gradient(135deg, {_rgba(start, 0.95)} 0%, {_rgba(end, 0.92)} 100%); "
+        f"border: 1px solid {_rgba(edge, 0.55)}; "
+        f"border-radius: 0.8rem; "
+        f"box-shadow: 0 10px 28px {_rgba(shadow, 0.35)}; "
+        "text-align: left; "
+        "color: #f8fafc;"
+    )
+
+
+def build_toast(message: str, tone: str = "info", duration_ms: int | None = None) -> Div:
+    """Return an out-of-band toast fragment appended to the global holder."""
+    normalized_tone = tone if tone in _TONE_ANCHORS else "info"
+    timeout_ms = _coerce_timeout_ms(duration_ms)
+    icon = _ICONS.get(normalized_tone, "ℹ️")
+    safe_message = (message or "").strip() or "Operazione completata."
+    toast_style = (
+        _toast_style(normalized_tone)
+        + "transform-origin: top right; "
+        + "opacity: 0; "
+        + "transform: translateY(8px) scale(0.96); "
+        + f"animation: studio-toast-in 180ms ease-out forwards, studio-toast-out 240ms ease-in forwards {timeout_ms}ms;"
+    )
+    toast_card = Div(
+        Span(icon, cls="text-lg leading-none mt-0.5"),
+        Div(safe_message, cls="text-sm font-semibold leading-snug text-left"),
+        Button(
+            "✕",
+            type="button",
+            onclick="var t=this.closest('.studio-toast-entry'); if(t){t.remove();}",
+            cls=(
+                "ml-3 inline-flex h-6 w-6 items-center justify-center rounded-full "
+                "text-current/80 transition hover:bg-white/20 hover:text-current"
+            ),
+            aria_label="Chiudi notifica",
+            **{"data-toast-close": "true"},
+        ),
+        role="status",
+        aria_live="polite",
+        style=toast_style,
+        onanimationend="if(event.animationName==='studio-toast-out'){ this.remove(); }",
+        cls=(
+            "pointer-events-auto studio-toast-entry w-full flex items-start gap-3 px-4 py-3 text-left backdrop-blur-sm"
+        ),
+        **{"data-toast-timeout": str(timeout_ms), "data-toast-ready": "true"},
+    )
+    return Div(
+        toast_card,
+        hx_swap_oob="beforeend:#studio-toast-holder",
+    )

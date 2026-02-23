@@ -67,6 +67,102 @@ def base_layout(title: str, content, active_page: str = "") -> Html:
                 ),
                 cls="flex h-screen overflow-hidden",
             ),
+            Div(
+                id="studio-toast-holder",
+                cls=(
+                    "pointer-events-none fixed top-4 right-4 z-50 flex w-[min(420px,95vw)] flex-col gap-2 items-stretch"
+                ),
+            ),
+            Script("""
+                (function () {
+                    if (window.__studioToastSystemBound) return;
+                    window.__studioToastSystemBound = true;
+
+                    const ENTER_FROM = ['opacity-0', 'translate-y-2', 'scale-95'];
+                    const ENTER_TO = ['opacity-100', 'translate-y-0', 'scale-100'];
+                    const EXIT_TO = ['opacity-0', 'translate-y-2', 'scale-95'];
+                    const CLOSE_SELECTOR = '[data-toast-close],[data_toast_close]';
+
+                    function dismissToast(toast) {
+                        if (!toast) return;
+                        const closingFlag = toast.getAttribute('data-toast-closing')
+                            || toast.getAttribute('data_toast_closing');
+                        if (closingFlag === 'true') return;
+                        toast.setAttribute('data-toast-closing', 'true');
+                        toast.classList.remove(...ENTER_TO);
+                        toast.classList.add(...EXIT_TO);
+                        window.setTimeout(() => {
+                            if (toast && toast.parentNode) toast.remove();
+                        }, 250);
+                    }
+
+                    function resolveTimeoutMs(toast) {
+                        const raw = toast.getAttribute('data-toast-timeout')
+                            || toast.getAttribute('data_toast_timeout')
+                            || '3000';
+                        const parsed = Number.parseInt(raw, 10);
+                        if (!Number.isFinite(parsed)) return 3000;
+                        return Math.min(15000, Math.max(1000, parsed));
+                    }
+
+                    function initToast(toast) {
+                        if (!toast) return;
+                        const readyFlag = toast.getAttribute('data-toast-ready')
+                            || toast.getAttribute('data_toast_ready');
+                        if (readyFlag === 'true') return;
+                        toast.setAttribute('data-toast-ready', 'true');
+                        toast.classList.add(...ENTER_FROM);
+                        window.requestAnimationFrame(() => {
+                            toast.classList.remove(...ENTER_FROM);
+                            toast.classList.add(...ENTER_TO);
+                        });
+                        window.setTimeout(() => dismissToast(toast), resolveTimeoutMs(toast));
+                    }
+
+                    function initToastsIn(root) {
+                        if (!root || typeof root.querySelectorAll !== 'function') return;
+                        root.querySelectorAll('.studio-toast-entry').forEach(initToast);
+                    }
+
+                    function bindToastObserver() {
+                        const holder = document.getElementById('studio-toast-holder');
+                        if (!holder || holder.dataset.toastObserverBound === 'true') return;
+                        holder.dataset.toastObserverBound = 'true';
+
+                        const observer = new MutationObserver((mutations) => {
+                            mutations.forEach((mutation) => {
+                                mutation.addedNodes.forEach((node) => {
+                                    if (!(node instanceof Element)) return;
+                                    if (node.classList.contains('studio-toast-entry')) {
+                                        initToast(node);
+                                        return;
+                                    }
+                                    initToastsIn(node);
+                                });
+                            });
+                        });
+                        observer.observe(holder, { childList: true });
+                        initToastsIn(holder);
+
+                        if (holder.dataset.toastClickBound !== 'true') {
+                            holder.addEventListener('click', (event) => {
+                                const closeBtn = event.target.closest(CLOSE_SELECTOR);
+                                if (!closeBtn) return;
+                                const toast = closeBtn.closest('.studio-toast-entry');
+                                if (toast) dismissToast(toast);
+                            });
+                            holder.dataset.toastClickBound = 'true';
+                        }
+                    }
+
+                    document.addEventListener('DOMContentLoaded', bindToastObserver);
+                    document.body.addEventListener('htmx:afterSwap', bindToastObserver);
+                    document.body.addEventListener('htmx:oobAfterSwap', (event) => {
+                        bindToastObserver();
+                        initToastsIn(event.target || document);
+                    });
+                })();
+            """),
             cls="antialiased bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100",
         ),
     )
@@ -267,6 +363,14 @@ def _style_tag():
         "border: 2px solid #f3f4f6; border-top-color: #6366f1; border-radius: 50%; ",
         "animation: spin 0.8s linear infinite; }\n",
         "@keyframes spin { to { transform: rotate(360deg); } }\n",
+        "@keyframes studio-toast-in {",
+        " from { opacity: 0; transform: translateY(8px) scale(0.96); }",
+        " to { opacity: 1; transform: translateY(0) scale(1); }",
+        " }\n",
+        "@keyframes studio-toast-out {",
+        " from { opacity: 1; transform: translateY(0) scale(1); }",
+        " to { opacity: 0; transform: translateY(8px) scale(0.96); }",
+        " }\n",
         "::-webkit-scrollbar { width: 8px; height: 8px; }\n",
         "::-webkit-scrollbar-track { background: #f1f5f9; }\n",
         ".dark ::-webkit-scrollbar-track { background: #1e293b; }\n",
