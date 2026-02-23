@@ -74,6 +74,7 @@ def _toast_style(tone: str) -> str:
         f"border: 1px solid {_rgba(edge, 0.55)}; "
         f"border-radius: 0.8rem; "
         f"box-shadow: 0 10px 28px {_rgba(shadow, 0.35)}; "
+        "text-align: left; "
         "color: #f8fafc;"
     )
 
@@ -84,12 +85,20 @@ def build_toast(message: str, tone: str = "info", duration_ms: int | None = None
     timeout_ms = _coerce_timeout_ms(duration_ms)
     icon = _ICONS.get(normalized_tone, "ℹ️")
     safe_message = (message or "").strip() or "Operazione completata."
+    toast_style = (
+        _toast_style(normalized_tone)
+        + "transform-origin: top right; "
+        + "opacity: 0; "
+        + "transform: translateY(8px) scale(0.96); "
+        + f"animation: studio-toast-in 180ms ease-out forwards, studio-toast-out 240ms ease-in forwards {timeout_ms}ms;"
+    )
     return Div(
         Span(icon, cls="text-lg leading-none mt-0.5"),
         Div(safe_message, cls="text-sm font-semibold leading-snug text-left"),
         Button(
             "✕",
             type="button",
+            onclick="var t=this.closest('.studio-toast-entry'); if(t){t.remove();}",
             cls=(
                 "ml-3 inline-flex h-6 w-6 items-center justify-center rounded-full "
                 "text-current/80 transition hover:bg-white/20 hover:text-current"
@@ -100,10 +109,10 @@ def build_toast(message: str, tone: str = "info", duration_ms: int | None = None
         role="status",
         aria_live="polite",
         hx_swap_oob="beforeend:#studio-toast-holder",
-        style=_toast_style(normalized_tone),
+        style=toast_style,
+        onanimationend="if(event.animationName==='studio-toast-out'){ this.remove(); }",
         cls=(
-            "pointer-events-auto studio-toast-entry w-full flex items-start gap-3 px-4 py-3 text-left "
-            "opacity-0 translate-y-2 scale-95 backdrop-blur-sm transition-all duration-300"
+            "pointer-events-auto studio-toast-entry w-full flex items-start gap-3 px-4 py-3 text-left backdrop-blur-sm"
         ),
-        **{"data-toast-timeout": str(timeout_ms), "data-toast-ready": "false"},
+        **{"data-toast-timeout": str(timeout_ms), "data-toast-ready": "true"},
     )
