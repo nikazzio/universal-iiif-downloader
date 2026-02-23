@@ -581,7 +581,11 @@ class IIIFDownloader:
         except (OSError, ValueError, TypeError):
             return False
 
-    def _extract_pages_from_pdf(self, pdf_path: Path, progress_callback: Callable[[int, int], None] | None = None) -> bool:
+    def _extract_pages_from_pdf(
+        self,
+        pdf_path: Path,
+        progress_callback: Callable[[int, int], None] | None = None,
+    ) -> bool:
         self._clear_existing_scans()
         viewer_dpi = int(self.cm.get_setting("pdf.viewer_dpi", 150) or 150)
         viewer_quality = int(self.cm.get_setting("images.viewer_quality", 90) or 90)
