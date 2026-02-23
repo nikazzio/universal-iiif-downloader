@@ -70,6 +70,7 @@ def _manifest_without_native_pdf() -> dict:
 
 
 def test_native_pdf_priority_skips_canvas_download(monkeypatch, tmp_path: Path):
+    """Prefer native PDF flow when available and enabled."""
     downloader = _build_downloader(
         monkeypatch,
         tmp_path,
@@ -101,6 +102,7 @@ def test_native_pdf_priority_skips_canvas_download(monkeypatch, tmp_path: Path):
 
 
 def test_native_pdf_download_failure_falls_back_to_canvas(monkeypatch, tmp_path: Path):
+    """Fallback to canvas flow when native PDF download fails."""
     downloader = _build_downloader(
         monkeypatch,
         tmp_path,
@@ -125,6 +127,7 @@ def test_native_pdf_download_failure_falls_back_to_canvas(monkeypatch, tmp_path:
 
 
 def test_native_pdf_extraction_failure_falls_back_to_canvas(monkeypatch, tmp_path: Path):
+    """Fallback to canvas flow when native PDF extraction fails."""
     downloader = _build_downloader(
         monkeypatch,
         tmp_path,
@@ -150,6 +153,7 @@ def test_native_pdf_extraction_failure_falls_back_to_canvas(monkeypatch, tmp_pat
 
 
 def test_native_pdf_ignored_when_preference_disabled(monkeypatch, tmp_path: Path):
+    """Skip native PDF flow when preference is disabled."""
     downloader = _build_downloader(
         monkeypatch,
         tmp_path,
@@ -178,6 +182,7 @@ def test_native_pdf_ignored_when_preference_disabled(monkeypatch, tmp_path: Path
 
 
 def test_no_native_pdf_does_not_create_pdf_when_disabled(monkeypatch, tmp_path: Path):
+    """Do not build a compiled PDF when option is disabled."""
     downloader = _build_downloader(
         monkeypatch,
         tmp_path,
@@ -197,6 +202,7 @@ def test_no_native_pdf_does_not_create_pdf_when_disabled(monkeypatch, tmp_path: 
 
 
 def test_no_native_pdf_creates_pdf_when_enabled(monkeypatch, tmp_path: Path):
+    """Build a compiled PDF from images when option is enabled."""
     downloader = _build_downloader(
         monkeypatch,
         tmp_path,
@@ -216,6 +222,7 @@ def test_no_native_pdf_creates_pdf_when_enabled(monkeypatch, tmp_path: Path):
 
 
 def test_extract_pages_from_pdf_uses_viewer_dpi(monkeypatch, tmp_path: Path):
+    """Use configured viewer DPI and quality during PDF page extraction."""
     downloader = _build_downloader(
         monkeypatch,
         tmp_path,

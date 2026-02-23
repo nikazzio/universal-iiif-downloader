@@ -75,6 +75,7 @@ def _validate_release_block(title: str, block_lines: list[str]) -> list[str]:
 
 
 def main() -> int:
+    """Validate changelog policy requirements."""
     if not CHANGELOG_PATH.exists():
         raise ValidationError("CHANGELOG.md not found")
 

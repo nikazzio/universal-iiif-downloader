@@ -11,8 +11,8 @@ Policy:
 from __future__ import annotations
 
 import re
-from pathlib import Path
 import sys
+from pathlib import Path
 
 DOC_FILES = [
     *sorted(Path("docs").glob("*.md")),
@@ -89,6 +89,7 @@ def _is_mixed(en_score: int, it_score: int) -> bool:
 
 
 def main() -> int:
+    """Validate language consistency in markdown files."""
     cli_paths = [Path(p) for p in sys.argv[1:]]
     targets = cli_paths if cli_paths else DOC_FILES
     failures: list[str] = []
@@ -115,10 +116,9 @@ def main() -> int:
             if it_score >= 6 and it_score > en_score:
                 failures.append(f"{path}: expected English but Italian appears dominant.")
 
-        if expected == "it":
+        if expected == "it" and en_score >= 12 and en_score > int(it_score * 1.2):
             # Italian docs may naturally include some English technical words.
-            if en_score >= 12 and en_score > int(it_score * 1.2):
-                failures.append(f"{path}: expected Italian but English appears dominant.")
+            failures.append(f"{path}: expected Italian but English appears dominant.")
 
     if failures:
         details = "\n".join(f"- {item}" for item in failures)
