@@ -1,0 +1,94 @@
+name: Docs CI
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - '**/*.md'
+      - '.github/workflows/docs-ci.yml'
+      - '.markdownlint.json'
+      - '.lycheeignore'
+      - 'scripts/check_docs_language.py'
+      - 'scripts/check_changelog_policy.py'
+  push:
+    branches: ["main"]
+    paths:
+      - '**/*.md'
+      - '.github/workflows/docs-ci.yml'
+      - '.markdownlint.json'
+      - '.lycheeignore'
+      - 'scripts/check_docs_language.py'
+      - 'scripts/check_changelog_policy.py'
+
+concurrency:
+  group: docs-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  docs-quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Collect changed markdown files
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE_SHA="${{ github.event.pull_request.base.sha }}"
+          else
+            BASE_SHA="${{ github.event.before }}"
+          fi
+
+          CHANGED_MD="$(git diff --name-only "$BASE_SHA" "${{ github.sha }}" -- '*.md' || true)"
+          {
+            echo "CHANGED_MD<<EOF"
+            echo "$CHANGED_MD"
+            echo "EOF"
+          } >> "$GITHUB_ENV"
+
+      - name: Markdown lint
+        if: env.CHANGED_MD != ''
+        run: |
+          npm install -g markdownlint-cli
+          echo "$CHANGED_MD" | xargs markdownlint
+
+      - name: Link check
+        if: env.CHANGED_MD != ''
+        uses: lycheeverse/lychee-action@v2
+        with:
+          fail: true
+          args: >-
+            --no-progress
+            --verbose
+            --max-retries 3
+            --retry-wait-time 2
+            --timeout 20
+            --exclude-mail
+            --exclude-path .venv/**
+            --exclude-path node_modules/**
+            --exclude-file .lycheeignore
+            ${{ env.CHANGED_MD }}
+
+      - name: Check docs language consistency
+        if: env.CHANGED_MD != ''
+        run: |
+          python scripts/check_docs_language.py $CHANGED_MD
+
+      - name: Check changelog policy
+        if: contains(env.CHANGED_MD, 'CHANGELOG.md')
+        run: |
+          python scripts/check_changelog_policy.py
