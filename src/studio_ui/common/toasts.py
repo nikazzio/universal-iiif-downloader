@@ -92,7 +92,7 @@ def build_toast(message: str, tone: str = "info", duration_ms: int | None = None
         + "transform: translateY(8px) scale(0.96); "
         + f"animation: studio-toast-in 180ms ease-out forwards, studio-toast-out 240ms ease-in forwards {timeout_ms}ms;"
     )
-    return Div(
+    toast_card = Div(
         Span(icon, cls="text-lg leading-none mt-0.5"),
         Div(safe_message, cls="text-sm font-semibold leading-snug text-left"),
         Button(
@@ -108,11 +108,14 @@ def build_toast(message: str, tone: str = "info", duration_ms: int | None = None
         ),
         role="status",
         aria_live="polite",
-        hx_swap_oob="beforeend:#studio-toast-holder",
         style=toast_style,
         onanimationend="if(event.animationName==='studio-toast-out'){ this.remove(); }",
         cls=(
             "pointer-events-auto studio-toast-entry w-full flex items-start gap-3 px-4 py-3 text-left backdrop-blur-sm"
         ),
         **{"data-toast-timeout": str(timeout_ms), "data-toast-ready": "true"},
+    )
+    return Div(
+        toast_card,
+        hx_swap_oob="beforeend:#studio-toast-holder",
     )
