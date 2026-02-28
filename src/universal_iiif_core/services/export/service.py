@@ -25,6 +25,8 @@ class ExportCancelledError(RuntimeError):
 
 @dataclass(frozen=True)
 class ExportFormatCapability:
+    """One export format capability exposed to UI/API."""
+
     key: str
     label: str
     available: bool
@@ -33,6 +35,8 @@ class ExportFormatCapability:
 
 @dataclass(frozen=True)
 class ExportDestinationCapability:
+    """One export destination capability exposed to UI/API."""
+
     key: str
     label: str
     available: bool
@@ -77,6 +81,7 @@ def get_export_capabilities() -> dict[str, list[dict[str, Any]]]:
 
 
 def is_format_available(export_format: str) -> bool:
+    """Return `True` when the requested export format is enabled."""
     target = (export_format or "").strip().lower()
     for item in EXPORT_FORMATS:
         if item.key == target:
@@ -85,6 +90,7 @@ def is_format_available(export_format: str) -> bool:
 
 
 def is_destination_available(destination: str) -> bool:
+    """Return `True` when the requested destination is enabled."""
     target = (destination or "").strip().lower()
     for item in EXPORT_DESTINATIONS:
         if item.key == target:
@@ -93,6 +99,7 @@ def is_destination_available(destination: str) -> bool:
 
 
 def output_kind_for_format(export_format: str) -> str:
+    """Resolve output kind (`binary|bundle|text`) for one export format."""
     target = (export_format or "").strip().lower()
     for item in EXPORT_FORMATS:
         if item.key == target:
@@ -171,6 +178,7 @@ def _scan_available_pages(scans_dir: Path) -> list[int]:
 
 
 def resolve_selected_pages(scans_dir: Path, selection_mode: str, selected_pages_raw: str) -> list[int]:
+    """Resolve selected pages according to mode and local scan availability."""
     available_pages = _scan_available_pages(scans_dir)
     if not available_pages:
         raise FileNotFoundError(f"Nessuna immagine trovata in {scans_dir}")
@@ -422,50 +430,59 @@ def _is_cancelled(should_cancel: Any) -> bool:
         return False
 
 
-def execute_export_job(
+def _execute_single_item_job(
+    *,
+    job_id: str,
+    item: dict[str, str],
+    export_format: str,
+    selection_mode: str,
+    selected_pages_raw: str,
+    destination: str,
+    progress_callback: Any,
+    compression: str,
+    include_cover: bool,
+    include_colophon: bool,
+    cover_curator: str | None,
+    cover_description: str | None,
+    cover_logo_path: str | None,
+) -> Path:
+    if progress_callback:
+        progress_callback(0, 1, "Preparing export")
+    output = execute_single_item_export(
+        job_id=job_id,
+        item=item,
+        export_format=export_format,
+        selection_mode=selection_mode,
+        selected_pages_raw=selected_pages_raw,
+        destination=destination,
+        compression=compression,
+        include_cover=include_cover,
+        include_colophon=include_colophon,
+        cover_curator=cover_curator,
+        cover_description=cover_description,
+        cover_logo_path=cover_logo_path,
+    )
+    if progress_callback:
+        progress_callback(1, 1, "Item 1/1 completato")
+    return output
+
+
+def _execute_batch_job(
     *,
     job_id: str,
     items: list[dict[str, str]],
     export_format: str,
     selection_mode: str,
     selected_pages_raw: str,
-    destination: str,
-    progress_callback: Any = None,
-    should_cancel: Any = None,
-    compression: str = "Standard",
-    include_cover: bool = True,
-    include_colophon: bool = True,
-    cover_curator: str | None = None,
-    cover_description: str | None = None,
-    cover_logo_path: str | None = None,
+    should_cancel: Any,
+    progress_callback: Any,
+    compression: str,
+    include_cover: bool,
+    include_colophon: bool,
+    cover_curator: str | None,
+    cover_description: str | None,
+    cover_logo_path: str | None,
 ) -> Path:
-    """Execute one export job for one or multiple items and return final output path."""
-    if not items:
-        raise ValueError("Nessun item selezionato per export.")
-
-    _ensure_supported_target(export_format, destination)
-
-    if len(items) == 1:
-        if progress_callback:
-            progress_callback(0, 1, "Preparing export")
-        output = execute_single_item_export(
-            job_id=job_id,
-            item=items[0],
-            export_format=export_format,
-            selection_mode=selection_mode,
-            selected_pages_raw=selected_pages_raw,
-            destination=destination,
-            compression=compression,
-            include_cover=include_cover,
-            include_colophon=include_colophon,
-            cover_curator=cover_curator,
-            cover_description=cover_description,
-            cover_logo_path=cover_logo_path,
-        )
-        if progress_callback:
-            progress_callback(1, 1, "Item 1/1 completato")
-        return output
-
     out_dir = get_config_manager().get_exports_dir() / clean_filename(job_id)
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -503,6 +520,61 @@ def execute_export_job(
 
     if not artifacts:
         raise RuntimeError("Nessun file prodotto dall'export.")
-
     bundle_name = f"export_batch_{clean_filename(job_id)}_{_timestamp()}.zip"
     return _bundle_outputs(artifacts, out_dir / bundle_name)
+
+
+def execute_export_job(
+    *,
+    job_id: str,
+    items: list[dict[str, str]],
+    export_format: str,
+    selection_mode: str,
+    selected_pages_raw: str,
+    destination: str,
+    progress_callback: Any = None,
+    should_cancel: Any = None,
+    compression: str = "Standard",
+    include_cover: bool = True,
+    include_colophon: bool = True,
+    cover_curator: str | None = None,
+    cover_description: str | None = None,
+    cover_logo_path: str | None = None,
+) -> Path:
+    """Execute one export job for one or multiple items and return final output path."""
+    if not items:
+        raise ValueError("Nessun item selezionato per export.")
+
+    _ensure_supported_target(export_format, destination)
+
+    if len(items) == 1:
+        return _execute_single_item_job(
+            job_id=job_id,
+            item=items[0],
+            export_format=export_format,
+            selection_mode=selection_mode,
+            selected_pages_raw=selected_pages_raw,
+            destination=destination,
+            progress_callback=progress_callback,
+            compression=compression,
+            include_cover=include_cover,
+            include_colophon=include_colophon,
+            cover_curator=cover_curator,
+            cover_description=cover_description,
+            cover_logo_path=cover_logo_path,
+        )
+    return _execute_batch_job(
+        job_id=job_id,
+        items=items,
+        export_format=export_format,
+        selection_mode=selection_mode,
+        selected_pages_raw=selected_pages_raw,
+        should_cancel=should_cancel,
+        progress_callback=progress_callback,
+        compression=compression,
+        include_cover=include_cover,
+        include_colophon=include_colophon,
+        cover_curator=cover_curator,
+        cover_description=cover_description,
+        cover_logo_path=cover_logo_path,
+    )

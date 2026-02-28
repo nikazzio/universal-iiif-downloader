@@ -238,6 +238,8 @@ def test_export_panel_uses_submit_trigger_and_card_based_thumbnail_selection():
     assert 'id="studio-export-thumb-size-select"' in rendered
     assert 'name="page_size"' in rendered
     assert 'hx-trigger="change"' in rendered
+    assert "window.__studioExportListenersBound" in rendered
+    assert "initStudioExport();" in rendered
 
 
 def test_export_thumb_page_size_preference_is_persisted_per_item():

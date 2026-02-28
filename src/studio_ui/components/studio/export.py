@@ -692,8 +692,32 @@ def render_studio_export_tab(
                     }
                 }
 
-                document.addEventListener('DOMContentLoaded', initStudioExport);
-                document.body.addEventListener('htmx:afterSwap', initStudioExport);
+                if (!window.__studioExportListenersBound) {
+                    window.__studioExportListenersBound = true;
+                    document.addEventListener('DOMContentLoaded', initStudioExport);
+                    document.body.addEventListener('htmx:afterSwap', (event) => {
+                        const target = event && event.detail ? event.detail.target : null;
+                        if (!target) {
+                            initStudioExport();
+                            return;
+                        }
+                        const targetId = target.id || '';
+                        if (
+                            targetId === 'tab-content-export' ||
+                            targetId === 'studio-export-thumbs-slot' ||
+                            targetId === 'studio-export-panel'
+                        ) {
+                            initStudioExport();
+                            return;
+                        }
+                        if (typeof target.closest === 'function' && target.closest('#studio-export-panel')) {
+                            initStudioExport();
+                        }
+                    });
+                }
+                // Important: when Export tab is lazy-loaded, DOMContentLoaded already fired.
+                // Run immediately so first thumbnails page is selectable without extra swaps.
+                initStudioExport();
             })();
             """
         ),
