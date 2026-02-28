@@ -5,18 +5,32 @@ from __future__ import annotations
 from fasthtml.common import H2, H3, A, Button, Div, P, Span
 
 _STATUS_CLASSES = {
-    "queued": "bg-slate-100 text-slate-700",
-    "running": "bg-amber-100 text-amber-800",
-    "completed": "bg-emerald-100 text-emerald-700",
-    "error": "bg-rose-100 text-rose-700",
-    "cancelled": "bg-slate-200 text-slate-600",
+    "queued": "app-chip app-chip-primary",
+    "running": "app-chip app-chip-warning",
+    "completed": "app-chip app-chip-success",
+    "error": "app-chip app-chip-danger",
+    "cancelled": "app-chip app-chip-neutral",
+}
+_STATUS_LABELS = {
+    "queued": "In coda",
+    "running": "In corso",
+    "completed": "Completato",
+    "error": "Errore",
+    "cancelled": "Annullato",
 }
 
 
 def _status_chip(status: str):
     value = (status or "queued").strip().lower()
     cls = _STATUS_CLASSES.get(value, _STATUS_CLASSES["queued"])
-    return Span(value.upper(), cls=f"{cls} text-[10px] font-bold px-2 py-1 rounded")
+    label = _STATUS_LABELS.get(value, value.title())
+    return Span(label, cls=f"{cls} text-[11px] tracking-wide")
+
+
+def _availability_chip(available: bool):
+    if available:
+        return Span("Disponibile", cls="app-chip app-chip-success text-[11px] tracking-wide")
+    return Span("In arrivo", cls="app-chip app-chip-warning text-[11px] tracking-wide")
 
 
 def render_export_jobs_panel(
@@ -25,10 +39,14 @@ def render_export_jobs_panel(
     polling: bool = True,
     hx_url: str = "/api/export/jobs",
     panel_id: str = "export-jobs-panel",
+    has_active_jobs: bool | None = None,
 ) -> Div:
     """Render export jobs list and controls."""
+    if has_active_jobs is None:
+        has_active_jobs = any(str(job.get("status") or "").lower() in {"queued", "running"} for job in jobs)
+
     attrs = {}
-    if polling:
+    if polling and has_active_jobs:
         attrs = {
             "hx_get": hx_url,
             "hx_trigger": "load, every 4s",
@@ -38,7 +56,7 @@ def render_export_jobs_panel(
     cards = []
     for job in jobs:
         job_id = str(job.get("job_id") or "")
-        status = str(job.get("status") or "queued")
+        status = str(job.get("status") or "queued").strip().lower()
         current = int(job.get("current_step") or 0)
         total = int(job.get("total_steps") or 0)
         fmt = str(job.get("export_format") or "-")
@@ -49,6 +67,13 @@ def render_export_jobs_panel(
         progress_text = f"{current}/{total}" if total > 0 else "0/0"
         can_cancel = status in {"queued", "running"}
         can_download = status == "completed" and bool(output_path)
+        progress_tone = "app-chip-primary"
+        if status == "completed":
+            progress_tone = "app-chip-success"
+        elif status == "error":
+            progress_tone = "app-chip-danger"
+        elif status == "cancelled":
+            progress_tone = "app-chip-neutral"
 
         actions = []
         if can_download:
@@ -56,7 +81,7 @@ def render_export_jobs_panel(
                 A(
                     "Scarica",
                     href=f"/api/export/download/{job_id}",
-                    cls="px-3 py-1 rounded bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-semibold",
+                    cls="app-btn app-btn-accent",
                 )
             )
         if can_cancel:
@@ -66,7 +91,7 @@ def render_export_jobs_panel(
                     hx_post=f"/api/export/cancel/{job_id}",
                     hx_target=f"#{panel_id}",
                     hx_swap="outerHTML",
-                    cls="px-3 py-1 rounded bg-rose-700 hover:bg-rose-600 text-white text-xs font-semibold",
+                    cls="app-btn app-btn-danger",
                 )
             )
         else:
@@ -76,7 +101,7 @@ def render_export_jobs_panel(
                     hx_post=f"/api/export/remove/{job_id}",
                     hx_target=f"#{panel_id}",
                     hx_swap="outerHTML",
-                    cls="px-3 py-1 rounded bg-slate-700 hover:bg-slate-600 text-white text-xs font-semibold",
+                    cls="app-btn app-btn-neutral",
                 )
             )
 
@@ -84,37 +109,109 @@ def render_export_jobs_panel(
             Div(
                 Div(
                     Div(
-                        Span(job_id, cls="font-mono text-xs text-slate-600"),
+                        Span(job_id, cls="font-mono text-[11px] text-slate-600 dark:text-slate-300 break-all"),
                         _status_chip(status),
-                        cls="flex items-center gap-2",
+                        Span(f"Progress {progress_text}", cls=f"app-chip {progress_tone} text-[11px] tracking-wide"),
+                        cls="flex flex-wrap items-center gap-2",
                     ),
                     Div(
-                        Span(f"Formato: {fmt}", cls="text-xs text-slate-600"),
-                        Span(f"Destinazione: {destination}", cls="text-xs text-slate-500"),
-                        cls="flex flex-wrap gap-3",
+                        Div(
+                            Span(
+                                "Formato", cls="text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-400"
+                            ),
+                            Span(fmt, cls="text-sm font-medium text-slate-800 dark:text-slate-100"),
+                            cls="flex flex-col",
+                        ),
+                        Div(
+                            Span(
+                                "Destinazione",
+                                cls="text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-400",
+                            ),
+                            Span(destination, cls="text-sm font-medium text-slate-800 dark:text-slate-100"),
+                            cls="flex flex-col",
+                        ),
+                        cls="grid grid-cols-1 sm:grid-cols-2 gap-3",
                     ),
                     cls="flex flex-col gap-2",
                 ),
-                Div(
-                    Span(f"Progress: {progress_text}", cls="text-xs text-slate-600"),
-                    Span(error_text, cls="text-xs text-rose-700") if error_text else "",
-                    cls="flex flex-col gap-1",
+                (
+                    Div(
+                        Span("Output", cls="text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-400"),
+                        Span(output_path, cls="text-xs text-slate-600 dark:text-slate-300 break-all"),
+                        cls="space-y-1",
+                    )
+                    if output_path
+                    else ""
+                ),
+                (
+                    Div(
+                        Span(error_text, cls="text-xs text-rose-700 dark:text-rose-300"),
+                        cls=(
+                            "rounded-lg border border-rose-200 dark:border-rose-700/60 "
+                            "bg-rose-50 dark:bg-rose-950/30 p-2"
+                        ),
+                    )
+                    if error_text
+                    else ""
                 ),
                 Div(*actions, cls="flex items-center gap-2"),
-                cls="border border-slate-200 rounded-lg p-3 bg-white shadow-sm space-y-3",
+                cls=(
+                    "border border-slate-200 dark:border-slate-700 rounded-2xl p-4 "
+                    "bg-white dark:bg-slate-900/60 shadow-sm space-y-3"
+                ),
             )
         )
 
     if not cards:
-        cards = [Div("Nessun job export presente.", cls="text-sm text-slate-500 p-3 border border-dashed rounded")]
+        cards = [
+            Div(
+                "Nessun job export presente.",
+                cls=(
+                    "text-sm text-slate-600 dark:text-slate-300 p-4 border border-dashed "
+                    "border-slate-300 dark:border-slate-700 rounded-2xl bg-white/70 dark:bg-slate-900/30"
+                ),
+            )
+        ]
+
+    header_right = Div(
+        Span(
+            "Aggiornamento automatico ogni 4s" if has_active_jobs else "Aggiornamento automatico in pausa",
+            cls="app-chip app-chip-neutral text-[11px] tracking-wide",
+        ),
+        Button(
+            "Aggiorna ora",
+            type="button",
+            hx_get=hx_url,
+            hx_target=f"#{panel_id}",
+            hx_swap="outerHTML",
+            cls="app-btn app-btn-primary",
+        ),
+        cls="flex items-center gap-2",
+    )
 
     return Div(
         Div(
-            H3("Job Export", cls="text-lg font-semibold text-slate-800"),
-            Span("Aggiornamento automatico ogni 4s", cls="text-xs text-slate-500"),
-            cls="flex items-baseline justify-between mb-3",
+            Div(
+                H3("Job Export", cls="text-lg font-semibold text-slate-900 dark:text-slate-100 leading-tight"),
+                P(
+                    f"{len(jobs)} job registrati",
+                    cls="text-xs text-slate-500 dark:text-slate-400 mt-0.5",
+                ),
+                cls="min-w-0",
+            ),
+            header_right,
+            cls="flex flex-wrap items-start justify-between gap-3 mb-3",
+        ),
+        (
+            Div(
+                "Nessun job attivo: polling in pausa.",
+                cls="text-xs text-slate-500 dark:text-slate-400 mb-2",
+            )
+            if not has_active_jobs
+            else ""
         ),
         Div(*cards, cls="space-y-2"),
+        cls=("rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/35 p-4"),
         id=panel_id,
         **attrs,
     )
@@ -124,43 +221,63 @@ def render_export_page(jobs: list[dict], capabilities: dict[str, list[dict]]) ->
     """Render monitor-only Export page."""
     formats = capabilities.get("formats") or []
     destinations = capabilities.get("destinations") or []
+    has_active_jobs = any(str(job.get("status") or "").lower() in {"queued", "running"} for job in jobs)
 
     format_rows = []
     for item in formats:
         label = str(item.get("label") or item.get("key") or "-")
         available = bool(item.get("available"))
-        status_text = "Disponibile" if available else "In arrivo"
-        cls = "text-emerald-700" if available else "text-amber-700"
-        format_rows.append(Div(Span(label, cls="text-sm text-slate-700"), Span(status_text, cls=f"text-xs {cls}"), cls="flex justify-between"))
+        format_rows.append(
+            Div(
+                Span(label, cls="text-sm text-slate-700 dark:text-slate-200"),
+                _availability_chip(available),
+                cls=(
+                    "flex justify-between items-center gap-2 py-2 px-3 rounded-xl "
+                    "border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/45"
+                ),
+            )
+        )
 
     destination_rows = []
     for item in destinations:
         label = str(item.get("label") or item.get("key") or "-")
         available = bool(item.get("available"))
-        status_text = "Disponibile" if available else "In arrivo"
-        cls = "text-emerald-700" if available else "text-amber-700"
         destination_rows.append(
-            Div(Span(label, cls="text-sm text-slate-700"), Span(status_text, cls=f"text-xs {cls}"), cls="flex justify-between")
+            Div(
+                Span(label, cls="text-sm text-slate-700 dark:text-slate-200"),
+                _availability_chip(available),
+                cls=(
+                    "flex justify-between items-center gap-2 py-2 px-3 rounded-xl "
+                    "border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/45"
+                ),
+            )
         )
 
     return Div(
-        H2("Export", cls="text-2xl font-bold text-slate-900 mb-1"),
+        H2("Export", cls="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100 mb-1"),
         P(
-            "Monitor coda/storico export. L'avvio export avviene nello Studio, a livello singolo item.",
-            cls="text-sm text-slate-600 mb-6",
+            "Monitor della coda e dello storico esportazioni, con avvio dei job dal tab Studio del singolo item.",
+            cls="text-sm text-slate-600 dark:text-slate-300 mb-6",
         ),
         Div(
             Div(
-                H3("Capability", cls="text-base font-semibold text-slate-800 mb-2"),
-                Div(Span("Formati", cls="text-xs font-semibold text-slate-500 uppercase"), *format_rows, cls="space-y-2"),
+                H3("Capacità Export", cls="text-base font-semibold text-slate-900 dark:text-slate-100 mb-2"),
                 Div(
-                    Span("Destinazioni", cls="text-xs font-semibold text-slate-500 uppercase"),
+                    Span("Formati", cls="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase"),
+                    *format_rows,
+                    cls="space-y-2",
+                ),
+                Div(
+                    Span("Destinazioni", cls="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase"),
                     *destination_rows,
                     cls="space-y-2 mt-4",
                 ),
-                cls="bg-slate-50 border border-slate-200 rounded-xl p-4",
+                cls=(
+                    "bg-slate-50/85 dark:bg-slate-900/35 border border-slate-200 dark:border-slate-700 rounded-2xl p-4"
+                ),
             ),
-            Div(render_export_jobs_panel(jobs, polling=True), cls="space-y-4"),
-            cls="grid grid-cols-1 lg:grid-cols-2 gap-6",
+            Div(render_export_jobs_panel(jobs, polling=True, has_active_jobs=has_active_jobs), cls="space-y-4"),
+            cls="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start",
         ),
+        cls="pb-6",
     )
