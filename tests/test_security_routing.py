@@ -139,6 +139,7 @@ def test_exception_sanitization_start_download(monkeypatch):
     assert (
         'hx-get="/api/download_status/' in result_str
         or 'hx-get="/api/download_manager"' in result_str
+        or 'id="download-manager-area"' in result_str
         or "Errore" in result_str
     )
 

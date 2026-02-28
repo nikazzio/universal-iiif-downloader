@@ -1,5 +1,7 @@
 from pathlib import Path
 
+from fasthtml.common import Div
+
 from studio_ui.routes import library_handlers
 from universal_iiif_core.config_manager import get_config_manager
 from universal_iiif_core.services.storage.vault_manager import VaultManager
@@ -121,3 +123,59 @@ def test_library_retry_missing_queues_specific_pages(monkeypatch):
     assert "Retry missing accodato" in repr(result)
     assert called["manifest_url"] == "https://example.org/missing.json"
     assert called["target_pages"] == {2, 7}
+
+
+def test_library_refresh_metadata_card_only_returns_single_card(monkeypatch):
+    """Card-only metadata refresh should return a single card fragment + toast."""
+    vm = VaultManager()
+    vm.upsert_manuscript(
+        "DOC_META_CARD",
+        library="Vaticana",
+        manifest_url="https://example.org/meta.json",
+        status="saved",
+        asset_state="saved",
+    )
+
+    monkeypatch.setattr(library_handlers, "_update_catalog_metadata", lambda *_a, **_k: {})
+
+    called = {}
+
+    def _fake_render_library_card(doc, compact=False):
+        called["doc_id"] = str(doc.get("id") or "")
+        called["library"] = str(doc.get("library") or "")
+        called["compact"] = bool(compact)
+        return Div("CARD_FRAGMENT")
+
+    monkeypatch.setattr(library_handlers, "render_library_card", _fake_render_library_card)
+
+    result = library_handlers.library_refresh_metadata(
+        "DOC_META_CARD",
+        "Vaticana",
+        card_only="1",
+        view="list",
+    )
+    rendered = repr(result)
+    assert "CARD_FRAGMENT" in rendered
+    assert "Metadati aggiornati per DOC_META_CARD." in rendered
+    assert called["doc_id"] == "DOC_META_CARD"
+    assert called["library"] == "Vaticana"
+    assert called["compact"] is True
+
+
+def test_library_refresh_metadata_without_card_only_returns_full_page(monkeypatch):
+    """Default metadata refresh should rebuild the full Library page fragment."""
+    vm = VaultManager()
+    vm.upsert_manuscript(
+        "DOC_META_FULL",
+        library="Gallica",
+        manifest_url="https://example.org/meta-full.json",
+        status="saved",
+        asset_state="saved",
+    )
+
+    monkeypatch.setattr(library_handlers, "_update_catalog_metadata", lambda *_a, **_k: {})
+
+    result = library_handlers.library_refresh_metadata("DOC_META_FULL", "Gallica")
+    rendered = repr(result)
+    assert "Libreria Locale" in rendered
+    assert "Metadati aggiornati per DOC_META_FULL." in rendered

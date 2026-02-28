@@ -429,6 +429,24 @@ def retry_download(download_id: str):
         return _with_feedback_toast("Errore Retry", "Impossibile accodare il retry.", tone="danger")
 
 
+def remove_download(download_id: str):
+    """Remove a terminal download job from the Download Manager."""
+    vault = VaultManager()
+    job = vault.get_download_job(download_id) or {}
+    status = str(job.get("status") or "").lower()
+    doc_id = str(job.get("doc_id") or download_id)
+    if not job:
+        return _with_feedback_toast("Job non trovato", "Il download selezionato non esiste.", tone="info")
+
+    if status in {"queued", "running", "cancelling", "pending", "starting"}:
+        return _with_feedback_toast("Rimozione non disponibile", "Annulla prima il download attivo.", tone="info")
+
+    if not vault.delete_download_job(download_id):
+        return _with_feedback_toast("Rimozione non riuscita", "Non è stato possibile rimuovere il job.", tone="danger")
+
+    return _with_toast(_download_manager_fragment(), f"Job rimosso: {doc_id}.", tone="success")
+
+
 def prioritize_download(download_id: str):
     """Move a queued job to queue head."""
     if not job_manager.prioritize_download(download_id):

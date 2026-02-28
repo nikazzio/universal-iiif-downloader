@@ -108,8 +108,8 @@ def _action_button(
     kwargs = {
         "cls": _ACTION_BUTTON_CLS[tone],
         "hx_post": url,
-        "hx_target": "#app-main",
-        "hx_swap": "innerHTML show:none",
+        "hx_target": "#library-page",
+        "hx_swap": "outerHTML show:none",
         "hx_include": "#library-filters",
     }
     if confirm:
@@ -205,8 +205,8 @@ def _render_filters(
                 "Reset",
                 href="/library",
                 hx_get="/library",
-                hx_target="#app-main",
-                hx_swap="innerHTML",
+                hx_target="#library-page",
+                hx_swap="outerHTML show:none",
                 hx_push_url="true",
                 cls=(
                     "px-4 py-2.5 border border-slate-300 dark:border-slate-600 rounded text-slate-600 "
@@ -290,8 +290,8 @@ def _render_filters(
         ),
         id="library-filters",
         hx_get="/library",
-        hx_target="#app-main",
-        hx_swap="innerHTML",
+        hx_target="#library-page",
+        hx_swap="outerHTML show:none",
         hx_push_url="true",
         hx_trigger="submit, change delay:200ms from:select, keyup changed delay:400ms from:input[name='q']",
         cls=(
@@ -375,8 +375,8 @@ def _category_form(doc: dict, item_type: str) -> Form:
             cls=_category_select_cls(item_type),
         ),
         hx_post=f"/api/library/set_type?doc_id={doc_id}&library={library}",
-        hx_target="#app-main",
-        hx_swap="innerHTML show:none",
+        hx_target="#library-page",
+        hx_swap="outerHTML show:none",
         hx_include="#library-filters",
     )
 
@@ -390,6 +390,20 @@ def _info_chip(text: str) -> Span:
 
 def _compact_label(text: str) -> str:
     return "".join(ch for ch in (text or "").lower().strip() if ch.isalnum())
+
+
+def library_card_dom_id(doc_id: str, library: str) -> str:
+    """Return a stable DOM id for one library card."""
+    raw = f"{library}::{doc_id}"
+    token = base64.urlsafe_b64encode(raw.encode("utf-8")).decode("ascii").rstrip("=")
+    return f"library-card-{token or 'item'}"
+
+
+def _doc_card_dom_id(doc: dict) -> str:
+    return library_card_dom_id(
+        str(doc.get("id") or ""),
+        str(doc.get("library") or "Unknown"),
+    )
 
 
 def _metadata_items(doc: dict) -> list[tuple[str, str]]:
@@ -415,6 +429,7 @@ def _metadata_payload(doc: dict) -> str:
     payload = {
         "doc_id": str(doc.get("id") or ""),
         "library": str(doc.get("library") or "Unknown"),
+        "card_id": _doc_card_dom_id(doc),
         "title": str(doc.get("display_title") or doc.get("id") or "-"),
         "shelfmark": str(doc.get("shelfmark") or doc.get("id") or "-"),
         "date_label": str(doc.get("date_label") or ""),
@@ -516,7 +531,14 @@ def _doc_card(doc: dict, *, compact: bool = False) -> Div:
             "flex gap-4 rounded-xl border border-slate-200 dark:border-slate-700 "
             + ("bg-white dark:bg-slate-800/50 p-3" if compact else "bg-white dark:bg-slate-800/70 p-4")
         ),
+        id=_doc_card_dom_id(doc),
+        data_library_card="1",
     )
+
+
+def render_library_card(doc: dict, *, compact: bool = False) -> Div:
+    """Render a single library card for targeted HTMX swaps."""
+    return _doc_card(doc, compact=compact)
 
 
 def _render_operational_list(docs: list[dict], view: str) -> Div:
@@ -668,8 +690,8 @@ def _metadata_drawer() -> Div:
                         id="library-meta-refresh",
                         type="button",
                         cls=_ACTION_BUTTON_CLS["info"],
-                        hx_target="#app-main",
-                        hx_swap="innerHTML show:none",
+                        hx_target="#library-page",
+                        hx_swap="outerHTML show:none",
                         hx_include="#library-filters",
                     ),
                     A(
@@ -700,6 +722,14 @@ def _metadata_drawer() -> Div:
                     if (typeof path === 'string' && path.startsWith('/api/library/')) return true;
                     const responseUrl = (detail && detail.xhr && detail.xhr.responseURL) || '';
                     return responseUrl.indexOf('/api/library/') !== -1;
+                }
+
+                function isMetadataRefreshRequest(detail) {
+                    const path = String((detail && detail.requestConfig && detail.requestConfig.path) || '');
+                    if (path.indexOf('/api/library/refresh_metadata') !== -1) return true;
+                    const trigger = detail && detail.elt;
+                    if (trigger && trigger.id === 'library-meta-refresh') return true;
+                    return false;
                 }
 
                 function renderMetaRows(items) {
@@ -774,7 +804,12 @@ def _metadata_drawer() -> Div:
                         + encodeURIComponent(String(data.doc_id || ''))
                         + '&library='
                         + encodeURIComponent(String(data.library || 'Unknown'));
-                    refresh.setAttribute('hx-post', refreshUrl);
+                    const targetCard = String(data.card_id || '').trim();
+                    const cardRefreshUrl = refreshUrl + (targetCard ? '&card_only=1' : '');
+                    refresh.setAttribute('data-card-id', targetCard);
+                    refresh.setAttribute('hx-target', targetCard ? ('#' + targetCard) : '#library-page');
+                    refresh.setAttribute('hx-swap', 'outerHTML show:none');
+                    refresh.setAttribute('hx-post', cardRefreshUrl);
                     if (window.htmx && typeof window.htmx.process === 'function') {
                         window.htmx.process(refresh);
                     }
@@ -810,20 +845,55 @@ def _metadata_drawer() -> Div:
 
                     document.body.addEventListener('htmx:beforeRequest', (event) => {
                         if (!isLibraryMutation(event.detail)) return;
+                        const isMetaRefresh = isMetadataRefreshRequest(event.detail);
                         const appMain = document.getElementById('app-main');
                         if (appMain) {
                             window.__libraryScrollTop = appMain.scrollTop || 0;
                         }
-                        if (typeof window.closeLibraryMetadata === 'function') {
+                        if (isMetaRefresh) {
+                            const refreshBtn = document.getElementById('library-meta-refresh');
+                            const explicitCardId = refreshBtn
+                                ? String(refreshBtn.getAttribute('data-card-id') || '').trim()
+                                : '';
+                            const targetSelector = refreshBtn ? String(refreshBtn.getAttribute('hx-target') || '') : '';
+                            const targetCardId = explicitCardId || (
+                                targetSelector.startsWith('#library-card-')
+                                    ? targetSelector.slice(1)
+                                    : ''
+                            );
+                            window.__libraryMetaRefreshContext = {
+                                cardId: targetCardId
+                            };
+                        } else if (typeof window.closeLibraryMetadata === 'function') {
                             window.closeLibraryMetadata();
+                            window.__libraryMetaRefreshContext = null;
                         }
-                        const active = document.activeElement;
-                        if (active && typeof active.blur === 'function') active.blur();
+                        if (!isMetaRefresh) {
+                            const active = document.activeElement;
+                            if (active && typeof active.blur === 'function') active.blur();
+                        }
                     });
 
                     document.body.addEventListener('htmx:afterSwap', (event) => {
                         if (!isLibraryMutation(event.detail)) return;
-                        if (!event.detail || !event.detail.target || event.detail.target.id !== 'app-main') return;
+                        if (!event.detail || !event.detail.target) return;
+                        const targetId = event.detail.target.id || '';
+
+                        if (isMetadataRefreshRequest(event.detail)) {
+                            const ctx = window.__libraryMetaRefreshContext || {};
+                            const cardId = String(ctx.cardId || '').trim();
+                            if (cardId && typeof window.openLibraryMetadata === 'function') {
+                                const card = document.getElementById(cardId);
+                                const opener = card ? card.querySelector('[data-payload]') : null;
+                                const payload = opener && opener.dataset ? opener.dataset.payload : '';
+                                if (payload) {
+                                    window.openLibraryMetadata(payload);
+                                }
+                            }
+                            window.__libraryMetaRefreshContext = null;
+                        }
+
+                        if (targetId !== 'app-main' && targetId !== 'library-page') return;
                         const appMain = document.getElementById('app-main');
                         if (!appMain) return;
                         const targetTop = Number(window.__libraryScrollTop);
@@ -879,4 +949,5 @@ def render_library_page(
         render_library_list(docs, view=view, mode=mode),
         _metadata_drawer(),
         cls="p-6 max-w-7xl mx-auto",
+        id="library-page",
     )

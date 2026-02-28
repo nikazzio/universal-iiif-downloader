@@ -49,3 +49,45 @@ def test_retry_download_requeues_existing_job(monkeypatch):
     result = discovery_handlers.retry_download("retry_job_1")
     assert "Retry accodato" in repr(result)
     assert called["doc_id"] == "DOC_R"
+
+
+def test_download_manager_polls_only_with_active_jobs():
+    """Download manager polling should run only while active jobs exist."""
+    vm = VaultManager()
+    vm.create_download_job("poll_active_1", "DOC_POLL_ACTIVE", "Gallica", "https://example.org/manifest.json")
+    vm.update_download_job("poll_active_1", current=1, total=10, status="running")
+
+    active_fragment = discovery_handlers.download_manager()
+    active_text = repr(active_fragment)
+    assert 'hx-get="/api/download_manager"' in active_text
+    assert 'hx-trigger="every 1s"' in active_text
+
+    vm.update_download_job("poll_active_1", current=10, total=10, status="completed")
+    idle_fragment = discovery_handlers.download_manager()
+    idle_text = repr(idle_fragment)
+    assert 'hx-get="/api/download_manager"' not in idle_text
+    assert 'hx-trigger="every 1s"' not in idle_text
+
+
+def test_remove_download_removes_terminal_job():
+    """Terminal jobs should be removable from the download manager."""
+    vm = VaultManager()
+    vm.create_download_job("remove_job_1", "DOC_REMOVE", "Vaticana", "https://example.org/manifest.json")
+    vm.update_download_job("remove_job_1", current=0, total=0, status="error", error="boom")
+
+    result = discovery_handlers.remove_download("remove_job_1")
+    rendered = repr(result)
+    assert "Job rimosso: DOC_REMOVE." in rendered
+    assert vm.get_download_job("remove_job_1") is None
+
+
+def test_remove_download_rejects_active_job():
+    """Active jobs should require cancellation before removal."""
+    vm = VaultManager()
+    vm.create_download_job("remove_job_2", "DOC_REMOVE_ACTIVE", "Gallica", "https://example.org/manifest.json")
+    vm.update_download_job("remove_job_2", current=1, total=10, status="running")
+
+    result = discovery_handlers.remove_download("remove_job_2")
+    rendered = repr(result)
+    assert "Rimozione non disponibile" in rendered
+    assert vm.get_download_job("remove_job_2") is not None

@@ -12,7 +12,7 @@ from fasthtml.common import Request
 
 from studio_ui.common.toasts import build_toast
 from studio_ui.components.layout import base_layout
-from studio_ui.components.library import render_library_page
+from studio_ui.components.library import render_library_card, render_library_page
 from studio_ui.routes.discovery_helpers import start_downloader_thread
 from universal_iiif_core.config_manager import get_config_manager
 from universal_iiif_core.library_catalog import (
@@ -336,30 +336,12 @@ def _collect_docs_and_filters(
     action_filter = (action_required or "0").strip() == "1"
 
     for row in rows:
-        lib = str(row.get("library") or "Unknown")
-        item_type = normalize_item_type(str(row.get("item_type") or ""))
+        doc = _row_to_view_model(row)
+        lib = str(doc.get("library") or "Unknown")
+        item_type = str(doc.get("item_type") or "non classificato")
         libraries.add(lib)
         categories.add(item_type)
 
-        doc = {
-            **row,
-            "library": lib,
-            "item_type": item_type,
-            "display_title": _safe_catalog_title(row),
-            "asset_state": _effective_state(row),
-            "downloaded_canvases": int(row.get("downloaded_canvases") or 0),
-            "total_canvases": int(row.get("total_canvases") or 0),
-            "missing_pages": _parse_missing_pages(row.get("missing_pages_json")),
-            "has_missing_pages": bool(_parse_missing_pages(row.get("missing_pages_json"))),
-            "item_type_source": row.get("item_type_source") or "auto",
-            "item_type_confidence": float(row.get("item_type_confidence") or 0.0),
-            "reference_text": str(row.get("reference_text") or ""),
-            "shelfmark": str(row.get("shelfmark") or row.get("id") or ""),
-            "source_detail_url": str(row.get("source_detail_url") or ""),
-            "user_notes": str(row.get("user_notes") or ""),
-            "metadata_preview": _metadata_preview_items(str(row.get("metadata_json") or "")),
-            "thumbnail_url": _thumbnail_url(row),
-        }
         if state_filter and doc["asset_state"] != state_filter:
             continue
         if lib_filter and lib != lib_filter:
@@ -374,6 +356,61 @@ def _collect_docs_and_filters(
 
     ordered_categories = [cat for cat in ITEM_TYPES if cat in categories]
     return _sort_docs(docs, mode, sort_by), sorted(libraries), ordered_categories
+
+
+def _row_to_view_model(row: dict) -> dict:
+    lib = str(row.get("library") or "Unknown")
+    item_type = normalize_item_type(str(row.get("item_type") or ""))
+    missing_pages = _parse_missing_pages(row.get("missing_pages_json"))
+    return {
+        **row,
+        "library": lib,
+        "item_type": item_type,
+        "display_title": _safe_catalog_title(row),
+        "asset_state": _effective_state(row),
+        "downloaded_canvases": int(row.get("downloaded_canvases") or 0),
+        "total_canvases": int(row.get("total_canvases") or 0),
+        "missing_pages": missing_pages,
+        "has_missing_pages": bool(missing_pages),
+        "item_type_source": row.get("item_type_source") or "auto",
+        "item_type_confidence": float(row.get("item_type_confidence") or 0.0),
+        "reference_text": str(row.get("reference_text") or ""),
+        "shelfmark": str(row.get("shelfmark") or row.get("id") or ""),
+        "source_detail_url": str(row.get("source_detail_url") or ""),
+        "user_notes": str(row.get("user_notes") or ""),
+        "metadata_preview": _metadata_preview_items(str(row.get("metadata_json") or "")),
+        "thumbnail_url": _thumbnail_url(row),
+    }
+
+
+def _refresh_card_response(
+    *,
+    doc_id: str,
+    library: str,
+    view: str = "grid",
+    message: str,
+    tone: str = "info",
+):
+    rows = VaultManager().get_all_manuscripts()
+    target_row = next(
+        (
+            row
+            for row in rows
+            if str(row.get("id") or "") == doc_id and str(row.get("library") or "Unknown") == library
+        ),
+        None,
+    )
+    if target_row is None:
+        target_row = VaultManager().get_manuscript(doc_id)
+    if not target_row:
+        return _with_toast(
+            _render_page_fragment(view=view),
+            message,
+            tone=tone,
+        )
+    doc = _row_to_view_model(target_row)
+    fragment = render_library_card(doc, compact=view == "list")
+    return _with_toast(fragment, message, tone=tone)
 
 
 def _with_toast(fragment, message: str, tone: str = "info"):
@@ -923,6 +960,7 @@ def library_update_notes(
 def library_refresh_metadata(
     doc_id: str,
     library: str,
+    card_only: str = "0",
     view: str = "grid",
     q: str = "",
     state: str = "",
@@ -952,6 +990,14 @@ def library_refresh_metadata(
             )
     try:
         _update_catalog_metadata(doc_id, manifest_url)
+        if (card_only or "0").strip() == "1":
+            return _refresh_card_response(
+                doc_id=doc_id,
+                library=library,
+                view=view,
+                message=f"Metadati aggiornati per {doc_id}.",
+                tone="success",
+            )
         return _refresh_response(
             message=f"Metadati aggiornati per {doc_id}.",
             tone="success",

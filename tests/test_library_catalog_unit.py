@@ -147,8 +147,8 @@ def test_parse_manifest_catalog_prefers_detail_see_also_over_search_url():
     assert parsed["source_detail_url"] == "https://digi.vatlib.it/mss/detail/Urb.lat.1777"
 
 
-def test_parse_manifest_catalog_does_not_build_reference_from_search_url():
-    """Generic search URLs should not generate reference_text fallback."""
+def test_parse_manifest_catalog_search_see_also_still_uses_vatican_detail_fallback():
+    """Vatican manifests should ignore search links and use derived detail URL."""
     manifest = {
         "label": "Urb.lat.1777",
         "metadata": [{"label": "Shelfmark", "value": "Urb.lat.1777"}],
@@ -161,5 +161,152 @@ def test_parse_manifest_catalog_does_not_build_reference_from_search_url():
         doc_id="MSS_Urb.lat.1777",
         enrich_external_reference=False,
     )
-    assert parsed["reference_text"] == ""
+    assert parsed["source_detail_url"] == "https://digi.vatlib.it/mss/detail/Urb.lat.1777"
+    assert parsed["reference_text"] == "Urb lat 1777"
     assert parsed["catalog_title"] == "Urb.lat.1777"
+
+
+def test_parse_manifest_catalog_derives_vatican_detail_url_from_manifest_url():
+    """Vatican manifests should map to /mss/detail even without explicit seeAlso links."""
+    manifest = {
+        "label": "Urb.lat.1777",
+        "metadata": [{"label": "Shelfmark", "value": "Urb.lat.1777"}],
+    }
+
+    parsed = library_catalog.parse_manifest_catalog(
+        manifest,
+        manifest_url="https://digi.vatlib.it/iiif/MSS_Urb.lat.1777/manifest.json",
+        doc_id="MSS_Urb.lat.1777",
+        enrich_external_reference=False,
+    )
+    assert parsed["source_detail_url"] == "https://digi.vatlib.it/mss/detail/Urb.lat.1777"
+
+
+def test_parse_manifest_catalog_prefers_gallica_notice_over_oai_url():
+    """Gallica should prefer human catalog notice URLs over OAI endpoints."""
+    manifest = {
+        "label": "OAIHandler",
+        "metadata": [
+            {"label": "Title", "value": "Bestiaire médiéval"},
+            {
+                "label": "Relation",
+                "value": "Notice du catalogue : https://archivesetmanuscrits.bnf.fr/ark:/12148/cc10108b",
+            },
+        ],
+        "seeAlso": [
+            "http://oai.bnf.fr/oai2/OAIHandler?verb=GetRecord&metadataPrefix=oai_dc&identifier=oai:bnf.fr:gallica/ark:/12148/btv1b123",
+        ],
+    }
+
+    parsed = library_catalog.parse_manifest_catalog(
+        manifest,
+        manifest_url="https://gallica.bnf.fr/iiif/ark:/12148/btv1b123/manifest.json",
+        doc_id="btv1b123",
+        enrich_external_reference=False,
+    )
+    assert parsed["source_detail_url"] == "https://archivesetmanuscrits.bnf.fr/ark:/12148/cc10108b"
+
+
+def test_parse_manifest_catalog_enrichment_merges_external_fields(monkeypatch):
+    """External parser data should be merged into metadata_map using ext_* keys."""
+    manifest = {
+        "label": "Urb.lat.1231",
+        "metadata": [{"label": "Shelfmark", "value": "Urb.lat.1231"}],
+        "seeAlso": ["https://digi.vatlib.it/mss/detail/Urb.lat.1231"],
+    }
+
+    class _Resp:
+        text = (
+            "<html><head>"
+            '<meta name="author" content="Giovanni Boccaccio"/>'
+            "<title>DigiVatLib</title>"
+            "</head><body><h1>Tractatus de astronomia</h1></body></html>"
+        )
+
+        @staticmethod
+        def raise_for_status():
+            return None
+
+    monkeypatch.setattr(library_catalog.requests, "get", lambda *_a, **_k: _Resp())
+
+    parsed = library_catalog.parse_manifest_catalog(
+        manifest,
+        manifest_url="https://digi.vatlib.it/iiif/MSS_Urb.lat.1231/manifest.json",
+        doc_id="MSS_Urb.lat.1231",
+        enrich_external_reference=True,
+    )
+    assert parsed["reference_text"] == "Tractatus de astronomia"
+    assert parsed["metadata_map"].get("ext_author") == "Giovanni Boccaccio"
+    assert parsed["metadata_map"].get("ext_repository") == "Biblioteca Apostolica Vaticana"
+
+
+def test_parse_manifest_catalog_extracts_vatican_bibliographic_references(monkeypatch):
+    """Vatican detail pages should expose bibliographic references in ext_* metadata."""
+    manifest = {
+        "label": "Urb.lat.1777",
+        "metadata": [{"label": "Shelfmark", "value": "Urb.lat.1777"}],
+        "seeAlso": ["https://digi.vatlib.it/mss/detail/Urb.lat.1777"],
+    }
+
+    class _Resp:
+        text = (
+            "<html><head><title>Manuscript - Urb.lat.1777</title></head>"
+            "<body>"
+            "<a href='#'>1) Cencio, atto del 1370</a>"
+            "<a href='#'>2) Vittorelli, Descrizione codicum 1777</a>"
+            "</body></html>"
+        )
+
+        @staticmethod
+        def raise_for_status():
+            return None
+
+    monkeypatch.setattr(library_catalog.requests, "get", lambda *_a, **_k: _Resp())
+
+    parsed = library_catalog.parse_manifest_catalog(
+        manifest,
+        manifest_url="https://digi.vatlib.it/iiif/MSS_Urb.lat.1777/manifest.json",
+        doc_id="MSS_Urb.lat.1777",
+        enrich_external_reference=True,
+    )
+    assert parsed["metadata_map"].get("ext_bibliographic_references_count") == "2"
+    assert "Cencio" in str(parsed["metadata_map"].get("ext_bibliographic_reference_1") or "")
+
+
+def test_parse_manifest_catalog_extracts_vatican_bibliographic_references_from_detail_dom(monkeypatch):
+    """Live-like Vatican detail DOM should still yield bibliographic references."""
+    manifest = {
+        "label": "Urb.lat.1777",
+        "metadata": [{"label": "Shelfmark", "value": "Urb.lat.1777"}],
+        "seeAlso": ["https://digi.vatlib.it/mss/detail/Urb.lat.1777"],
+    }
+
+    class _Resp:
+        text = (
+            "<html><head><title>DigiVatLib</title></head>"
+            "<body>"
+            "<div id='region-detail-body'>"
+            "<div class='block-detail-record'>"
+            "Bibliographic References: 1) Peruzzi, Marcella, La Vaticana nel Seicento, 2014"
+            "</div>"
+            "<div class='block-detail-record'>"
+            "2) Vian, Paolo, Miscellanea Bibliothecae Apostolicae Vaticanae, 2017"
+            "</div>"
+            "</div>"
+            "</body></html>"
+        )
+
+        @staticmethod
+        def raise_for_status():
+            return None
+
+    monkeypatch.setattr(library_catalog.requests, "get", lambda *_a, **_k: _Resp())
+
+    parsed = library_catalog.parse_manifest_catalog(
+        manifest,
+        manifest_url="https://digi.vatlib.it/iiif/MSS_Urb.lat.1777/manifest.json",
+        doc_id="MSS_Urb.lat.1777",
+        enrich_external_reference=True,
+    )
+    assert parsed["metadata_map"].get("ext_bibliographic_references_count") == "2"
+    assert "Peruzzi" in str(parsed["metadata_map"].get("ext_bibliographic_reference_1") or "")

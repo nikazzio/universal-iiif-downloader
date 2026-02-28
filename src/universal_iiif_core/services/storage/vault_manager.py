@@ -886,6 +886,18 @@ class VaultManager:
         finally:
             conn.close()
 
+    def delete_download_job(self, job_id: str) -> bool:
+        """Delete one download job row by id."""
+        conn = self._get_conn()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("DELETE FROM download_jobs WHERE job_id = ?", (job_id,))
+            deleted = cursor.rowcount > 0
+            conn.commit()
+            return deleted
+        finally:
+            conn.close()
+
     def reset_active_downloads(self, mark: str = "error", message: str = "Server restarted"):
         """Mark any downloads left in 'pending' or 'running' state as stopped.
 

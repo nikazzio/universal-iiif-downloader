@@ -593,6 +593,9 @@ def render_pdf_capability_badge(has_pdf: bool) -> Div:
 
 def render_download_manager(jobs: list[dict]) -> Div:
     """Render the full download manager panel."""
+    active_statuses = {"queued", "running", "cancelling", "pending", "starting"}
+    should_poll = any(str(job.get("status") or "").lower() in active_statuses for job in jobs)
+
     if not jobs:
         body = Div(
             P("Nessun download in coda.", cls="text-sm text-slate-400"),
@@ -603,14 +606,20 @@ def render_download_manager(jobs: list[dict]) -> Div:
         cards = [render_download_job_card(job) for job in jobs]
         body = Div(*cards, cls="space-y-3")
 
-    return Div(
-        body,
-        hx_get="/api/download_manager",
-        hx_trigger="every 1s",
-        hx_swap="outerHTML",
-        id="download-manager-area",
-        cls="space-y-2",
-    )
+    attrs = {
+        "id": "download-manager-area",
+        "cls": "space-y-2",
+    }
+    if should_poll:
+        attrs.update(
+            {
+                "hx_get": "/api/download_manager",
+                "hx_trigger": "every 1s",
+                "hx_swap": "outerHTML",
+            }
+        )
+
+    return Div(body, **attrs)
 
 
 def render_download_job_card(job: dict) -> Div:
@@ -665,6 +674,16 @@ def render_download_job_card(job: dict) -> Div:
                 "🔁 Retry",
                 cls="text-xs bg-emerald-700 hover:bg-emerald-600 text-white px-2 py-1 rounded",
                 hx_post=f"/api/download_manager/retry/{job_id}",
+                hx_target="#download-manager-area",
+                hx_swap="outerHTML",
+            )
+        )
+    if status in {"error", "cancelled", "completed"}:
+        actions.append(
+            Button(
+                "🗑️ Rimuovi",
+                cls="text-xs bg-slate-800 hover:bg-slate-700 text-slate-100 px-2 py-1 rounded border border-slate-600",
+                hx_post=f"/api/download_manager/remove/{job_id}",
                 hx_target="#download-manager-area",
                 hx_swap="outerHTML",
             )
