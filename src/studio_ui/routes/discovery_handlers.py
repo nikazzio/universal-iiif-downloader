@@ -4,6 +4,7 @@ Handlers are top-level functions so `setup_discovery_routes` can remain
 very small and satisfy ruff's complexity check.
 """
 
+import time
 from pathlib import Path
 from urllib.parse import unquote
 
@@ -29,8 +30,12 @@ from universal_iiif_core.jobs import job_manager
 from universal_iiif_core.logger import get_logger
 from universal_iiif_core.resolvers.discovery import resolve_shelfmark, search_institut, smart_search
 from universal_iiif_core.services.storage.vault_manager import VaultManager
+from universal_iiif_core.utils import get_json
 
 logger = get_logger(__name__)
+
+_PDF_CAPABILITY_TTL_SECONDS = 600
+_pdf_capability_cache: dict[str, tuple[float, bool]] = {}
 
 # No in-memory progress store: UI reads progress from DB
 
@@ -263,6 +268,36 @@ def _analyze_manifest_safe(manifest_url: str):
             "Manifest IIIF non accessibile. Verifica l'URL o riprova più tardi.",
             tone="danger",
         )
+
+
+def _has_native_pdf_rendering(manifest_data: dict) -> bool:
+    rendering = manifest_data.get("rendering") or []
+    if isinstance(rendering, dict):
+        rendering = [rendering]
+    for entry in rendering:
+        if not isinstance(entry, dict):
+            continue
+        fmt = str(entry.get("format") or "").strip().lower()
+        url = str(entry.get("id") or entry.get("@id") or "").strip().lower()
+        if fmt == "application/pdf" or url.endswith(".pdf"):
+            return True
+    return False
+
+
+def _quick_manifest_has_native_pdf(manifest_url: str) -> bool:
+    clean_url = str(manifest_url or "").strip()
+    if not clean_url:
+        return False
+
+    now = time.time()
+    cached = _pdf_capability_cache.get(clean_url)
+    if cached and cached[0] > now:
+        return bool(cached[1])
+
+    manifest = get_json(clean_url, retries=1)
+    has_pdf = bool(isinstance(manifest, dict) and _has_native_pdf_rendering(manifest))
+    _pdf_capability_cache[clean_url] = (now + _PDF_CAPABILITY_TTL_SECONDS, has_pdf)
+    return has_pdf
 
 
 def resolve_manifest(library: str, shelfmark: str, gallica_type: str = "all"):
@@ -579,8 +614,7 @@ def pdf_capability(manifest_url: str):
     if not manifest_url:
         return render_pdf_capability_badge(False)
     try:
-        info = analyze_manifest(manifest_url)
-        has_pdf = bool(info.get("has_native_pdf"))
+        has_pdf = _quick_manifest_has_native_pdf(manifest_url)
         return render_pdf_capability_badge(has_pdf)
     except Exception:
         return render_pdf_capability_badge(False)

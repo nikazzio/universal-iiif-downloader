@@ -24,9 +24,9 @@ def test_add_to_library_persists_saved_entry(monkeypatch):
     assert int(ms.get("total_canvases") or 0) == 12
 
 
-def test_pdf_capability_badge_uses_manifest_analysis(monkeypatch):
-    """PDF capability endpoint must render positive badge when manifest exposes PDF."""
-    monkeypatch.setattr(discovery_handlers, "analyze_manifest", lambda _url: {"has_native_pdf": True})
+def test_pdf_capability_badge_uses_quick_probe(monkeypatch):
+    """PDF capability endpoint should use lightweight probe path."""
+    monkeypatch.setattr(discovery_handlers, "_quick_manifest_has_native_pdf", lambda _url: True)
     frag = discovery_handlers.pdf_capability("https://example.org/manifest.json")
     assert "PDF nativo disponibile" in repr(frag)
 
