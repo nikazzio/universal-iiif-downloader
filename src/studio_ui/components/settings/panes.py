@@ -20,6 +20,7 @@ def _build_general_pane(cm, s):
     ui = s.get("ui", {})
     theme = resolve_ui_theme(ui)
     defaults = s.get("defaults", {})
+    library_settings = s.get("library", {})
     return Div(
         Div(H3("API Keys & Theme", cls="text-lg font-bold text-slate-800 dark:text-slate-100 mb-3")),
         Div(
@@ -85,6 +86,16 @@ def _build_general_pane(cm, s):
                     ("google_vision", "Google Vision"),
                     ("kraken", "Kraken (Local)"),
                 ],
+            ),
+            setting_select(
+                "Library Default View",
+                "settings.library.default_mode",
+                str(library_settings.get("default_mode", "operativa")),
+                [
+                    ("operativa", "Vista Operativa"),
+                    ("archivio", "Vista Archivio"),
+                ],
+                help_text="Modalita predefinita della pagina Library quando non ci sono filtri URL.",
             ),
             setting_number(
                 "Library Items / Page",

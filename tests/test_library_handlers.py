@@ -213,3 +213,16 @@ def test_row_to_view_model_detects_local_pdf_from_filesystem(tmp_path):
         assert model["pdf_source"] == "native"
     finally:
         cm.set_downloads_dir(str(old_downloads))
+
+
+def test_library_fragment_uses_config_default_mode_when_missing_mode():
+    """When mode is missing, Library should use configurable default mode."""
+    cm = get_config_manager()
+    old_default_mode = cm.get_setting("library.default_mode", "operativa")
+    try:
+        cm.set_setting("library.default_mode", "archivio")
+        rendered = repr(library_handlers._render_page_fragment(mode=""))
+        assert "Vista Archivio" in rendered
+        assert 'const DEFAULT_MODE = "archivio";' in rendered
+    finally:
+        cm.set_setting("library.default_mode", old_default_mode)
