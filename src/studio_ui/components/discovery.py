@@ -53,12 +53,16 @@ def render_search_results_list(results: list) -> Div:
         hx_vals = json.dumps({"manifest_url": manifest_url, "doc_id": doc_id, "library": library}, ensure_ascii=True)
         badge_id = f"pdf-badge-{(doc_id or 'item').replace(' ', '-').replace('/', '-')[:28]}"
         pdf_badge = Div(
-            "PDF: verifica...",
-            id=badge_id,
-            hx_get=f"/api/discovery/pdf_capability?manifest_url={quote(manifest_url, safe='')}",
-            hx_trigger="load",
-            hx_swap="outerHTML",
-            cls="app-chip app-chip-neutral text-[11px] tracking-wide",
+            Div("PDF: n/d", id=badge_id, cls="app-chip app-chip-neutral text-[11px] tracking-wide"),
+            Button(
+                "Verifica PDF",
+                type="button",
+                hx_get=f"/api/discovery/pdf_capability?manifest_url={quote(manifest_url, safe='')}",
+                hx_target=f"#{badge_id}",
+                hx_swap="outerHTML",
+                cls="app-btn app-btn-neutral text-[11px] px-2 py-1",
+            ),
+            cls="flex items-center gap-1.5",
         )
 
         meta_line = []
@@ -412,12 +416,20 @@ def render_preview(data: dict) -> Div:
     else:
         meta_items.append(
             Div(
-                "PDF: verifica...",
-                id="preview-pdf-badge",
-                hx_get=f"/api/discovery/pdf_capability?manifest_url={quote(str(manifest_url or ''), safe='')}",
-                hx_trigger="load",
-                hx_swap="outerHTML",
-                cls="text-xs bg-slate-700 text-slate-300 px-2 py-1 rounded",
+                Div(
+                    "PDF: n/d",
+                    id="preview-pdf-badge",
+                    cls="text-xs bg-slate-700 text-slate-300 px-2 py-1 rounded",
+                ),
+                Button(
+                    "Verifica PDF",
+                    type="button",
+                    hx_get=f"/api/discovery/pdf_capability?manifest_url={quote(str(manifest_url or ''), safe='')}",
+                    hx_target="#preview-pdf-badge",
+                    hx_swap="outerHTML",
+                    cls="app-btn app-btn-neutral text-[11px] px-2 py-1",
+                ),
+                cls="inline-flex items-center gap-1.5",
             )
         )
 
