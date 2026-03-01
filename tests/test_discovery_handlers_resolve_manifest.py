@@ -13,7 +13,7 @@ def test_resolve_manifest_gallica_direct_match_renders_preview(monkeypatch):
     monkeypatch.setattr(
         discovery_handlers,
         "smart_search",
-        lambda _query: [
+        lambda _query, **_kwargs: [
             {
                 "id": "btv1b10033406t",
                 "title": "Dante Manuscript",
@@ -36,7 +36,7 @@ def test_resolve_manifest_gallica_search_results_list(monkeypatch):
     monkeypatch.setattr(
         discovery_handlers,
         "smart_search",
-        lambda _query: [
+        lambda _query, **_kwargs: [
             {"id": "A", "title": "Uno", "manifest": "u1", "raw": {}},
             {"id": "B", "title": "Due", "manifest": "u2", "raw": {}},
         ],
@@ -45,6 +45,26 @@ def test_resolve_manifest_gallica_search_results_list(monkeypatch):
     result = discovery_handlers.resolve_manifest("Gallica", "dante")
     result_str = repr(result)
     assert "Trovati 2 risultati" in result_str
+
+
+def test_resolve_manifest_gallica_passes_optional_filter(monkeypatch):
+    """Gallica optional filter from form must be forwarded to smart_search."""
+    captured: dict[str, str] = {}
+
+    def _fake_smart_search(query: str, **kwargs):
+        captured["query"] = query
+        captured["gallica_type_filter"] = str(kwargs.get("gallica_type_filter") or "")
+        return [
+            {"id": "A", "title": "Uno", "manifest": "u1", "raw": {}},
+            {"id": "B", "title": "Due", "manifest": "u2", "raw": {}},
+        ]
+
+    monkeypatch.setattr(discovery_handlers, "smart_search", _fake_smart_search)
+    result = discovery_handlers.resolve_manifest("Gallica", "dante", gallica_type="manuscrit")
+    result_str = repr(result)
+    assert "Trovati 2 risultati" in result_str
+    assert captured["query"] == "dante"
+    assert captured["gallica_type_filter"] == "manuscrit"
 
 
 def test_resolve_manifest_vatican_fallback_search(monkeypatch):

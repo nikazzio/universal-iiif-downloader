@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 from html import unescape
 from typing import Final
 
@@ -57,7 +58,7 @@ _VATICAN_NUMERIC_COLLECTIONS: Final[list[str]] = [
 _VATICAN_TEXT_PREFIXES: Final[list[str]] = ["Urb.lat.", "Vat.lat.", "Pal.lat.", "Reg.lat.", "Barb.lat."]
 
 
-def smart_search(input_text: str) -> list[SearchResult]:
+def smart_search(input_text: str, *, gallica_type_filter: str = "all") -> list[SearchResult]:
     """PUNTO DI INGRESSO PRINCIPALE (Logica Ibrida).
 
     Logica:
@@ -97,7 +98,7 @@ def smart_search(input_text: str) -> list[SearchResult]:
 
     # 2. RICERCA TESTUALE (FALLBACK)
     logger.info("Input '%s' interpretato come ricerca SRU.", text)
-    return search_gallica(text)
+    return search_gallica(text, gallica_type_filter=gallica_type_filter)
 
 
 def resolve_shelfmark(library: str, shelfmark: str) -> tuple[str | None, str | None]:
@@ -155,7 +156,50 @@ def search_gallica_by_id(doc_id: str) -> list[SearchResult]:
         return []
 
 
-def search_gallica(query: str, max_records: int = 15) -> list[SearchResult]:
+def _normalize_gallica_type_filter(raw: str | None) -> str:
+    value = (raw or "").strip().lower()
+    if value in {"", "all", "any", "none"}:
+        return "all"
+    if value in {"manuscript", "manuscripts", "manuscrit"}:
+        return "manuscrit"
+    if value in {"print", "printed", "book", "books", "a_stampa", "stampa", "livre", "printed_book"}:
+        return "printed"
+    return "all"
+
+
+def _normalize_match_text(value: str) -> str:
+    lowered = str(value or "").strip().lower()
+    return "".join(ch for ch in unicodedata.normalize("NFD", lowered) if unicodedata.category(ch) != "Mn")
+
+
+def _matches_gallica_type_filter(item: SearchResult, normalized_filter: str) -> bool:
+    if normalized_filter == "all":
+        return True
+
+    raw = item.get("raw")
+    dc_types: list[str] = []
+    if isinstance(raw, dict):
+        raw_types = raw.get("dc_types")
+        if isinstance(raw_types, list):
+            dc_types = [str(v) for v in raw_types]
+
+    types_text = " ".join(_normalize_match_text(v) for v in dc_types if v)
+    if not types_text:
+        types_text = " ".join(
+            _normalize_match_text(str(item.get(key) or "")) for key in ("title", "description", "publisher")
+        )
+
+    manuscript_tokens = ("manuscrit", "manuscript")
+    printed_tokens = ("monographie imprimee", "printed monograph", "imprime", "imprimee", "printed")
+
+    if normalized_filter == "manuscrit":
+        return any(token in types_text for token in manuscript_tokens)
+    if normalized_filter == "printed":
+        return any(token in types_text for token in printed_tokens)
+    return True
+
+
+def search_gallica(query: str, max_records: int = 15, *, gallica_type_filter: str = "all") -> list[SearchResult]:
     """Search Gallica SRU and return parsed SearchResult entries.
 
     Network errors are logged here; parser returns structured results or
@@ -165,35 +209,36 @@ def search_gallica(query: str, max_records: int = 15) -> list[SearchResult]:
     if not (q := (query or "").strip()):
         return []
 
-    # FIX QUERY: Puliamo le virgolette per evitare errori SRU 500
+    # Keep SRU query broad, then apply local type filter from parsed dc:type values.
     clean_q = q.replace('"', "'")
-
-    # Cerca nel titolo e filtra per tipo 'manuscrit'
-    cql = f'dc.title all "{clean_q}" and dc.type all "manuscrit"'
-
+    normalized_filter = _normalize_gallica_type_filter(gallica_type_filter)
+    cql = f'dc.title all "{clean_q}"'
+    requested_records = max(1, min(max_records, 50))
+    fetch_records = 50 if normalized_filter != "all" else requested_records
+    maximum_records = str(fetch_records)
+    resolver = GallicaResolver()
     params = {
         "operation": "searchRetrieve",
         "version": "1.2",
         "query": cql,
-        "maximumRecords": str(min(max_records, 50)),
+        "maximumRecords": maximum_records,
         "startRecord": "1",
         "collapsing": "true",  # Raggruppa versioni simili
     }
-
     try:
-        logger.debug("Searching Gallica SRU: %s", cql)
-
-        # FIX HEADERS: Usiamo quelli reali definiti in alto per evitare il ban
+        logger.debug("Searching Gallica SRU: %s (filter=%s)", cql, normalized_filter)
         resp = requests.get(GALLICA_BASE_URL, params=params, headers=REAL_BROWSER_HEADERS, timeout=TIMEOUT_SECONDS)
         resp.raise_for_status()
-
-        # Delegate XML parsing to the parser module
-        resolver = GallicaResolver()
-        return GallicaXMLParser.parse_sru(resp.content, resolver)
-
+        results = GallicaXMLParser.parse_sru(resp.content, resolver)
     except Exception as exc:
-        logger.error("Gallica search failed: %s", exc, exc_info=True)
+        logger.error("Gallica search failed for cql '%s': %s", cql, exc, exc_info=True)
         return []
+
+    if normalized_filter == "all":
+        return results[:requested_records]
+
+    filtered = [item for item in results if _matches_gallica_type_filter(item, normalized_filter)]
+    return filtered[:requested_records]
 
 
 def search_institut(query: str, max_results: int = 12) -> list[SearchResult]:

@@ -152,9 +152,9 @@ def _build_manifest_preview_data(manifest_info: dict, manifest_url: str, doc_id:
     }
 
 
-def _resolve_gallica_flow(shelfmark: str):
+def _resolve_gallica_flow(shelfmark: str, *, gallica_type: str = "all"):
     try:
-        results = smart_search(shelfmark)
+        results = smart_search(shelfmark, gallica_type_filter=gallica_type)
     except ValueError as exc:
         return _with_feedback_toast("Errore Gallica", str(exc), tone="danger")
     except Exception:
@@ -168,7 +168,7 @@ def _resolve_gallica_flow(shelfmark: str):
     if not results:
         return _with_feedback_toast(
             "Nessun risultato",
-            f"Nessun manoscritto trovato per '{shelfmark}' su Gallica.",
+            f"Nessun risultato trovato per '{shelfmark}' su Gallica.",
             tone="info",
         )
 
@@ -265,7 +265,7 @@ def _analyze_manifest_safe(manifest_url: str):
         )
 
 
-def resolve_manifest(library: str, shelfmark: str):
+def resolve_manifest(library: str, shelfmark: str, gallica_type: str = "all"):
     """Resolve a shelfmark or URL and return a preview fragment."""
     try:
         if not shelfmark or not shelfmark.strip():
@@ -274,7 +274,7 @@ def resolve_manifest(library: str, shelfmark: str):
         logger.info("Resolving: lib=%s input=%s", library, shelfmark)
 
         if "Gallica" in library:
-            return _resolve_gallica_flow(shelfmark)
+            return _resolve_gallica_flow(shelfmark, gallica_type=gallica_type)
 
         manifest_url, doc_id = _resolve_manifest_direct(library, shelfmark)
         if not manifest_url and library == "Vaticana" and (fallback_fragment := _resolve_vatican_fallback(shelfmark)):

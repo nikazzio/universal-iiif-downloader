@@ -11,6 +11,7 @@ class _DCData(TypedDict, total=False):
     publisher: str | None
     language: str | None
     identifiers: list[str]
+    types: list[str]
 
 
 class SearchResult(TypedDict, total=False):
