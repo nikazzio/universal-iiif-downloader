@@ -5,10 +5,11 @@ from __future__ import annotations
 import base64
 import json
 from collections import OrderedDict
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 
 from fasthtml.common import H2, H3, A, Button, Details, Div, Form, Img, Input, Option, P, Script, Select, Span, Summary
 
+from studio_ui.common.title_utils import truncate_title
 from universal_iiif_core.library_catalog import ITEM_TYPES
 
 _STATE_STYLE = {
@@ -62,6 +63,40 @@ _LIBRARY_FILTER_KEYS = [
     "action_required",
     "sort_by",
 ]
+_CATEGORY_SELECT_TONE = {
+    "manoscritto": (
+        "bg-indigo-50 border-indigo-300 text-indigo-700 dark:bg-indigo-500/20 "
+        "dark:border-indigo-500/45 dark:text-indigo-200"
+    ),
+    "libro a stampa": (
+        "bg-emerald-50 border-emerald-300 text-emerald-700 dark:bg-emerald-500/20 "
+        "dark:border-emerald-500/45 dark:text-emerald-200"
+    ),
+    "incunabolo": (
+        "bg-amber-50 border-amber-300 text-amber-700 dark:bg-amber-500/20 dark:border-amber-500/45 dark:text-amber-200"
+    ),
+    "periodico": ("bg-sky-50 border-sky-300 text-sky-700 dark:bg-sky-500/20 dark:border-sky-500/45 dark:text-sky-200"),
+    "musica/spartito": (
+        "bg-fuchsia-50 border-fuchsia-300 text-fuchsia-700 dark:bg-fuchsia-500/20 "
+        "dark:border-fuchsia-500/45 dark:text-fuchsia-200"
+    ),
+    "mappa/atlante": (
+        "bg-teal-50 border-teal-300 text-teal-700 dark:bg-teal-500/20 dark:border-teal-500/45 dark:text-teal-200"
+    ),
+    "miscellanea": (
+        "bg-violet-50 border-violet-300 text-violet-700 dark:bg-violet-500/20 "
+        "dark:border-violet-500/45 dark:text-violet-200"
+    ),
+    "non classificato": (
+        "bg-slate-100 border-slate-300 text-slate-700 dark:bg-slate-700/35 dark:border-slate-600 dark:text-slate-200"
+    ),
+}
+
+
+def _normalize_mode(mode: str | None, *, default_mode: str = "operativa") -> str:
+    fallback = "archivio" if str(default_mode or "").strip().lower() == "archivio" else "operativa"
+    value = str(mode or "").strip().lower()
+    return value if value in {"operativa", "archivio"} else fallback
 
 
 def _state_badge(state: str) -> Span:
@@ -139,6 +174,124 @@ def _kpi_strip(docs: list[dict]) -> Div:
     return Div(*cards, cls="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 mb-5")
 
 
+def _library_query_params(
+    *,
+    view: str,
+    q: str,
+    state: str,
+    library_filter: str,
+    category: str,
+    mode: str,
+    default_mode: str,
+    action_required: str,
+    sort_by: str,
+) -> dict[str, str]:
+    params: dict[str, str] = {}
+    if q:
+        params["q"] = q
+    if state:
+        params["state"] = state
+    if library_filter:
+        params["library_filter"] = library_filter
+    if category:
+        params["category"] = category
+    normalized_mode = _normalize_mode(mode, default_mode=default_mode)
+    normalized_default_mode = _normalize_mode(default_mode, default_mode="operativa")
+    if normalized_mode != normalized_default_mode:
+        params["mode"] = normalized_mode
+    if view and view != "grid":
+        params["view"] = view
+    if action_required and action_required != "0":
+        params["action_required"] = action_required
+    if sort_by:
+        params["sort_by"] = sort_by
+    return params
+
+
+def _library_url_with_filters(**kwargs) -> str:
+    query = urlencode(_library_query_params(**kwargs))
+    return f"/library?{query}" if query else "/library"
+
+
+def _render_mode_switch(
+    *,
+    view: str,
+    q: str,
+    state: str,
+    library_filter: str,
+    category: str,
+    mode: str,
+    default_mode: str,
+    action_required: str,
+    sort_by: str,
+) -> Div:
+    current_mode = _normalize_mode(mode, default_mode=default_mode)
+    normalized_default_mode = _normalize_mode(default_mode, default_mode="operativa")
+
+    operational_url = _library_url_with_filters(
+        view=view,
+        q=q,
+        state=state,
+        library_filter=library_filter,
+        category=category,
+        mode="operativa",
+        default_mode=normalized_default_mode,
+        action_required=action_required,
+        sort_by=sort_by,
+    )
+    archive_url = _library_url_with_filters(
+        view=view,
+        q=q,
+        state=state,
+        library_filter=library_filter,
+        category=category,
+        mode="archivio",
+        default_mode=normalized_default_mode,
+        action_required=action_required,
+        sort_by=sort_by,
+    )
+    operational_cls = (
+        "app-btn app-btn-accent font-semibold" if current_mode == "operativa" else "app-btn app-btn-neutral"
+    )
+    archive_cls = "app-btn app-btn-accent font-semibold" if current_mode == "archivio" else "app-btn app-btn-neutral"
+
+    return Div(
+        Div(
+            Span("Modalita Libreria", cls="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400"),
+            Span(
+                "Scegli la modalita principale di lavoro prima dei filtri.",
+                cls="text-sm text-slate-600 dark:text-slate-300",
+            ),
+            cls="flex flex-col gap-0.5",
+        ),
+        Div(
+            A(
+                "Vista Operativa",
+                href=operational_url,
+                hx_get=operational_url,
+                hx_target="#library-page",
+                hx_swap="outerHTML show:none",
+                hx_push_url="true",
+                cls=operational_cls,
+            ),
+            A(
+                "Vista Archivio",
+                href=archive_url,
+                hx_get=archive_url,
+                hx_target="#library-page",
+                hx_swap="outerHTML show:none",
+                hx_push_url="true",
+                cls=archive_cls,
+            ),
+            cls="flex flex-wrap items-center gap-2",
+        ),
+        cls=(
+            "rounded-xl border border-[rgba(var(--app-accent-rgb),0.35)] bg-white/80 dark:bg-slate-900/35 "
+            "p-3 mb-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3"
+        ),
+    )
+
+
 def _render_filters(
     *,
     view: str,
@@ -153,9 +306,9 @@ def _render_filters(
     categories: list[str],
 ) -> Form:
     current_state = (state or "").strip().lower()
-    current_mode = (mode or "operativa").strip().lower()
+    current_mode = _normalize_mode(mode)
     current_action_required = (action_required or "0").strip()
-    current_sort = (sort_by or "").strip() or ("title_az" if (mode or "operativa") == "archivio" else "priority")
+    current_sort = (sort_by or "").strip() or ("title_az" if current_mode == "archivio" else "priority")
     category_options = categories or list(ITEM_TYPES)
 
     return Form(
@@ -188,6 +341,7 @@ def _render_filters(
             cls="flex flex-wrap gap-2",
         ),
         Div(
+            Input(type="hidden", name="mode", value=current_mode),
             Select(
                 Option("Tutti gli stati", value=""),
                 Option("Da scaricare", value="saved", selected=current_state == "saved"),
@@ -232,15 +386,6 @@ def _render_filters(
                 ),
             ),
             Select(
-                Option("Vista Operativa", value="operativa", selected=current_mode == "operativa"),
-                Option("Vista Archivio", value="archivio", selected=current_mode == "archivio"),
-                name="mode",
-                cls=(
-                    "px-3 py-2.5 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 "
-                    "rounded text-slate-800 dark:text-slate-100 text-sm"
-                ),
-            ),
-            Select(
                 Option("Grid", value="grid", selected=view == "grid"),
                 Option("List", value="list", selected=view == "list"),
                 name="view",
@@ -273,67 +418,69 @@ def _render_filters(
     )
 
 
-def _library_filters_persistence_script() -> Script:
+def _library_filters_persistence_script(default_mode: str = "operativa") -> Script:
+    safe_default_mode = "archivio" if str(default_mode or "").strip().lower() == "archivio" else "operativa"
     return Script(
-        """
-        (function () {
+        f"""
+        (function () {{
             const STORAGE_KEY = 'ui.library.filters.v1';
+            const DEFAULT_MODE = {json.dumps(safe_default_mode)};
             const FILTER_KEYS = [
                 'q', 'state', 'library_filter', 'category', 'mode', 'view', 'action_required', 'sort_by'
             ];
 
-            function defaultFilters() {
-                return {
+            function defaultFilters() {{
+                return {{
                     q: '',
                     state: '',
                     library_filter: '',
                     category: '',
-                    mode: 'operativa',
+                    mode: DEFAULT_MODE,
                     view: 'grid',
                     action_required: '0',
                     sort_by: ''
-                };
-            }
+                }};
+            }}
 
-            function normalizeFilters(raw) {
+            function normalizeFilters(raw) {{
                 const base = defaultFilters();
-                const src = (raw && typeof raw === 'object') ? raw : {};
-                FILTER_KEYS.forEach((key) => {
+                const src = (raw && typeof raw === 'object') ? raw : {{}};
+                FILTER_KEYS.forEach((key) => {{
                     base[key] = String(src[key] || '').trim();
-                });
-                if (!base.mode) base.mode = 'operativa';
+                }});
+                if (!base.mode) base.mode = DEFAULT_MODE;
                 if (!base.view) base.view = 'grid';
                 if (!base.action_required) base.action_required = '0';
                 return base;
-            }
+            }}
 
-            function readSavedFilters() {
-                try {
+            function readSavedFilters() {{
+                try {{
                     const raw = localStorage.getItem(STORAGE_KEY);
                     if (!raw) return null;
                     return normalizeFilters(JSON.parse(raw));
-                } catch (_e) {
+                }} catch (_e) {{
                     return null;
-                }
-            }
+                }}
+            }}
 
-            function saveFilters(data) {
-                try {
+            function saveFilters(data) {{
+                try {{
                     localStorage.setItem(STORAGE_KEY, JSON.stringify(normalizeFilters(data)));
-                } catch (_e) {
+                }} catch (_e) {{
                     /* ignore quota/storage errors */
-                }
-            }
+                }}
+            }}
 
-            function clearSavedFilters() {
-                try {
+            function clearSavedFilters() {{
+                try {{
                     localStorage.removeItem(STORAGE_KEY);
-                } catch (_e) {
+                }} catch (_e) {{
                     /* ignore */
-                }
-            }
+                }}
+            }}
 
-            function hasMeaningfulFilters(data) {
+            function hasMeaningfulFilters(data) {{
                 const f = normalizeFilters(data);
                 return Boolean(
                     f.q ||
@@ -341,40 +488,40 @@ def _library_filters_persistence_script() -> Script:
                     f.library_filter ||
                     f.category ||
                     f.sort_by ||
-                    f.mode !== 'operativa' ||
+                    f.mode !== DEFAULT_MODE ||
                     f.view !== 'grid' ||
                     f.action_required !== '0'
                 );
-            }
+            }}
 
-            function collectFormFilters(form) {
-                const payload = {};
-                FILTER_KEYS.forEach((key) => {
+            function collectFormFilters(form) {{
+                const payload = {{}};
+                FILTER_KEYS.forEach((key) => {{
                     const input = form.querySelector('[name="' + key + '"]');
                     payload[key] = input ? String(input.value || '').trim() : '';
-                });
+                }});
                 return normalizeFilters(payload);
-            }
+            }}
 
-            function setFormFilters(form, data) {
+            function setFormFilters(form, data) {{
                 const normalized = normalizeFilters(data);
-                FILTER_KEYS.forEach((key) => {
+                FILTER_KEYS.forEach((key) => {{
                     const input = form.querySelector('[name="' + key + '"]');
                     if (!input) return;
                     input.value = normalized[key];
-                });
-            }
+                }});
+            }}
 
-            function urlHasFilterParams() {
-                try {
+            function urlHasFilterParams() {{
+                try {{
                     const params = new URLSearchParams(window.location.search || '');
                     return FILTER_KEYS.some((key) => params.has(key));
-                } catch (_e) {
+                }} catch (_e) {{
                     return false;
-                }
-            }
+                }}
+            }}
 
-            function filtersToQuery(data) {
+            function filtersToQuery(data) {{
                 const f = normalizeFilters(data);
                 const params = new URLSearchParams();
                 if (f.q) params.set('q', f.q);
@@ -382,86 +529,91 @@ def _library_filters_persistence_script() -> Script:
                 if (f.library_filter) params.set('library_filter', f.library_filter);
                 if (f.category) params.set('category', f.category);
                 if (f.sort_by) params.set('sort_by', f.sort_by);
-                if (f.mode !== 'operativa') params.set('mode', f.mode);
+                if (f.mode !== DEFAULT_MODE) params.set('mode', f.mode);
                 if (f.view !== 'grid') params.set('view', f.view);
                 if (f.action_required !== '0') params.set('action_required', f.action_required);
                 return params.toString();
-            }
+            }}
 
-            function bindFormPersistence(form) {
+            function bindFormPersistence(form) {{
                 if (!form || form.dataset.persistBound === '1') return;
                 const persist = () => saveFilters(collectFormFilters(form));
                 form.addEventListener('change', persist);
                 form.addEventListener('submit', persist);
                 form.dataset.persistBound = '1';
-            }
+            }}
 
-            function bindResetAction() {
+            function bindResetAction() {{
                 const resetLink = document.getElementById('library-reset-filters');
                 if (!resetLink || resetLink.dataset.resetBound === '1') return;
                 resetLink.addEventListener('click', () => clearSavedFilters());
                 resetLink.dataset.resetBound = '1';
-            }
+            }}
 
-            function restoreFiltersIfNeeded(form) {
-                if (window.location.pathname !== '/library') return;
-                if (urlHasFilterParams()) return;
-                if (window.__libraryFiltersRestoreDone) return;
-
+            function restoreFiltersIfNeeded(form) {{
+                if (urlHasFilterParams()) return false;
                 const saved = readSavedFilters();
-                if (!saved || !hasMeaningfulFilters(saved)) return;
-
+                if (!saved || !hasMeaningfulFilters(saved)) return false;
                 const query = filtersToQuery(saved);
-                if (!query) return;
+                if (!query) return false;
 
                 setFormFilters(form, saved);
                 saveFilters(saved);
-                window.__libraryFiltersRestoreDone = true;
-
                 const url = '/library?' + query;
-                try {
+                try {{
                     window.history.replaceState(window.history.state, '', url);
-                } catch (_e) {
+                }} catch (_e) {{
                     /* ignore */
-                }
+                }}
 
-                if (window.htmx && typeof window.htmx.ajax === 'function') {
-                    window.htmx.ajax('GET', url, { target: '#library-page', swap: 'outerHTML show:none' });
-                    return;
-                }
+                if (window.htmx && typeof window.htmx.ajax === 'function') {{
+                    window.htmx.ajax('GET', url, {{ target: '#library-page', swap: 'outerHTML show:none' }});
+                    return true;
+                }}
                 window.location.href = url;
-            }
+                return true;
+            }}
 
-            function initLibraryFiltersPersistence() {
+            function initLibraryFiltersPersistence() {{
                 const form = document.getElementById('library-filters');
                 if (!form) return;
                 bindFormPersistence(form);
                 bindResetAction();
-                saveFilters(collectFormFilters(form));
-                restoreFiltersIfNeeded(form);
-            }
+                const restored = restoreFiltersIfNeeded(form);
+                if (!restored) {{
+                    saveFilters(collectFormFilters(form));
+                }}
+            }}
 
-            if (!window.__libraryFiltersPersistenceBootstrapped) {
+            if (!window.__libraryFiltersPersistenceBootstrapped) {{
                 window.__libraryFiltersPersistenceBootstrapped = true;
                 document.addEventListener('DOMContentLoaded', initLibraryFiltersPersistence);
-                document.body.addEventListener('htmx:afterSwap', (event) => {
+                document.body.addEventListener('htmx:afterSwap', (event) => {{
                     const target = event && event.target;
                     if (!target) return;
-                    if (target.id === 'app-main' || target.id === 'library-page') {
+                    if (target.id === 'app-main' || target.id === 'library-page') {{
                         initLibraryFiltersPersistence();
-                    }
-                });
-            }
+                    }}
+                }});
+            }}
 
             initLibraryFiltersPersistence();
-        })();
+        }})();
         """
     )
 
 
 def _category_select_cls(item_type: str) -> str:
-    _ = item_type
-    return "app-field min-w-[180px] px-2.5 py-1.5 text-sm font-medium bg-white/90 dark:bg-slate-900/70"
+    tone = _CATEGORY_SELECT_TONE.get(item_type, _CATEGORY_SELECT_TONE["non classificato"])
+    return f"app-field min-w-[180px] px-2.5 py-1.5 text-sm font-medium {tone}"
+
+
+def _category_badge(item_type: str) -> Span:
+    tone = _CATEGORY_SELECT_TONE.get(item_type, _CATEGORY_SELECT_TONE["non classificato"])
+    return Span(
+        _CATEGORY_LABELS.get(item_type, item_type.title()),
+        cls=f"inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-semibold {tone}",
+    )
 
 
 def _primary_action(doc: dict):
@@ -719,12 +871,18 @@ def _doc_card(doc: dict, *, compact: bool = False) -> Div:
         cls="w-full md:w-44 shrink-0",
     )
 
+    card_title = truncate_title(title, max_len=70, suffix="[...]")
     headline = Div(
-        H3(title, cls="text-base md:text-lg font-bold text-slate-900 dark:text-slate-100 leading-tight"),
+        H3(
+            card_title,
+            title=title,
+            cls="text-base md:text-lg font-bold text-slate-900 dark:text-slate-100 leading-tight",
+        ),
         Div(
             Span(library_name, cls="text-sm text-slate-700 dark:text-slate-200 font-semibold"),
+            _category_badge(item_type),
             _category_form(doc, item_type),
-            cls="flex flex-wrap items-center justify-between gap-2",
+            cls="flex flex-wrap items-center gap-2",
         ),
         P(f"Segnatura: {shelfmark}", cls="text-sm text-slate-500 dark:text-slate-400"),
         cls="space-y-1 min-w-0",
@@ -743,11 +901,11 @@ def _doc_card(doc: dict, *, compact: bool = False) -> Div:
                 else Div()
             ),
             Div(
-                Div(*action_buttons, cls="flex flex-wrap items-center gap-2"),
-                Div(_delete_action(doc), cls="flex items-center"),
-                cls="flex flex-wrap items-start justify-between gap-2 pt-1",
+                *action_buttons,
+                _delete_action(doc),
+                cls="mt-auto flex flex-wrap items-center gap-2 pt-1",
             ),
-            cls="space-y-3 flex-1",
+            cls="space-y-3 flex-1 min-w-0 flex flex-col",
         ),
         cls=(
             "flex flex-col md:flex-row gap-4 rounded-xl border border-slate-200 dark:border-slate-700 "
@@ -1146,6 +1304,7 @@ def render_library_page(
     library_filter: str = "",
     category: str = "",
     mode: str = "operativa",
+    default_mode: str = "operativa",
     action_required: str = "0",
     sort_by: str = "",
     libraries: list[str] | None = None,
@@ -1154,7 +1313,9 @@ def render_library_page(
     """Render the full Local Library page."""
     libraries = libraries or []
     categories = categories or list(ITEM_TYPES)
-    active_mode = "Archivio" if (mode or "operativa") == "archivio" else "Operativa"
+    normalized_default_mode = _normalize_mode(default_mode, default_mode="operativa")
+    current_mode = _normalize_mode(mode, default_mode=normalized_default_mode)
+    active_mode = "Archivio" if current_mode == "archivio" else "Operativa"
 
     return Div(
         Div(
@@ -1163,20 +1324,31 @@ def render_library_page(
             cls="flex items-center justify-between mb-4",
         ),
         _kpi_strip(docs),
+        _render_mode_switch(
+            view=view,
+            q=q,
+            state=state,
+            library_filter=library_filter,
+            category=category,
+            mode=current_mode,
+            default_mode=normalized_default_mode,
+            action_required=action_required,
+            sort_by=sort_by,
+        ),
         _render_filters(
             view=view,
             q=q,
             state=state,
             library_filter=library_filter,
             category=category,
-            mode=mode,
+            mode=current_mode,
             action_required=action_required,
             sort_by=sort_by,
             libraries=libraries,
             categories=categories,
         ),
-        _library_filters_persistence_script(),
-        render_library_list(docs, view=view, mode=mode),
+        _library_filters_persistence_script(normalized_default_mode),
+        render_library_list(docs, view=view, mode=current_mode),
         _metadata_drawer(),
         cls="p-6 max-w-7xl mx-auto",
         id="library-page",

@@ -16,6 +16,7 @@ def test_settings_page_exposes_critical_runtime_config_keys():
         "settings.ui.theme_preset",
         "settings.ui.theme_primary_color",
         "settings.ui.theme_accent_color",
+        "settings.library.default_mode",
         "settings.ui.items_per_page",
         "settings.ui.toast_duration",
         "settings.thumbnails.page_size",

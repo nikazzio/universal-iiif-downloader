@@ -44,6 +44,18 @@ def _decode(value: str) -> str:
     return unquote(value or "")
 
 
+def _default_library_mode() -> str:
+    raw = get_config_manager().get_setting("library.default_mode", "operativa")
+    return "archivio" if str(raw or "").strip().lower() == "archivio" else "operativa"
+
+
+def _resolve_library_mode(mode: str | None) -> str:
+    value = str(mode or "").strip().lower()
+    if value in {"operativa", "archivio"}:
+        return value
+    return _default_library_mode()
+
+
 def _parse_missing_pages(raw: str | None) -> list[int]:
     if not raw:
         return []
@@ -259,7 +271,7 @@ def _updated_at_sort_value(doc: dict) -> float:
 
 
 def _sort_docs(docs: list[dict], mode: str, sort_by: str) -> list[dict]:
-    mode_value = (mode or "operativa").lower()
+    mode_value = _resolve_library_mode(mode)
     sort_value = (sort_by or "").strip().lower()
 
     if mode_value == "archivio" and not sort_value:
@@ -314,7 +326,7 @@ def _collect_docs_and_filters(
     state: str = "",
     library_filter: str = "",
     category: str = "",
-    mode: str = "operativa",
+    mode: str = "",
     action_required: str = "0",
     sort_by: str = "",
 ) -> tuple[list[dict], list[str], list[str]]:
@@ -348,7 +360,7 @@ def _collect_docs_and_filters(
         docs.append(doc)
 
     ordered_categories = [cat for cat in ITEM_TYPES if cat in categories]
-    return _sort_docs(docs, mode, sort_by), sorted(libraries), ordered_categories
+    return _sort_docs(docs, _resolve_library_mode(mode), sort_by), sorted(libraries), ordered_categories
 
 
 def _row_to_view_model(row: dict) -> dict:
@@ -419,16 +431,18 @@ def _render_page_fragment(
     state: str = "",
     library_filter: str = "",
     category: str = "",
-    mode: str = "operativa",
+    mode: str = "",
     action_required: str = "0",
     sort_by: str = "",
 ):
+    effective_mode = _resolve_library_mode(mode)
+    default_mode = _default_library_mode()
     docs, libraries, categories = _collect_docs_and_filters(
         q=q,
         state=state,
         library_filter=library_filter,
         category=category,
-        mode=mode,
+        mode=effective_mode,
         action_required=action_required,
         sort_by=sort_by,
     )
@@ -439,7 +453,8 @@ def _render_page_fragment(
         state=state,
         library_filter=library_filter,
         category=category,
-        mode=mode,
+        mode=effective_mode,
+        default_mode=default_mode,
         action_required=action_required,
         sort_by=sort_by,
         libraries=libraries,
@@ -456,7 +471,7 @@ def _refresh_response(
     state: str = "",
     library_filter: str = "",
     category: str = "",
-    mode: str = "operativa",
+    mode: str = "",
     action_required: str = "0",
     sort_by: str = "",
 ):
@@ -510,7 +525,7 @@ def library_page(
     state: str = "",
     library_filter: str = "",
     category: str = "",
-    mode: str = "operativa",
+    mode: str = "",
     action_required: str = "0",
     sort_by: str = "",
 ):
@@ -522,7 +537,7 @@ def library_page(
         state=state or "",
         library_filter=library_filter or "",
         category=category or "",
-        mode=mode or "operativa",
+        mode=_resolve_library_mode(mode),
         action_required=action_required or "0",
         sort_by=sort_by or "",
     )

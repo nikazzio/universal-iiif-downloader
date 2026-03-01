@@ -53,6 +53,9 @@ DEFAULT_CONFIG_JSON: dict[str, Any] = {
             "default_library": "Vaticana",
             "preferred_ocr_engine": "openai",
         },
+        "library": {
+            "default_mode": "operativa",
+        },
         "ui": {
             "theme_preset": "rosewater",
             "theme_primary_color": "#7B8CC7",

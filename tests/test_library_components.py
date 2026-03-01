@@ -66,9 +66,33 @@ def test_library_page_includes_filter_persistence_script():
     assert "ui.library.filters.v1" in rendered
     assert "__libraryFiltersPersistenceBootstrapped" in rendered
     assert "htmx.ajax('GET', url" in rendered
+    assert 'const DEFAULT_MODE = "operativa";' in rendered
 
 
 def test_library_page_reset_control_clears_persisted_filters():
     """Reset action must expose a stable id used by persistence script."""
     rendered = repr(render_library_page([]))
     assert 'id="library-reset-filters"' in rendered
+
+
+def test_library_page_mode_switch_outside_filters():
+    """Mode switch should be visually separated from filter form and keep mode in form state."""
+    rendered = repr(render_library_page([]))
+    assert "Modalita Libreria" in rendered
+    assert 'name="mode"' in rendered
+    assert 'type="hidden"' in rendered
+    assert 'value="operativa"' in rendered
+    assert rendered.index("Modalita Libreria") < rendered.index('id="library-filters"')
+
+
+def test_library_page_uses_configurable_default_mode_in_script():
+    """Persistence script should honor current default mode for query serialization."""
+    rendered = repr(render_library_page([], default_mode="archivio", mode="archivio"))
+    assert 'const DEFAULT_MODE = "archivio";' in rendered
+
+
+def test_library_card_truncates_long_title():
+    """Card title should be truncated for very long labels."""
+    long_title = "Titolo molto lungo " * 10
+    rendered = repr(render_library_card(_base_doc(display_title=long_title)))
+    assert "[...]" in rendered
