@@ -64,6 +64,7 @@ def test_library_page_includes_filter_persistence_script():
     """Library page should include client-side filter persistence bootstrap."""
     rendered = repr(render_library_page([]))
     assert "ui.library.filters.v1" in rendered
+    assert "ui.library.collapsible.v1" in rendered
     assert "__libraryFiltersPersistenceBootstrapped" in rendered
     assert "htmx.ajax('GET', url" in rendered
     assert 'const DEFAULT_MODE = "operativa";' in rendered
@@ -75,14 +76,16 @@ def test_library_page_reset_control_clears_persisted_filters():
     assert 'id="library-reset-filters"' in rendered
 
 
-def test_library_page_mode_switch_outside_filters():
-    """Mode switch should be visually separated from filter form and keep mode in form state."""
+def test_library_page_has_mode_switch_and_collapsible_filters():
+    """Library page should expose mode switch in header and collapsible filter panel."""
     rendered = repr(render_library_page([]))
-    assert "Modalita Libreria" in rendered
+    assert "Vista Operativa" in rendered
+    assert "Vista Archivio" in rendered
+    assert 'id="library-filters-panel"' in rendered
+    assert 'data-collapsible-key="filters"' in rendered
     assert 'name="mode"' in rendered
     assert 'type="hidden"' in rendered
     assert 'value="operativa"' in rendered
-    assert rendered.index("Modalita Libreria") < rendered.index('id="library-filters"')
 
 
 def test_library_page_uses_configurable_default_mode_in_script():
@@ -96,3 +99,9 @@ def test_library_card_truncates_long_title():
     long_title = "Titolo molto lungo " * 10
     rendered = repr(render_library_card(_base_doc(display_title=long_title)))
     assert "[...]" in rendered
+
+
+def test_library_archive_view_has_persisted_collapsible_sections():
+    """Archive sections should expose stable collapsible keys for persistence."""
+    rendered = repr(render_library_page([_base_doc()], mode="archivio", default_mode="operativa"))
+    assert 'data-collapsible-key="archive:' in rendered

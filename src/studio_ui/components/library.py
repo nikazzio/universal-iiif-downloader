@@ -256,39 +256,25 @@ def _render_mode_switch(
     archive_cls = "app-btn app-btn-accent font-semibold" if current_mode == "archivio" else "app-btn app-btn-neutral"
 
     return Div(
-        Div(
-            Span("Modalita Libreria", cls="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400"),
-            Span(
-                "Scegli la modalita principale di lavoro prima dei filtri.",
-                cls="text-sm text-slate-600 dark:text-slate-300",
-            ),
-            cls="flex flex-col gap-0.5",
+        A(
+            "Vista Operativa",
+            href=operational_url,
+            hx_get=operational_url,
+            hx_target="#library-page",
+            hx_swap="outerHTML show:none",
+            hx_push_url="true",
+            cls=operational_cls,
         ),
-        Div(
-            A(
-                "Vista Operativa",
-                href=operational_url,
-                hx_get=operational_url,
-                hx_target="#library-page",
-                hx_swap="outerHTML show:none",
-                hx_push_url="true",
-                cls=operational_cls,
-            ),
-            A(
-                "Vista Archivio",
-                href=archive_url,
-                hx_get=archive_url,
-                hx_target="#library-page",
-                hx_swap="outerHTML show:none",
-                hx_push_url="true",
-                cls=archive_cls,
-            ),
-            cls="flex flex-wrap items-center gap-2",
+        A(
+            "Vista Archivio",
+            href=archive_url,
+            hx_get=archive_url,
+            hx_target="#library-page",
+            hx_swap="outerHTML show:none",
+            hx_push_url="true",
+            cls=archive_cls,
         ),
-        cls=(
-            "rounded-xl border border-[rgba(var(--app-accent-rgb),0.35)] bg-white/80 dark:bg-slate-900/35 "
-            "p-3 mb-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3"
-        ),
+        cls="flex flex-wrap items-center justify-end gap-2",
     )
 
 
@@ -300,121 +286,155 @@ def _render_filters(
     library_filter: str,
     category: str,
     mode: str,
+    default_mode: str,
     action_required: str,
     sort_by: str,
     libraries: list[str],
     categories: list[str],
-) -> Form:
+) -> Details:
     current_state = (state or "").strip().lower()
-    current_mode = _normalize_mode(mode)
+    current_mode = _normalize_mode(mode, default_mode=default_mode)
     current_action_required = (action_required or "0").strip()
-    current_sort = (sort_by or "").strip() or ("title_az" if current_mode == "archivio" else "priority")
+    normalized_default_mode = _normalize_mode(default_mode, default_mode="operativa")
+    default_sort = "title_az" if current_mode == "archivio" else "priority"
+    current_sort = (sort_by or "").strip() or default_sort
     category_options = categories or list(ITEM_TYPES)
+    active_filters_count = 0
+    if (q or "").strip():
+        active_filters_count += 1
+    if current_state:
+        active_filters_count += 1
+    if (library_filter or "").strip():
+        active_filters_count += 1
+    if (category or "").strip():
+        active_filters_count += 1
+    if current_sort != default_sort:
+        active_filters_count += 1
+    if (view or "grid") != "grid":
+        active_filters_count += 1
+    if current_action_required == "1":
+        active_filters_count += 1
+    if current_mode != normalized_default_mode:
+        active_filters_count += 1
 
-    return Form(
-        Div(
-            Input(
-                type="text",
-                name="q",
-                value=q,
-                placeholder="Cerca per titolo, segnatura, reference, ID o biblioteca",
-                cls=(
-                    "px-3 py-2.5 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 "
-                    "rounded text-slate-800 dark:text-slate-100 text-sm flex-1 min-w-[240px]"
+    return Details(
+        Summary(
+            Div(
+                Span("Filtri", cls="text-sm font-semibold text-slate-800 dark:text-slate-100"),
+                Span(
+                    f"{active_filters_count} attivi" if active_filters_count > 0 else "Nessun filtro attivo",
+                    cls="text-xs text-slate-500 dark:text-slate-400",
                 ),
+                cls="flex items-center justify-between gap-2",
             ),
-            Button(
-                "Filtra",
-                cls="app-btn app-btn-primary",
-                type="submit",
-            ),
-            A(
-                "Reset",
-                href="/library",
-                hx_get="/library",
-                hx_target="#library-page",
-                hx_swap="outerHTML show:none",
-                hx_push_url="true",
-                id="library-reset-filters",
-                cls="app-btn app-btn-neutral",
-            ),
-            cls="flex flex-wrap gap-2",
+            cls="cursor-pointer list-none px-3 py-2",
         ),
-        Div(
-            Input(type="hidden", name="mode", value=current_mode),
-            Select(
-                Option("Tutti gli stati", value=""),
-                Option("Da scaricare", value="saved", selected=current_state == "saved"),
-                Option("In coda", value="queued", selected=current_state == "queued"),
-                Option("In download", value="downloading", selected=current_state == "downloading"),
-                Option("Parziale", value="partial", selected=current_state == "partial"),
-                Option("Completo", value="complete", selected=current_state == "complete"),
-                Option("Errore", value="error", selected=current_state == "error"),
-                name="state",
-                cls=(
-                    "px-3 py-2.5 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 "
-                    "rounded text-slate-800 dark:text-slate-100 text-sm"
+        Form(
+            Div(
+                Input(
+                    type="text",
+                    name="q",
+                    value=q,
+                    placeholder="Cerca per titolo, segnatura, reference, ID o biblioteca",
+                    cls=(
+                        "px-3 py-2.5 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 "
+                        "rounded text-slate-800 dark:text-slate-100 text-sm flex-1 min-w-[240px]"
+                    ),
                 ),
-            ),
-            Select(
-                Option("Tutte le biblioteche", value=""),
-                *[Option(lib, value=lib, selected=library_filter == lib) for lib in libraries],
-                name="library_filter",
-                cls=(
-                    "px-3 py-2.5 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 "
-                    "rounded text-slate-800 dark:text-slate-100 text-sm"
+                Button(
+                    "Filtra",
+                    cls="app-btn app-btn-primary",
+                    type="submit",
                 ),
-            ),
-            Select(
-                Option("Tutte le categorie", value=""),
-                *[
-                    Option(_CATEGORY_LABELS.get(cat, cat.title()), value=cat, selected=category == cat)
-                    for cat in category_options
-                ],
-                name="category",
-                cls=(
-                    "px-3 py-2.5 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 "
-                    "rounded text-slate-800 dark:text-slate-100 text-sm"
+                A(
+                    "Reset",
+                    href="/library",
+                    hx_get="/library",
+                    hx_target="#library-page",
+                    hx_swap="outerHTML show:none",
+                    hx_push_url="true",
+                    id="library-reset-filters",
+                    cls="app-btn app-btn-neutral",
                 ),
+                cls="flex flex-wrap gap-2",
             ),
-            Select(
-                *[Option(label, value=key, selected=current_sort == key) for key, label in _SORT_LABELS.items()],
-                name="sort_by",
-                cls=(
-                    "px-3 py-2.5 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 "
-                    "rounded text-slate-800 dark:text-slate-100 text-sm"
+            Div(
+                Input(type="hidden", name="mode", value=current_mode),
+                Select(
+                    Option("Tutti gli stati", value=""),
+                    Option("Da scaricare", value="saved", selected=current_state == "saved"),
+                    Option("In coda", value="queued", selected=current_state == "queued"),
+                    Option("In download", value="downloading", selected=current_state == "downloading"),
+                    Option("Parziale", value="partial", selected=current_state == "partial"),
+                    Option("Completo", value="complete", selected=current_state == "complete"),
+                    Option("Errore", value="error", selected=current_state == "error"),
+                    name="state",
+                    cls=(
+                        "px-3 py-2.5 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 "
+                        "rounded text-slate-800 dark:text-slate-100 text-sm"
+                    ),
                 ),
-            ),
-            Select(
-                Option("Grid", value="grid", selected=view == "grid"),
-                Option("List", value="list", selected=view == "list"),
-                name="view",
-                cls=(
-                    "px-3 py-2.5 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 "
-                    "rounded text-slate-800 dark:text-slate-100 text-sm"
+                Select(
+                    Option("Tutte le biblioteche", value=""),
+                    *[Option(lib, value=lib, selected=library_filter == lib) for lib in libraries],
+                    name="library_filter",
+                    cls=(
+                        "px-3 py-2.5 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 "
+                        "rounded text-slate-800 dark:text-slate-100 text-sm"
+                    ),
                 ),
-            ),
-            Select(
-                Option("Tutti gli elementi", value="0", selected=current_action_required != "1"),
-                Option("Solo elementi da gestire", value="1", selected=current_action_required == "1"),
-                name="action_required",
-                cls=(
-                    "px-3 py-2.5 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 "
-                    "rounded text-slate-800 dark:text-slate-100 text-sm"
+                Select(
+                    Option("Tutte le categorie", value=""),
+                    *[
+                        Option(_CATEGORY_LABELS.get(cat, cat.title()), value=cat, selected=category == cat)
+                        for cat in category_options
+                    ],
+                    name="category",
+                    cls=(
+                        "px-3 py-2.5 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 "
+                        "rounded text-slate-800 dark:text-slate-100 text-sm"
+                    ),
                 ),
+                Select(
+                    *[Option(label, value=key, selected=current_sort == key) for key, label in _SORT_LABELS.items()],
+                    name="sort_by",
+                    cls=(
+                        "px-3 py-2.5 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 "
+                        "rounded text-slate-800 dark:text-slate-100 text-sm"
+                    ),
+                ),
+                Select(
+                    Option("Grid", value="grid", selected=view == "grid"),
+                    Option("List", value="list", selected=view == "list"),
+                    name="view",
+                    cls=(
+                        "px-3 py-2.5 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 "
+                        "rounded text-slate-800 dark:text-slate-100 text-sm"
+                    ),
+                ),
+                Select(
+                    Option("Tutti gli elementi", value="0", selected=current_action_required != "1"),
+                    Option("Solo elementi da gestire", value="1", selected=current_action_required == "1"),
+                    name="action_required",
+                    cls=(
+                        "px-3 py-2.5 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 "
+                        "rounded text-slate-800 dark:text-slate-100 text-sm"
+                    ),
+                ),
+                cls="grid sm:grid-cols-2 xl:grid-cols-3 gap-2 mt-2",
             ),
-            cls="grid sm:grid-cols-2 xl:grid-cols-3 gap-2 mt-2",
+            id="library-filters",
+            hx_get="/library",
+            hx_target="#library-page",
+            hx_swap="outerHTML show:none",
+            hx_push_url="true",
+            hx_trigger="submit, change delay:200ms from:select, keyup changed delay:400ms from:input[name='q']",
+            cls="px-3 pb-3",
         ),
-        id="library-filters",
-        hx_get="/library",
-        hx_target="#library-page",
-        hx_swap="outerHTML show:none",
-        hx_push_url="true",
-        hx_trigger="submit, change delay:200ms from:select, keyup changed delay:400ms from:input[name='q']",
-        cls=(
-            "rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/30 "
-            "p-3 mb-5 sticky top-0 z-10 backdrop-blur"
-        ),
+        open=active_filters_count > 0,
+        id="library-filters-panel",
+        data_collapsible_key="filters",
+        cls=("rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/30 mb-5"),
     )
 
 
@@ -424,6 +444,7 @@ def _library_filters_persistence_script(default_mode: str = "operativa") -> Scri
         f"""
         (function () {{
             const STORAGE_KEY = 'ui.library.filters.v1';
+            const DETAILS_STORAGE_KEY = 'ui.library.collapsible.v1';
             const DEFAULT_MODE = {json.dumps(safe_default_mode)};
             const FILTER_KEYS = [
                 'q', 'state', 'library_filter', 'category', 'mode', 'view', 'action_required', 'sort_by'
@@ -550,6 +571,45 @@ def _library_filters_persistence_script(default_mode: str = "operativa") -> Scri
                 resetLink.dataset.resetBound = '1';
             }}
 
+            function readCollapsibleState() {{
+                try {{
+                    const raw = localStorage.getItem(DETAILS_STORAGE_KEY);
+                    if (!raw) return {{}};
+                    const parsed = JSON.parse(raw);
+                    return parsed && typeof parsed === 'object' ? parsed : {{}};
+                }} catch (_e) {{
+                    return {{}};
+                }}
+            }}
+
+            function saveCollapsibleState(state) {{
+                try {{
+                    localStorage.setItem(DETAILS_STORAGE_KEY, JSON.stringify(state || {{}}));
+                }} catch (_e) {{
+                    /* ignore storage errors */
+                }}
+            }}
+
+            function bindCollapsiblePersistence() {{
+                const nodes = document.querySelectorAll('details[data-collapsible-key]');
+                if (!nodes || !nodes.length) return;
+                const state = readCollapsibleState();
+                nodes.forEach((el) => {{
+                    const key = String(el.getAttribute('data-collapsible-key') || '').trim();
+                    if (!key) return;
+                    if (Object.prototype.hasOwnProperty.call(state, key)) {{
+                        el.open = Boolean(state[key]);
+                    }}
+                    if (el.dataset.collapsibleBound === '1') return;
+                    el.addEventListener('toggle', () => {{
+                        const current = readCollapsibleState();
+                        current[key] = Boolean(el.open);
+                        saveCollapsibleState(current);
+                    }});
+                    el.dataset.collapsibleBound = '1';
+                }});
+            }}
+
             function restoreFiltersIfNeeded(form) {{
                 if (urlHasFilterParams()) return false;
                 const saved = readSavedFilters();
@@ -575,13 +635,15 @@ def _library_filters_persistence_script(default_mode: str = "operativa") -> Scri
             }}
 
             function initLibraryFiltersPersistence() {{
+                bindCollapsiblePersistence();
                 const form = document.getElementById('library-filters');
-                if (!form) return;
-                bindFormPersistence(form);
-                bindResetAction();
-                const restored = restoreFiltersIfNeeded(form);
-                if (!restored) {{
-                    saveFilters(collectFormFilters(form));
+                if (form) {{
+                    bindFormPersistence(form);
+                    bindResetAction();
+                    const restored = restoreFiltersIfNeeded(form);
+                    if (!restored) {{
+                        saveFilters(collectFormFilters(form));
+                    }}
                 }}
             }}
 
@@ -963,6 +1025,7 @@ def _render_archive_list(docs: list[dict], view: str) -> Div:
 
     sections = []
     for lib, by_category in grouped.items():
+        lib_key = base64.urlsafe_b64encode(lib.encode("utf-8")).decode("ascii").rstrip("=") or "library"
         category_blocks = []
         for cat in ITEM_TYPES:
             entries = by_category.get(cat)
@@ -1000,6 +1063,7 @@ def _render_archive_list(docs: list[dict], view: str) -> Div:
                 ),
                 Div(*category_blocks, cls="mt-3"),
                 open=True,
+                data_collapsible_key=f"archive:{lib_key}",
                 cls="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/20 p-3 mb-4",
             )
         )
@@ -1306,26 +1370,24 @@ def render_library_page(
     categories = categories or list(ITEM_TYPES)
     normalized_default_mode = _normalize_mode(default_mode, default_mode="operativa")
     current_mode = _normalize_mode(mode, default_mode=normalized_default_mode)
-    active_mode = "Archivio" if current_mode == "archivio" else "Operativa"
 
     return Div(
         Div(
             H2("Libreria Locale", cls="text-2xl font-bold text-slate-800 dark:text-slate-100"),
-            Span(f"Vista {active_mode}", cls="text-sm text-slate-500 dark:text-slate-400"),
+            _render_mode_switch(
+                view=view,
+                q=q,
+                state=state,
+                library_filter=library_filter,
+                category=category,
+                mode=current_mode,
+                default_mode=normalized_default_mode,
+                action_required=action_required,
+                sort_by=sort_by,
+            ),
             cls="flex items-center justify-between mb-4",
         ),
         _kpi_strip(docs),
-        _render_mode_switch(
-            view=view,
-            q=q,
-            state=state,
-            library_filter=library_filter,
-            category=category,
-            mode=current_mode,
-            default_mode=normalized_default_mode,
-            action_required=action_required,
-            sort_by=sort_by,
-        ),
         _render_filters(
             view=view,
             q=q,
@@ -1333,6 +1395,7 @@ def render_library_page(
             library_filter=library_filter,
             category=category,
             mode=current_mode,
+            default_mode=normalized_default_mode,
             action_required=action_required,
             sort_by=sort_by,
             libraries=libraries,
