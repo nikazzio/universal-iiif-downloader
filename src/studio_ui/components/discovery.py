@@ -1,9 +1,6 @@
-"""Rendering helpers for the Discovery routes.
+"""Rendering helpers for the Discovery routes."""
 
-Gestisce la grafica della pagina di ricerca, le card di anteprima,
-i messaggi di errore e la barra di avanzamento del download.
-"""
-
+import json
 from urllib.parse import quote
 
 from fasthtml.common import (
@@ -18,6 +15,7 @@ from fasthtml.common import (
     Label,
     Option,
     P,
+    Script,
     Select,
     Span,
 )
@@ -27,28 +25,21 @@ from studio_ui.library_options import library_options
 
 
 def render_search_results_list(results: list) -> Div:
-    """Renderizza una lista di risultati di ricerca con metadati estesi."""
+    """Render list of search results aligned with global app theme."""
     cards = []
-
     for item in results:
-        # Estraiamo i dati
-        title = item.get("title", "Senza titolo")
-        author = item.get("author", "")
-        date = item.get("date", "")
-        language = item.get("language", "")
-        publisher = item.get("publisher", "")
-        ark = item.get("ark", "")
-        library = item.get("library", "Gallica")
-
-        # Tronchiamo la descrizione se troppo lunga
-        desc_text = item.get("description", "") or ""
-        desc = desc_text[:120] + "..." if len(desc_text) > 120 else desc_text
-
+        title = str(item.get("title") or "Senza titolo")
+        author = str(item.get("author") or "")
+        date = str(item.get("date") or "")
+        language = str(item.get("language") or "")
+        publisher = str(item.get("publisher") or "")
+        ark = str(item.get("ark") or "")
+        library = str(item.get("library") or "Gallica")
+        description = str(item.get("description") or "")
         thumb = item.get("thumbnail")
-        doc_id = item.get("id")
-        manifest_url = item.get("manifest")
+        doc_id = str(item.get("id") or "")
+        manifest_url = str(item.get("manifest") or "")
 
-        # Link al viewer originale
         viewer_url = None
         if library == "Gallica" and ark:
             viewer_url = f"https://gallica.bnf.fr/{ark}"
@@ -59,109 +50,109 @@ def render_search_results_list(results: list) -> Div:
         elif library == "Institut de France" and doc_id:
             viewer_url = f"https://bibnum.institutdefrance.fr/viewer/{doc_id}"
 
-        # Azioni: salva in Libreria / salva+download
-        hx_vals = f'{{"manifest_url": "{manifest_url}", "doc_id": "{doc_id}", "library": "{library}"}}'
-
-        add_btn = Button(
-            "➕ Aggiungi",
-            cls="bg-slate-700 hover:bg-slate-600 text-white text-xs px-3 py-1 rounded transition-colors",
-            hx_post="/api/discovery/add_to_library",
-            hx_vals=hx_vals,
-            hx_target="#download-manager-area",
-            hx_swap="innerHTML",
-        )
-        add_dl_btn = Button(
-            "⬇️ Aggiungi + Download",
-            cls="bg-green-700 hover:bg-green-600 text-white text-xs px-3 py-1 rounded transition-colors",
-            hx_post="/api/discovery/add_and_download",
-            hx_vals=hx_vals,
-            hx_target="#download-manager-area",
-            hx_swap="innerHTML",
-        )
-
-        # Link esterno al viewer
-        viewer_link = (
-            A(
-                "🔗 Viewer",
-                href=viewer_url,
-                target="_blank",
-                cls="text-xs text-blue-400 hover:text-blue-300 underline ml-2",
-            )
-            if viewer_url
-            else None
-        )
-
-        # Layout Card Orizzontale con più info
-        img_col = Div(
-            Img(src=thumb, cls="w-20 h-20 object-cover rounded border border-slate-600")
-            if thumb
-            else Div(
-                "No IMG",
-                cls="w-20 h-20 bg-slate-800 rounded flex items-center justify-center text-[10px] text-slate-500",
-            ),
-            cls="flex-shrink-0 mr-4",
-        )
-
-        # Metadati aggiuntivi in formato compatto
-        meta_items = []
-        if author and author != "Autore sconosciuto":
-            meta_items.append(Span(f"👤 {author[:40]}", cls="text-xs text-slate-400"))
-        if date:
-            meta_items.append(Span(f"📅 {date}", cls="text-xs text-slate-500"))
-        if language:
-            meta_items.append(Span(f"🌐 {language.upper()}", cls="text-xs text-slate-500"))
-        if publisher:
-            meta_items.append(Span(f"📚 {publisher[:30]}", cls="text-xs text-slate-500"))
-
-        meta_row = Div(*meta_items, cls="flex flex-wrap gap-x-3 gap-y-1 mb-1") if meta_items else None
-
-        # ID badge
-        id_badge = Span(
-            doc_id[:20] + "..." if len(doc_id or "") > 20 else doc_id,
-            cls="text-[10px] bg-slate-700 text-slate-400 px-1.5 py-0.5 rounded font-mono",
-        )
+        hx_vals = json.dumps({"manifest_url": manifest_url, "doc_id": doc_id, "library": library}, ensure_ascii=True)
         badge_id = f"pdf-badge-{(doc_id or 'item').replace(' ', '-').replace('/', '-')[:28]}"
         pdf_badge = Div(
             "PDF: verifica...",
             id=badge_id,
-            hx_get=f"/api/discovery/pdf_capability?manifest_url={quote(str(manifest_url or ''), safe='')}",
+            hx_get=f"/api/discovery/pdf_capability?manifest_url={quote(manifest_url, safe='')}",
             hx_trigger="load",
             hx_swap="outerHTML",
-            cls="text-[10px] bg-slate-700 text-slate-300 px-1.5 py-0.5 rounded",
+            cls="app-chip app-chip-neutral text-[11px] tracking-wide",
         )
 
-        txt_col = Div(
-            H3(
-                title[:80] + ("..." if len(title) > 80 else ""),
-                cls="text-sm font-bold text-slate-200 mb-1 leading-tight",
-            ),
-            meta_row if meta_row else "",
-            P(desc, cls="text-xs text-slate-400 mb-2 line-clamp-2") if desc else "",
+        meta_line = []
+        if author and author != "Autore sconosciuto":
+            meta_line.append(Span(f"Autore: {author[:70]}", cls="text-xs text-slate-600 dark:text-slate-300"))
+        if date:
+            meta_line.append(Span(f"Data: {date}", cls="text-xs text-slate-600 dark:text-slate-300"))
+        if language:
+            meta_line.append(Span(f"Lingua: {language.upper()}", cls="text-xs text-slate-600 dark:text-slate-300"))
+        if publisher:
+            meta_line.append(Span(f"Fonte: {publisher[:80]}", cls="text-xs text-slate-600 dark:text-slate-300"))
+
+        cards.append(
             Div(
-                Div(id_badge, pdf_badge, cls="flex items-center gap-2"),
-                Div(viewer_link if viewer_link else "", add_btn, add_dl_btn, cls="flex items-center gap-2"),
-                cls="flex items-center gap-2 justify-between",
-            ),
-            cls="flex-grow min-w-0",
+                Div(
+                    Img(
+                        src=thumb,
+                        cls="w-24 h-24 object-cover rounded-lg border border-slate-200 dark:border-slate-700",
+                    )
+                    if thumb
+                    else Div(
+                        "No preview",
+                        cls=(
+                            "w-24 h-24 rounded-lg border border-dashed border-slate-300 dark:border-slate-700 "
+                            "text-[11px] text-slate-500 flex items-center justify-center"
+                        ),
+                    ),
+                    cls="shrink-0",
+                ),
+                Div(
+                    Div(
+                        H3(title[:140], cls="text-base font-semibold text-slate-900 dark:text-slate-100 leading-tight"),
+                        Div(
+                            Span(library, cls="app-chip app-chip-primary text-[11px] tracking-wide"),
+                            Span(
+                                (doc_id[:40] + "...") if len(doc_id) > 40 else doc_id,
+                                cls="app-chip app-chip-neutral text-[11px] font-mono",
+                            ),
+                            pdf_badge,
+                            cls="flex flex-wrap items-center gap-2",
+                        ),
+                        cls="flex flex-col gap-2",
+                    ),
+                    P(
+                        description[:220] + ("..." if len(description) > 220 else ""),
+                        cls="text-sm text-slate-600 dark:text-slate-300",
+                    )
+                    if description
+                    else "",
+                    Div(*meta_line, cls="flex flex-wrap gap-x-4 gap-y-1") if meta_line else "",
+                    Div(
+                        A("Apri viewer", href=viewer_url, target="_blank", cls="app-btn app-btn-info text-xs")
+                        if viewer_url
+                        else "",
+                        Button(
+                            "Aggiungi",
+                            cls="app-btn app-btn-neutral text-xs",
+                            hx_post="/api/discovery/add_to_library",
+                            hx_vals=hx_vals,
+                            hx_target="#download-manager-area",
+                            hx_swap="innerHTML",
+                        ),
+                        Button(
+                            "Aggiungi + Download",
+                            cls="app-btn app-btn-accent text-xs",
+                            hx_post="/api/discovery/add_and_download",
+                            hx_vals=hx_vals,
+                            hx_target="#download-manager-area",
+                            hx_swap="innerHTML",
+                        ),
+                        cls="flex flex-wrap items-center gap-2 pt-1",
+                    ),
+                    cls="min-w-0 flex-1 space-y-2",
+                ),
+                cls=(
+                    "flex flex-col md:flex-row gap-4 rounded-xl border border-slate-200/80 dark:border-slate-700 "
+                    "bg-white/90 dark:bg-slate-900/55 p-4 shadow-sm"
+                ),
+            )
         )
-
-        card = Div(
-            img_col,
-            txt_col,
-            cls=(
-                "flex items-start p-3 bg-slate-800/40 hover:bg-slate-800/80 rounded-lg border border-slate-700/50 "
-                "hover:border-slate-600 transition-all mb-2"
-            ),
-        )
-        cards.append(card)
 
     return Div(
         Div(
-            H3(f"Trovati {len(results)} risultati", cls="text-md font-bold text-slate-100"),
-            Span("Aggiungi in libreria o avvia download dalla card", cls="text-xs text-slate-500"),
-            cls="flex justify-between items-baseline mb-4 border-b border-slate-700 pb-2",
+            H3(f"Trovati {len(results)} risultati", cls="text-lg font-semibold text-slate-900 dark:text-slate-100"),
+            Span(
+                "Seleziona un risultato per aggiungerlo in Libreria o avviare il download.",
+                cls="text-xs text-slate-500",
+            ),
+            cls=(
+                "flex flex-col md:flex-row md:items-end md:justify-between gap-2 mb-4 pb-3 border-b "
+                "border-slate-200 dark:border-slate-700"
+            ),
         ),
-        Div(*cards, cls="space-y-2 max-h-[600px] overflow-y-auto pr-2 custom-scrollbar"),
+        Div(*cards, cls="space-y-3 max-h-[640px] overflow-y-auto pr-1"),
         id="discovery-preview",
     )
 
@@ -214,68 +205,105 @@ def discovery_form() -> Div:
     libraries = library_options()
 
     return Div(
-        H3("🔎 Ricerca per Segnatura", cls="text-lg font-bold text-gray-800 dark:text-gray-100 mb-4"),
+        H3("Ricerca", cls="text-xl font-semibold text-slate-900 dark:text-slate-100 mb-1"),
+        P(
+            "Inserisci testo libero, segnatura, ID o URL. I filtri sono opzionali.",
+            cls="text-sm text-slate-600 dark:text-slate-300 mb-4",
+        ),
         Form(
             Div(
-                # Library selector
                 Div(
                     Label(
-                        "Biblioteca",
-                        for_="lib-select",
-                        cls="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1",
-                    ),
-                    Select(
-                        *[Option(label, value=value) for label, value in libraries],
-                        id="lib-select",
-                        name="library",
-                        cls=(
-                            "w-full px-3 py-2 border border-gray-300 "
-                            "dark:border-gray-600 rounded bg-white dark:bg-gray-800 "
-                            "dark:text-white"
-                        ),
-                    ),
-                    cls="w-1/3",
-                ),
-                # Input
-                Div(
-                    Label(
-                        "Segnatura, ID o URL",
+                        "Cerca",
                         for_="shelf-input",
-                        cls="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1",
+                        cls="app-label mb-1",
                     ),
                     Input(
                         type="text",
                         id="shelf-input",
                         name="shelfmark",
-                        placeholder="es. Urb.lat.1779 o btv1b10033406t",
-                        cls=(
-                            "w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white "
-                            "dark:bg-gray-800 dark:text-white shadow-sm"
-                        ),
+                        placeholder="es. Les voyages du seigneur de Villamont",
+                        cls="app-field text-base py-3 px-3.5",
                     ),
-                    cls="w-2/3",
+                    cls="col-span-12 lg:col-span-8",
                 ),
-                cls="flex gap-4 mb-4",
-            ),
-            Button(
-                "🔍 Analizza Documento",
-                type="submit",
-                cls=(
-                    "w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded "
-                    "transition-all shadow-md active:scale-95"
+                Div(
+                    Button(
+                        "Analizza Documento",
+                        type="submit",
+                        cls="w-full app-btn app-btn-accent font-semibold py-3",
+                    ),
+                    cls="col-span-12 lg:col-span-4 flex items-end",
                 ),
+                Div(
+                    Label(
+                        "Biblioteca",
+                        for_="lib-select",
+                        cls="app-label mb-1",
+                    ),
+                    Select(
+                        *[Option(label, value=value) for label, value in libraries],
+                        id="lib-select",
+                        name="library",
+                        cls="app-field",
+                    ),
+                    cls="col-span-12 md:col-span-6 lg:col-span-4",
+                ),
+                Div(
+                    Label(
+                        "Filtro (Gallica)",
+                        for_="gallica-type",
+                        cls="app-label mb-1",
+                    ),
+                    Select(
+                        Option("Tutti i materiali", value="all", selected=True),
+                        Option("Solo manoscritti", value="manuscrit"),
+                        Option("Solo libri a stampa", value="printed"),
+                        id="gallica-type",
+                        name="gallica_type",
+                        cls="app-field",
+                    ),
+                    id="gallica-filter-wrap",
+                    cls="col-span-12 md:col-span-6 lg:col-span-4",
+                ),
+                cls="grid grid-cols-12 gap-4",
             ),
             hx_post="/api/resolve_manifest",
             hx_target="#discovery-preview",
             hx_indicator="#resolve-spinner",
         ),
+        Script(
+            """
+            (function () {
+                const lib = document.getElementById('lib-select');
+                const wrap = document.getElementById('gallica-filter-wrap');
+                const select = document.getElementById('gallica-type');
+                if (!lib || !wrap || !select) return;
+                const sync = () => {
+                    const isGallica = (lib.value || '').toLowerCase().includes('gallica');
+                    wrap.style.display = isGallica ? '' : 'none';
+                    select.disabled = !isGallica;
+                    if (!isGallica) select.value = 'all';
+                };
+                lib.addEventListener('change', sync);
+                sync();
+            })();
+            """
+        ),
         # Spinner
         Div(
-            Div(cls="inline-block w-8 h-8 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"),
+            Div(
+                cls=(
+                    "inline-block w-8 h-8 border-[3px] border-[rgba(var(--app-accent-rgb),0.55)] "
+                    "border-t-transparent rounded-full animate-spin"
+                )
+            ),
             id="resolve-spinner",
             cls="htmx-indicator flex justify-center mt-6",
         ),
-        cls="bg-white dark:bg-gray-800 p-6 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm",
+        cls=(
+            "rounded-xl border border-slate-200/80 dark:border-slate-700 bg-white/90 dark:bg-slate-900/50 p-5 shadow-sm"
+        ),
     )
 
 
@@ -294,7 +322,7 @@ def discovery_content(initial_preview=None, active_download_fragment=None) -> Di
     )
 
     return Div(
-        H2("🛰️ Discovery", cls="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-6"),
+        H2("Discovery", cls="text-3xl font-bold text-slate-900 dark:text-slate-100 mb-5"),
         Div(
             Div(
                 discovery_form(),
@@ -589,8 +617,8 @@ def render_download_status(download_id: str, doc_id: str, library: str, status_d
 def render_pdf_capability_badge(has_pdf: bool) -> Div:
     """Render a compact badge for native PDF availability."""
     if has_pdf:
-        return Div("PDF nativo disponibile", cls="text-[10px] bg-emerald-800 text-emerald-100 px-1.5 py-0.5 rounded")
-    return Div("Solo immagini", cls="text-[10px] bg-amber-800 text-amber-100 px-1.5 py-0.5 rounded")
+        return Div("PDF nativo disponibile", cls="app-chip app-chip-success text-[11px] tracking-wide")
+    return Div("Solo immagini", cls="app-chip app-chip-warning text-[11px] tracking-wide")
 
 
 def render_download_manager(jobs: list[dict]) -> Div:

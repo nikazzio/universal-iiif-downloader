@@ -63,7 +63,7 @@ class GallicaXMLParser:
             "thumbnail": thumbnail_url,
             "thumb": thumbnail_url,
             "library": "Gallica",
-            "raw": {},
+            "raw": {"dc_types": list(fields.get("types") or [])},
         }
 
         if fields.get("date"):
@@ -105,6 +105,7 @@ class GallicaXMLParser:
             "publisher": None,
             "language": None,
             "identifiers": [],
+            "types": [],
         }
 
         target_tags: Final = {
@@ -116,6 +117,8 @@ class GallicaXMLParser:
             "source",
             "language",
             "identifier",
+            "type",
+            "typedoc",
         }
 
         for elem in record.iter():
@@ -123,24 +126,29 @@ class GallicaXMLParser:
             text = (elem.text or "").strip()
             if not text or tag not in target_tags:
                 continue
-
-            match tag:
-                case "title" if data["title"] == "Senza titolo":
-                    data["title"] = text
-                case "creator" if data["author"] == "Autore sconosciuto":
-                    data["author"] = text
-                case "date" if not data["date"]:
-                    data["date"] = text
-                case "description":
-                    data["description"].append(text)
-                case "publisher" | "source" if not data["publisher"]:
-                    data["publisher"] = text
-                case "language" if not data["language"]:
-                    data["language"] = text
-                case "identifier":
-                    data["identifiers"].append(text)
+            GallicaXMLParser._append_dc_field(data, tag, text)
 
         return data
+
+    @staticmethod
+    def _append_dc_field(data: _DCData, tag: str, text: str) -> None:
+        match tag:
+            case "title" if data["title"] == "Senza titolo":
+                data["title"] = text
+            case "creator" if data["author"] == "Autore sconosciuto":
+                data["author"] = text
+            case "date" if not data["date"]:
+                data["date"] = text
+            case "description":
+                data["description"].append(text)
+            case "publisher" | "source" if not data["publisher"]:
+                data["publisher"] = text
+            case "language" if not data["language"]:
+                data["language"] = text
+            case "identifier":
+                data["identifiers"].append(text)
+            case "type" | "typedoc":
+                data["types"].append(text)
 
 
 class IIIFManifestParser:
