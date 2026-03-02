@@ -405,7 +405,7 @@ class OpenAIProvider:
             lines = [OCRLine(line_text.strip()) for line_text in text.split("\n") if line_text.strip()]
 
             return OCRResult(text, lines, f"OpenAI ({self.model})")
-        except (requests.RequestException, json.JSONDecodeError):
+        except (requests.RequestException, json.JSONDecodeError) as e:
             logger.exception("OpenAI OCR Error: %s", e)
             return OCRResult("", [], "OpenAI", error=str(e))
 
@@ -473,7 +473,7 @@ class AnthropicProvider:
             lines = [OCRLine(line_text.strip()) for line_text in text.split("\n") if line_text.strip()]
 
             return OCRResult(text, lines, f"Anthropic ({self.model})")
-        except (requests.RequestException, json.JSONDecodeError):
+        except (requests.RequestException, json.JSONDecodeError) as e:
             return OCRResult("", [], "Anthropic", error=str(e))
 
 
@@ -627,5 +627,5 @@ class OCRProcessor:
             if isinstance(image_input, Image.Image):
                 return image_input
             return Image.open(image_input)
-        except (OSError, ValueError):
+        except (OSError, ValueError) as e:
             return {"error": f"Errore caricamento immagine: {e}"}
