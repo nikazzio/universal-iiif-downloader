@@ -21,7 +21,7 @@ class RateLimitError(HTTPError):
     """Rate limit exceeded (429)."""
 
 
-class TimeoutError(NetworkError):
+class RequestTimeoutError(NetworkError):
     """Connection or request timeout."""
 
 
