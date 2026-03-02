@@ -50,7 +50,7 @@ class GallicaXMLParser:
             manifest_url, _ = resolver.get_manifest_url(valid_ark or valid_id)
             if not manifest_url:
                 return None
-        except Exception:
+        except (ValueError, KeyError, TypeError):
             return None
 
         thumbnail_url = f"https://gallica.bnf.fr/ark:/12148/{valid_id}.thumbnail"
