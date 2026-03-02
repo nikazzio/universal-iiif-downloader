@@ -393,7 +393,7 @@ class IIIFDownloader:
                 self.session.headers.update(
                     {"Referer": viewer_url, "Accept": "image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8"}
                 )
-            except Exception:
+            except (requests.RequestException, requests.Timeout):
                 self.logger.debug("Unable to pre-warm Vatican viewer session", exc_info=True)
         elif "gallica.bnf.fr" in self.manifest_url.lower():
             viewer_url = self.manifest_url.replace("/iiif/ark:/12148/", "/ark:/12148/").replace("/manifest.json", "")
@@ -406,7 +406,7 @@ class IIIFDownloader:
                         "Accept": "image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
                     }
                 )
-            except Exception:
+            except (requests.RequestException, requests.Timeout):
                 self.logger.debug("Unable to pre-warm Gallica viewer session", exc_info=True)
 
     def extract_metadata(self):
@@ -675,7 +675,7 @@ class IIIFDownloader:
             return None
         try:
             return lp.read_bytes()
-        except Exception:
+        except OSError:
             self.logger.warning(f"Could not read logo at {logo_path}")
             return None
 
@@ -779,7 +779,7 @@ class IIIFDownloader:
         )
         try:
             clean_dir(self.temp_dir)
-        except Exception:
+        except OSError:
             self.logger.debug("Failed to clean temp dir %s", self.temp_dir, exc_info=True)
 
         if final_files and self.ocr_model:
@@ -1006,7 +1006,7 @@ class IIIFDownloader:
         # This removes the folder that contained the images (and any remaining files).
         try:
             clean_dir(self.temp_dir)
-        except Exception:
+        except OSError:
             # Avoid raising during cleanup; log and continue.
             with suppress(Exception):
                 self.logger.debug("Failed to clean temp dir %s", self.temp_dir, exc_info=True)
