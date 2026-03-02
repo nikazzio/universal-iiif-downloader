@@ -364,7 +364,7 @@ def _extract_json_ld_objects(html: str) -> list[Any]:
             continue
         try:
             parsed = json.loads(payload)
-        except Exception:
+        except (json.JSONDecodeError, ValueError):
             logger.debug("Invalid JSON-LD payload encountered during catalog enrichment", exc_info=True)
             continue
         if isinstance(parsed, list):
@@ -465,7 +465,7 @@ def extract_external_catalog_data(url: str, timeout: int = 8) -> dict[str, Any]:
     try:
         response = requests.get(url, headers=DEFAULT_HEADERS, timeout=timeout)
         response.raise_for_status()
-    except Exception:
+    except (requests.RequestException, requests.Timeout):
         logger.debug("Reference fetch failed for %s", url, exc_info=True)
         return {"reference_text": "", "external_fields": {}}
 

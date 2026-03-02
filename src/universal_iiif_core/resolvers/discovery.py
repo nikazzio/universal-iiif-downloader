@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import json
 import re
 import unicodedata
+import xml.etree.ElementTree
 from html import unescape
 from typing import Final
 
 import requests
 
+from ..exceptions import ResolverError
 from ..logger import get_logger
 from .gallica import GallicaResolver
 from .institut import InstitutResolver
@@ -118,7 +121,7 @@ def resolve_shelfmark(library: str, shelfmark: str) -> tuple[str | None, str | N
         else:
             logger.warning("No manifest for '%s' (lib=%s)", s, lib)
         return manifest_url, doc_id
-    except Exception as exc:
+    except (requests.RequestException, requests.Timeout, ValueError, ResolverError) as exc:
         logger.error("Resolver crashed for %r/%r: %s", lib, s, exc, exc_info=True)
         return None, None
 
@@ -151,7 +154,7 @@ def search_gallica_by_id(doc_id: str) -> list[SearchResult]:
         resolver = GallicaResolver()
         return GallicaXMLParser.parse_sru(resp.content, resolver)
 
-    except Exception as exc:
+    except (requests.RequestException, xml.etree.ElementTree.ParseError, ValueError) as exc:
         logger.error("Gallica ID search failed for %s: %s", doc_id, exc, exc_info=True)
         return []
 
@@ -230,7 +233,7 @@ def search_gallica(query: str, max_records: int = 15, *, gallica_type_filter: st
         resp = requests.get(GALLICA_BASE_URL, params=params, headers=REAL_BROWSER_HEADERS, timeout=TIMEOUT_SECONDS)
         resp.raise_for_status()
         results = GallicaXMLParser.parse_sru(resp.content, resolver)
-    except Exception as exc:
+    except (requests.RequestException, xml.etree.ElementTree.ParseError, ValueError) as exc:
         logger.error("Gallica search failed for cql '%s': %s", cql, exc, exc_info=True)
         return []
 
@@ -255,7 +258,7 @@ def search_institut(query: str, max_results: int = 12) -> list[SearchResult]:
             timeout=TIMEOUT_SECONDS,
         )
         response.raise_for_status()
-    except Exception as exc:
+    except (requests.RequestException, requests.Timeout) as exc:
         logger.error("Institut search failed: %s", exc, exc_info=True)
         return []
 
@@ -303,7 +306,7 @@ def _fetch_institut_manifest_result(
         response = requests.get(manifest_url, headers=REAL_BROWSER_HEADERS, timeout=TIMEOUT_SECONDS)
         response.raise_for_status()
         manifest = response.json()
-    except Exception as exc:
+    except (requests.RequestException, json.JSONDecodeError, ValueError) as exc:
         logger.debug("Institut manifest fetch failed for %s: %s", doc_id, exc, exc_info=True)
         return _fallback_institut_result(doc_id, fallback_title, manifest_url)
 
@@ -360,7 +363,7 @@ def get_manifest_details(manifest_url: str) -> SearchResult | None:
         # Attempt to find a document id from manifest or fallback to URL
         doc_id = manifest.get("id") if isinstance(manifest, dict) else None
         return IIIFManifestParser.parse_manifest(manifest, url, doc_id=doc_id)
-    except Exception as exc:
+    except (requests.RequestException, json.JSONDecodeError, ValueError) as exc:
         logger.error("Failed to fetch/parse manifest %r: %s", url, exc, exc_info=True)
         return None
 
@@ -405,7 +408,7 @@ def _append_normalized_candidate(results, query: str, resolver, normalize_shelfm
         return
     try:
         normalized = normalize_shelfmark(query)
-    except Exception as exc:
+    except (ValueError, KeyError, ResolverError) as exc:
         logger.debug("Failed to normalize Vatican input %r: %s", query, exc, exc_info=True)
         return
 
@@ -498,7 +501,7 @@ def _verify_vatican_manifest(manifest_url: str, ms_id: str, resolver) -> SearchR
 
         return result
 
-    except Exception as exc:
+    except (requests.RequestException, requests.Timeout) as exc:
         logger.debug("Vatican manifest check failed for %s: %s", ms_id, exc)
         return None
 
