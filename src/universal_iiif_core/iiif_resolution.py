@@ -53,7 +53,7 @@ def probe_remote_max_dimensions(
         response = requests.get(info_url, headers=DEFAULT_HEADERS, timeout=max(3, int(timeout_s)))
         response.raise_for_status()
         payload = response.json() if response.content else {}
-    except Exception:
+    except (requests.RequestException, OSError):
         return None, None, base
 
     try:
@@ -104,7 +104,7 @@ def fetch_highres_page_image(
             img.verify()
 
         return True, "ok"
-    except Exception as exc:
+    except (requests.RequestException, json.JSONDecodeError):
         if out_path.exists():
             with suppress(OSError):
                 out_path.unlink()
