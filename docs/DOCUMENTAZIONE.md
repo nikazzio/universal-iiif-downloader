@@ -39,6 +39,7 @@ Parametri **override per biblioteca** (attivi solo con `settings.network.librari
 * `settings.storage.exports_retention_days`: retention globale degli export PDF salvati.
 * `settings.storage.thumbnails_retention_days`: retention della cache miniature usata nel tab Export.
 * `settings.storage.auto_prune_on_startup`: se attivo, applica pruning retention all'avvio (export + temp high-res).
+* `settings.storage.partial_promotion_mode`: gestione promozione pagine validate da `temp_images` a `scans` (`never` oppure `on_pause`).
 
 Nel pannello **Settings > PDF Export** trovi i controlli con help text esplicativi:
 * sub-tab **Predefiniti e copertina**:

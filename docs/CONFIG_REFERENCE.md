@@ -246,12 +246,15 @@ Backward compatibility:
 - `settings.storage.highres_temp_retention_hours` (`int`, default: `6`)
 - `settings.storage.auto_prune_on_startup` (`bool`, default: `false`)
 - `settings.storage.max_exports_per_item` (`int`, default: `5`)
+- `settings.storage.partial_promotion_mode` (`string`, default: `never`)
+  - allowed: `never` | `on_pause`
 
 Runtime notes:
 - `exports_retention_days`: global pruning on export execution and optional startup prune.
 - `thumbnails_retention_days`: pruning applied when Studio Export thumbnails are generated.
 - `highres_temp_retention_hours`: pruning of temporary remote high-res staging folders.
 - `auto_prune_on_startup`: enables startup pruning for exports + high-res temp.
+- `partial_promotion_mode`: promotes validated staged pages from temp to scans only when a running download is paused (`on_pause`).
 
 ## `settings.logging`
 

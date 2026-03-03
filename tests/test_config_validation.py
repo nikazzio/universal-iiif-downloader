@@ -81,3 +81,18 @@ def test_validate_config_reports_out_of_range_values():
         and issue.path == "settings.images.tile_stitch_max_ram_gb"
         for issue in issues
     )
+
+
+def test_validate_config_reports_invalid_partial_promotion_mode():
+    """Storage partial promotion mode must use an allowed enum value."""
+    data = _clone_default()
+    data["settings"]["storage"]["partial_promotion_mode"] = "always"
+
+    issues = validate_config(data, schema=DEFAULT_CONFIG_JSON)
+
+    assert any(
+        issue.severity == SEVERITY_WARNING
+        and issue.code == "invalid_enum"
+        and issue.path == "settings.storage.partial_promotion_mode"
+        for issue in issues
+    )

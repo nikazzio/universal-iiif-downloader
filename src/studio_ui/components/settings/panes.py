@@ -2087,6 +2087,16 @@ def _build_system_pane(cm, s):
                 storage.get("auto_prune_on_startup", False),
                 help_text="Esegue pruning automatico di file temporanei/export secondo policy retention all'avvio.",
             ),
+            setting_select(
+                "Partial Promotion Mode",
+                "settings.storage.partial_promotion_mode",
+                storage.get("partial_promotion_mode", "never"),
+                [("Mai (resta in temp)", "never"), ("Solo su Pausa", "on_pause")],
+                help_text=(
+                    "Controlla quando promuovere pagine validate da temp a scans: "
+                    "'on_pause' lo fa solo quando un download viene messo in pausa."
+                ),
+            ),
             setting_toggle(
                 "Run Live Tests",
                 "settings.testing.run_live_tests",

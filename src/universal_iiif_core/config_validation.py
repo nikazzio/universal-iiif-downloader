@@ -290,6 +290,12 @@ def _validate_semantics(data: dict[str, Any], issues: list[ConfigValidationIssue
     _validate_enum(
         data,
         issues,
+        "settings.storage.partial_promotion_mode",
+        {"never", "on_pause"},
+    )
+    _validate_enum(
+        data,
+        issues,
         "settings.library.default_mode",
         {"operativa", "archivio"},
     )

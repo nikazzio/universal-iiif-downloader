@@ -40,6 +40,7 @@ def test_settings_page_exposes_critical_runtime_config_keys():
         "settings.storage.exports_retention_days",
         "settings.storage.thumbnails_retention_days",
         "settings.storage.max_exports_per_item",
+        "settings.storage.partial_promotion_mode",
         "settings.viewer.visual_filters.defaults.hue",
         "settings.viewer.visual_filters.defaults.invert",
         "settings.viewer.visual_filters.defaults.grayscale",

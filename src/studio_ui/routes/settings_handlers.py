@@ -249,6 +249,15 @@ def _postprocess_network_settings(settings_node: dict[str, Any]) -> None:
     normalize_network_settings(settings_node)
 
 
+def _postprocess_storage_settings(settings_node: dict[str, Any]) -> None:
+    storage = settings_node.setdefault("storage", {})
+    if not isinstance(storage, dict):
+        settings_node["storage"] = {}
+        storage = settings_node["storage"]
+    mode = str(storage.get("partial_promotion_mode") or "never").strip().lower()
+    storage["partial_promotion_mode"] = mode if mode in {"never", "on_pause"} else "never"
+
+
 def _sanitize_profile_key(raw: Any) -> str:
     text = str(raw or "").strip().lower()
     text = re.sub(r"[^a-z0-9_-]+", "_", text)
@@ -418,6 +427,7 @@ async def save_settings(request):
         settings_node = cm.data.setdefault("settings", {})
         _postprocess_images_settings(settings_node)
         _postprocess_network_settings(settings_node)
+        _postprocess_storage_settings(settings_node)
         profile_changes = _postprocess_pdf_profiles(settings_node)
         ui_settings = settings_node.get("ui")
         if not isinstance(ui_settings, dict):

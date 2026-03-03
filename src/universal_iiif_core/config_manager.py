@@ -165,6 +165,7 @@ DEFAULT_CONFIG_JSON: dict[str, Any] = {
             "highres_temp_retention_hours": 6,
             "auto_prune_on_startup": False,
             "max_exports_per_item": 5,
+            "partial_promotion_mode": "never",
         },
         "logging": {
             "level": "INFO",
@@ -179,7 +180,7 @@ DEFAULT_CONFIG_JSON: dict[str, Any] = {
                     "maxZoomPixelRatio": 5,
                     "maxZoomLevel": 25,
                     "minZoomLevel": 0.35,
-                }
+                },
             },
             "visual_filters": {
                 "defaults": {
