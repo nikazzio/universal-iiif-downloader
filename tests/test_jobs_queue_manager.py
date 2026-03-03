@@ -62,3 +62,47 @@ def test_download_jobs_are_queued_when_concurrency_is_limited(tmp_path, monkeypa
         }:
             break
         time.sleep(0.05)
+
+
+def test_request_pause_does_not_mark_cancel_requested(monkeypatch):
+    """Pausing must keep cancellation semantics separate."""
+    job_manager._jobs.clear()
+    job_manager._download_queue.clear()
+    job_manager._active_downloads.clear()
+
+    job_manager._jobs["job_pause"] = {
+        "id": "job_pause",
+        "db_job_id": "db_pause",
+        "status": "running",
+        "message": "Running",
+        "pause_requested": False,
+        "cancel_requested": False,
+    }
+    monkeypatch.setattr(job_manager, "_update_db_safe", lambda *args, **kwargs: None)
+
+    assert job_manager.request_pause("db_pause") is True
+    snapshot = job_manager.get_job("job_pause") or {}
+    assert snapshot.get("pause_requested") is True
+    assert snapshot.get("cancel_requested") is False
+
+
+def test_request_cancel_clears_pause_flag(monkeypatch):
+    """Cancellation should override a prior pause request."""
+    job_manager._jobs.clear()
+    job_manager._download_queue.clear()
+    job_manager._active_downloads.clear()
+
+    job_manager._jobs["job_cancel"] = {
+        "id": "job_cancel",
+        "db_job_id": "db_cancel",
+        "status": "running",
+        "message": "Pausing...",
+        "pause_requested": True,
+        "cancel_requested": False,
+    }
+    monkeypatch.setattr(job_manager, "_update_db_safe", lambda *args, **kwargs: None)
+
+    assert job_manager.request_cancel("db_cancel") is True
+    snapshot = job_manager.get_job("job_cancel") or {}
+    assert snapshot.get("cancel_requested") is True
+    assert snapshot.get("pause_requested") is False

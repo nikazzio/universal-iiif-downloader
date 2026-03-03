@@ -80,8 +80,8 @@ def test_job_records_failure_in_db(tmp_path, monkeypatch):
     assert rec.get("error")
 
 
-def test_job_cancel_request_marks_final_error(tmp_path, monkeypatch):
-    """Ensure cancellation request is observable by task and reflected in DB final state."""
+def test_job_cancel_request_marks_final_cancelled_state(tmp_path, monkeypatch):
+    """Ensure cancellation request is reflected as a cancelled (non-error) final DB state."""
     db_path = str(tmp_path / "vault.db")
     import universal_iiif_core.jobs as jobs_mod
 
@@ -117,9 +117,5 @@ def test_job_cancel_request_marks_final_error(tmp_path, monkeypatch):
     vm = VaultManager(db_path)
     rec = vm.get_download_job("canceljob")
     assert rec is not None
-    assert rec.get("status") in {"error", "cancelled"}
-    assert rec.get("error") in (
-        "Cancelled by user",
-        "task cancelled cooperatively",
-        "Error: task cancelled cooperatively",
-    )
+    assert rec.get("status") == "cancelled"
+    assert rec.get("error") is None

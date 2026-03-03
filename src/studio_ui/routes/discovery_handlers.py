@@ -489,7 +489,7 @@ def cancel_download(download_id: str, doc_id: str = "", library: str = ""):
     total = job.get("total", 0)
     try:
         # Mark as cancelling first so UI shows immediate feedback
-        vault.update_download_job(download_id, current=curr, total=total, status="cancelling", error="Cancelling")
+        vault.update_download_job(download_id, current=curr, total=total, status="cancelling", error=None)
     except Exception:
         logger.debug("Failed to mark job cancelled", exc_info=True)
 
@@ -524,7 +524,7 @@ def pause_download(download_id: str):
 
     if status == "running":
         try:
-            vault.update_download_job(download_id, current=curr, total=total, status="cancelling", error="Pausing")
+            vault.update_download_job(download_id, current=curr, total=total, status="cancelling", error=None)
         except Exception:
             logger.debug("Failed to mark job as pausing", exc_info=True)
 
@@ -537,7 +537,7 @@ def pause_download(download_id: str):
     # Fallback for queued jobs not tracked in memory after app restarts.
     if not paused and status == "queued":
         try:
-            vault.update_download_job(download_id, current=curr, total=total, status="paused", error="Paused by user")
+            vault.update_download_job(download_id, current=curr, total=total, status="paused", error=None)
             paused = True
         except Exception:
             logger.debug("Fallback pause update failed", exc_info=True)

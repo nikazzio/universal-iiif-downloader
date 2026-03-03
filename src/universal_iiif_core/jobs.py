@@ -162,12 +162,12 @@ class JobManager:
             if not info:
                 continue
             if info.get("cancel_requested"):
-                if info.get("pause_requested"):
-                    info["status"] = "paused"
-                    info["message"] = "Paused by user"
-                else:
-                    info["status"] = "cancelled"
-                    info["message"] = "Cancelled before start"
+                info["status"] = "cancelled"
+                info["message"] = "Cancelled before start"
+                continue
+            if info.get("pause_requested"):
+                info["status"] = "paused"
+                info["message"] = "Paused by user"
                 continue
             self._active_downloads.add(next_job)
             info["message"] = "Starting..."
@@ -207,8 +207,8 @@ class JobManager:
 
         try:
             result = task_func(*args, **job_kwargs)
-            if self.is_cancel_requested(job_id):
-                self._mark_cancelled(job_id, job_type, db_job_id)
+            if self.is_stop_requested(job_id):
+                self._mark_stopped(job_id, job_type, db_job_id)
             else:
                 self._mark_success(job_id, result, job_type, db_job_id)
                 completed_successfully = True
@@ -235,7 +235,7 @@ class JobManager:
         if "progress_callback" not in job_kwargs:
             job_kwargs["progress_callback"] = self._build_progress_callback(job_id, job_type, db_job_id)
         if "should_cancel" not in job_kwargs:
-            job_kwargs["should_cancel"] = lambda: self.is_cancel_requested(job_id)
+            job_kwargs["should_cancel"] = lambda: self.is_stop_requested(job_id)
 
     def _build_progress_callback(self, job_id: str, job_type: str, db_job_id: str | None) -> Callable:
         def update_progress(current, total, msg=None):
@@ -283,21 +283,24 @@ class JobManager:
             self._jobs[job_id]["message"] = "Done"
             self._jobs[job_id]["result"] = result
 
-    def _mark_cancelled(self, job_id: str, job_type: str, db_job_id: str | None) -> None:
+    def _mark_stopped(self, job_id: str, job_type: str, db_job_id: str | None) -> None:
         with self._lock:
-            paused = bool(self._jobs.get(job_id, {}).get("pause_requested"))
+            snapshot = self._jobs.get(job_id, {})
+            pause_requested = bool(snapshot.get("pause_requested"))
+            cancel_requested = bool(snapshot.get("cancel_requested"))
 
+        paused = pause_requested and not cancel_requested
         target_status = "paused" if paused else "cancelled"
         target_message = "Paused by user" if paused else "Cancelled by user"
         if job_type == "download":
             try:
-                self._update_db_safe(db_job_id or job_id, status=target_status, error=target_message)
+                self._update_db_safe(db_job_id or job_id, status=target_status, error=None)
             except DatabaseError:
                 logger.debug("Failed to mark %s in vault DB: %s", target_status, db_job_id or job_id, exc_info=True)
         with self._lock:
             self._jobs[job_id]["status"] = target_status
             self._jobs[job_id]["message"] = target_message
-            self._jobs[job_id]["error"] = target_message
+            self._jobs[job_id]["error"] = None
 
     def _mark_failure(self, job_id: str, exc: Exception, job_type: str, db_job_id: str | None) -> None:
         logger.exception("Job %s failed", job_id)
@@ -331,22 +334,24 @@ class JobManager:
             existing = VaultManager().get_download_job(db_job_id or job_id) or {}
             curr = int(existing.get("current", 0) or 0)
             total = int(existing.get("total", 0) or 0)
-            if bool(snapshot.get("pause_requested") or snapshot.get("status") == "paused"):
+            pause_requested = bool(snapshot.get("pause_requested"))
+            cancel_requested = bool(snapshot.get("cancel_requested"))
+            if (pause_requested and not cancel_requested) or snapshot.get("status") == "paused":
                 self._update_db_safe(
                     db_job_id or job_id,
                     status="paused",
-                    error="Paused by user",
+                    error=None,
                     current=curr,
                     total=total,
                 )
                 return
 
-            cancelled = bool(snapshot.get("cancel_requested") or snapshot.get("status") == "cancelled")
+            cancelled = bool(cancel_requested or snapshot.get("status") == "cancelled")
             if cancelled:
                 self._update_db_safe(
                     db_job_id or job_id,
                     status="cancelled",
-                    error="Cancelled by user",
+                    error=None,
                     current=curr,
                     total=total,
                 )
@@ -445,6 +450,7 @@ class JobManager:
             # Direct match
             if id_or_db_id in self._jobs:
                 self._jobs[id_or_db_id]["cancel_requested"] = True
+                self._jobs[id_or_db_id]["pause_requested"] = False
                 found = True
                 if id_or_db_id in self._download_queue:
                     self._download_queue.remove(id_or_db_id)
@@ -458,6 +464,7 @@ class JobManager:
                     if info.get("db_job_id") != id_or_db_id:
                         continue
                     info["cancel_requested"] = True
+                    info["pause_requested"] = False
                     found = True
                     if jid in self._download_queue:
                         self._download_queue.remove(jid)
@@ -467,7 +474,7 @@ class JobManager:
                         to_mark_cancelled.append(info.get("db_job_id") or jid)
         for db_id in to_mark_cancelled:
             try:
-                self._update_db_safe(db_id, status="cancelled", error="Cancelled by user")
+                self._update_db_safe(db_id, status="cancelled", error=None)
             except DatabaseError:
                 logger.debug("Failed to mark queued job cancelled: %s", db_id, exc_info=True)
         return found
@@ -484,7 +491,7 @@ class JobManager:
         self._download_queue.remove(jid)
         info["status"] = "paused"
         info["message"] = "Paused by user"
-        info["error"] = "Paused by user"
+        info["error"] = None
         to_mark_paused.append(db_id)
         self._refresh_queue_positions_locked()
 
@@ -502,7 +509,7 @@ class JobManager:
         elif info.get("status") == "queued":
             info["status"] = "paused"
             info["message"] = "Paused by user"
-            info["error"] = "Paused by user"
+            info["error"] = None
             to_mark_paused.append(db_id)
 
     @staticmethod
@@ -513,12 +520,12 @@ class JobManager:
     ) -> None:
         for db_id in to_mark_cancelling:
             try:
-                update_db_safe(db_id, status="cancelling", error="Pausing")
+                update_db_safe(db_id, status="cancelling", error=None)
             except DatabaseError:
                 logger.debug("Failed to mark job cancelling while pausing: %s", db_id, exc_info=True)
         for db_id in to_mark_paused:
             try:
-                update_db_safe(db_id, status="paused", error="Paused by user")
+                update_db_safe(db_id, status="paused", error=None)
             except DatabaseError:
                 logger.debug("Failed to mark job paused: %s", db_id, exc_info=True)
 
@@ -535,7 +542,6 @@ class JobManager:
                     continue
                 db_id = info.get("db_job_id") or jid
                 info["pause_requested"] = True
-                info["cancel_requested"] = True
 
                 if jid in self._download_queue:
                     self._pause_queued_job_locked(jid, info, db_id, to_mark_paused)
@@ -569,6 +575,12 @@ class JobManager:
         """Check if cancellation has been requested for a given job_id."""
         with self._lock:
             return bool(self._jobs.get(job_id, {}).get("cancel_requested"))
+
+    def is_stop_requested(self, job_id: str) -> bool:
+        """Check if work should stop due to a pause or cancellation request."""
+        with self._lock:
+            info = self._jobs.get(job_id, {})
+            return bool(info.get("cancel_requested") or info.get("pause_requested"))
 
     def get_job(self, job_id: str) -> dict | None:
         """Return stored info for a given job_id."""

@@ -545,7 +545,7 @@ def render_download_status(download_id: str, doc_id: str, library: str, status_d
         )
 
     # 1. Caso Errore
-    if "error" in status or error:
+    if status in {"error", "failed"}:
         return render_error_message("Errore durante il download", str(error or status))
 
     # 2. Caso Completato
@@ -799,9 +799,13 @@ def _download_job_progress(status: str, current: int, total: int, percent: int, 
     )
     if status == "queued":
         return Div(P("In attesa di uno slot libero...", cls="text-[11px] text-slate-400 mt-2"), cls="mt-1")
+    if status == "cancelling":
+        return Div(P("Richiesta di arresto in corso...", cls="text-[11px] text-amber-300 mt-2"), cls="mt-1")
     if status == "paused":
         return Div(P("Download in pausa.", cls="text-[11px] text-violet-300 mt-2"), cls="mt-1")
-    if status in {"error", "cancelled"} and error:
+    if status == "cancelled":
+        return Div(P("Download annullato dall'utente.", cls="text-[11px] text-slate-300 mt-2"), cls="mt-1")
+    if status == "error" and error:
         return Div(P(error, cls="text-[11px] text-rose-300 mt-2"), cls="mt-1")
     return progress
 

@@ -177,6 +177,36 @@ def test_pause_download_requests_pause(monkeypatch):
     assert "Pausa richiesta" in repr(result)
 
 
+def test_pause_download_fallback_clears_error_field(monkeypatch):
+    """Queued fallback pause should not persist an error message."""
+    vm = VaultManager()
+    vm.create_download_job("job_pause_fallback", "DOC_PAUSE_FB", "Gallica", "https://example.org/manifest.json")
+    vm.update_download_job("job_pause_fallback", current=0, total=10, status="queued")
+
+    monkeypatch.setattr(discovery_handlers.job_manager, "request_pause", lambda _job_id: False)
+    result = discovery_handlers.pause_download("job_pause_fallback")
+    assert "Pausa richiesta" in repr(result)
+
+    row = vm.get_download_job("job_pause_fallback") or {}
+    assert str(row.get("status") or "").lower() == "paused"
+    assert row.get("error") is None
+
+
+def test_cancel_download_marks_cancelling_without_error(monkeypatch):
+    """Cancelling state should not be represented as an error message."""
+    vm = VaultManager()
+    vm.create_download_job("job_cancel_api", "DOC_CANCEL_API", "Gallica", "https://example.org/manifest.json")
+    vm.update_download_job("job_cancel_api", current=2, total=10, status="running")
+
+    monkeypatch.setattr(discovery_handlers.job_manager, "request_cancel", lambda _job_id: True)
+    result = discovery_handlers.cancel_download("job_cancel_api")
+    assert "Annullamento richiesto" in repr(result)
+
+    row = vm.get_download_job("job_cancel_api") or {}
+    assert str(row.get("status") or "").lower() == "cancelling"
+    assert row.get("error") is None
+
+
 def test_resume_download_requeues_paused_job(monkeypatch):
     """Resume endpoint should enqueue a new job and remove paused one."""
     vm = VaultManager()
