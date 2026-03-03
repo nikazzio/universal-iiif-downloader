@@ -413,6 +413,9 @@ class JobManager:
                 vm.update_download_job(db_job_id, current=curr, total=total_val, status="completed", error=None)
             else:
                 existing = vm.get_download_job(db_job_id) or {}
+                existing_status = str(existing.get("status") or "").lower()
+                if status == "cancelling" and existing_status in {"paused", "cancelled", "completed", "error"}:
+                    return
                 existing_current = int(existing.get("current", 0) or 0)
                 existing_total = int(existing.get("total", existing_current) or existing_current)
                 c = existing_current if current is None else int(current)

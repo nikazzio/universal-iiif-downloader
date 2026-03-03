@@ -181,17 +181,8 @@ def _download_missing_canvases(
                     self.logger.debug("Progress callback raised an exception", exc_info=True)
 
             if should_cancel and should_cancel():
-                completed = sum(1 for f in downloaded if f)
-                try:
-                    self.vault.update_download_job(
-                        self.job_id or self.ms_id,
-                        current=completed,
-                        total=total_canvases,
-                        status="cancelled",
-                        error="Cancelled by user",
-                    )
-                except Exception:
-                    self.logger.debug("Failed to mark job cancelled in DB", exc_info=True)
+                # Final state (paused vs cancelled) is determined by JobManager
+                # based on pause/cancel flags, so avoid hardcoding "cancelled" here.
                 break
 
     return downloaded, page_stats
