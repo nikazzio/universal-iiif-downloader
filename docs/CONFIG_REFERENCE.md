@@ -102,13 +102,13 @@ Notes:
 
 Libraries supported: `gallica`, `vaticana`, `bodleian`, `institut_de_france`, `unknown`.
 
-Global-only fields (never overridden per library):
+Global-only fields (never overridden by library):
 - `settings.network.global.max_concurrent_download_jobs`
 - `settings.network.global.connect_timeout_s`
 - `settings.network.global.read_timeout_s`
 - `settings.network.global.transport_retries`
 
-Per-library override fields (used only when `use_custom_policy=true`):
+Library override fields (used only when `use_custom_policy=true`):
 - `enabled` (`bool`, default: `true`)
 - `use_custom_policy` (`bool`, default: `true` for `gallica`, otherwise `false`)
 - `workers_per_job` (`int`, `1..8`)
@@ -217,7 +217,7 @@ UI/runtime notes:
 - Profile creation/edit/delete is handled from **Settings > PDF Export**.
 - In Settings, the profile catalog uses one selector with `Nuovo profilo...` for creation and a dedicated delete action.
 - Studio item Export only selects one profile for the current job.
-- Studio item Export keeps profile selection as the primary control; per-job overrides are optional and collapsed by default.
+- Studio item Export keeps profile selection as the primary control; job-specific overrides are optional and collapsed by default.
 - `max_parallel_page_fetch` is actively used for parallel remote high-res page staging.
 
 Backward compatibility:
