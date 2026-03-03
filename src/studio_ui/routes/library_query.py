@@ -8,6 +8,7 @@ from pathlib import Path
 from urllib.parse import quote, unquote
 
 from studio_ui.common.library_constants import to_optional_bool
+from studio_ui.common.page_inventory import resolve_page_inventory
 from studio_ui.common.title_utils import resolve_preferred_title
 from universal_iiif_core.config_manager import get_config_manager
 from universal_iiif_core.library_catalog import ITEM_TYPES, normalize_item_type
@@ -344,11 +345,15 @@ def _collect_docs_and_filters(
 
 
 def _row_to_view_model(row: dict) -> dict:
+    doc_id = str(row.get("id") or "")
     lib = str(row.get("library") or "Unknown")
     item_type = normalize_item_type(str(row.get("item_type") or ""))
     missing_pages = _parse_missing_pages(row.get("missing_pages_json"))
     pdf_local_available, pdf_local_count = _pdf_local_stats(row)
     native_pdf = _to_optional_bool(row.get("has_native_pdf"))
+    local_path_raw = str(row.get("local_path") or "").strip()
+    scans_dir = Path(local_path_raw) / "scans" if local_path_raw else None
+    page_inventory = resolve_page_inventory(doc_id=doc_id, scans_dir=scans_dir)
     return {
         **row,
         "library": lib,
@@ -375,4 +380,6 @@ def _row_to_view_model(row: dict) -> dict:
         "pdf_source": _pdf_source(row),
         "pdf_local_available": pdf_local_available,
         "pdf_local_count": int(pdf_local_count),
+        "local_pages_count": int(page_inventory.local_pages_count),
+        "temp_pages_count": int(page_inventory.temp_pages_count),
     }

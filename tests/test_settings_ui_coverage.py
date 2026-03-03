@@ -43,6 +43,7 @@ def test_settings_page_exposes_critical_runtime_config_keys():
         "settings.viewer.visual_filters.defaults.hue",
         "settings.viewer.visual_filters.defaults.invert",
         "settings.viewer.visual_filters.defaults.grayscale",
+        "settings.viewer.mirador.require_complete_local_images",
         "settings.viewer.visual_filters.presets.default.brightness",
         "settings.viewer.visual_filters.presets.night.contrast",
         "settings.viewer.visual_filters.presets.contrast.saturation",

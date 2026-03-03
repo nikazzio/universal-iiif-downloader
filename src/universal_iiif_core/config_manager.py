@@ -174,6 +174,7 @@ DEFAULT_CONFIG_JSON: dict[str, Any] = {
         },
         "viewer": {
             "mirador": {
+                "require_complete_local_images": True,
                 "openSeadragonOptions": {
                     "maxZoomPixelRatio": 5,
                     "maxZoomLevel": 25,

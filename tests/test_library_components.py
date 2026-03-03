@@ -60,6 +60,13 @@ def test_library_card_shows_pdf_absence_badges():
     assert "0" in rendered
 
 
+def test_library_card_shows_temporary_pages_count():
+    """Cards should display temporary page count from staging area."""
+    rendered = repr(render_library_card(_base_doc(temp_pages_count=4)))
+    assert "Pagine temporanee:" in rendered
+    assert "4" in rendered
+
+
 def test_library_page_includes_filter_persistence_script():
     """Library page should include client-side filter persistence bootstrap."""
     rendered = repr(render_library_page([]))

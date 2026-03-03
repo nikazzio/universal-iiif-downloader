@@ -215,6 +215,48 @@ def test_row_to_view_model_detects_local_pdf_from_filesystem(tmp_path):
         cm.set_downloads_dir(str(old_downloads))
 
 
+def test_row_to_view_model_exposes_temp_pages_count(tmp_path):
+    """Library rows should include temporary pages count from temp staging."""
+    cm = get_config_manager()
+    old_downloads = cm.get_downloads_dir()
+    old_temp = cm.get_temp_dir()
+    try:
+        tmp_downloads = tmp_path / "downloads"
+        tmp_temp = tmp_path / "temp_images"
+        cm.set_downloads_dir(str(tmp_downloads))
+        cm.set_temp_dir(str(tmp_temp))
+
+        doc_id = "DOC_TEMP_PAGES"
+        library = "Gallica"
+        doc_root = tmp_downloads / library / doc_id
+        scans_dir = doc_root / "scans"
+        scans_dir.mkdir(parents=True, exist_ok=True)
+        (scans_dir / "pag_0000.jpg").write_bytes(b"scan")
+
+        temp_doc_dir = tmp_temp / doc_id
+        temp_doc_dir.mkdir(parents=True, exist_ok=True)
+        (temp_doc_dir / "pag_0001.jpg").write_bytes(b"temp")
+        (temp_doc_dir / "pag_0002.jpg").write_bytes(b"temp")
+
+        vm = VaultManager()
+        vm.upsert_manuscript(
+            doc_id,
+            library=library,
+            local_path=str(doc_root),
+            status="partial",
+            asset_state="partial",
+            total_canvases=3,
+            downloaded_canvases=1,
+        )
+        row = vm.get_manuscript(doc_id) or {}
+        model = library_handlers._row_to_view_model(row)
+        assert int(model["local_pages_count"]) == 1
+        assert int(model["temp_pages_count"]) == 2
+    finally:
+        cm.set_downloads_dir(str(old_downloads))
+        cm.set_temp_dir(str(old_temp))
+
+
 def test_library_fragment_uses_config_default_mode_when_missing_mode():
     """When mode is missing, Library should use configurable default mode."""
     cm = get_config_manager()

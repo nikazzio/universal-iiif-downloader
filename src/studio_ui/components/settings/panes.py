@@ -1647,9 +1647,7 @@ def _build_network_pane(cm, s):
     return Div(
         Div(H3("Network & Libraries", cls="text-lg font-bold text-slate-800 dark:text-slate-100 mb-3")),
         P(
-            (
-                "1) imposta i Global Defaults. 2) entra in una libreria e abilita override solo se serve."
-            ),
+            ("1) imposta i Global Defaults. 2) entra in una libreria e abilita override solo se serve."),
             cls="text-xs text-slate-500 dark:text-slate-400 mb-3",
         ),
         Div(
@@ -1801,7 +1799,8 @@ def _visual_preset_controls(filters: dict, preset_name: str):
 def _build_viewer_pane(cm, s):
     _ = cm
     viewer = s.get("viewer", {})
-    mirador = viewer.get("mirador", {}).get("openSeadragonOptions", {})
+    mirador_cfg = viewer.get("mirador", {})
+    mirador = mirador_cfg.get("openSeadragonOptions", {})
     visual = viewer.get("visual_filters", {})
     defaults = visual.get("defaults", {})
     zoom_section = Div(
@@ -1811,6 +1810,15 @@ def _build_viewer_pane(cm, s):
             cls="text-xs text-slate-500 dark:text-slate-400 mb-3",
         ),
         Div(
+            setting_toggle(
+                "Require complete local images",
+                "settings.viewer.mirador.require_complete_local_images",
+                mirador_cfg.get("require_complete_local_images", True),
+                help_text=(
+                    "Blocca Mirador finche non sono presenti tutte le pagine locali. "
+                    "Riduce anteprime remote fuorvianti durante download parziali."
+                ),
+            ),
             setting_number(
                 "Max Zoom Pixel Ratio",
                 "settings.viewer.mirador.openSeadragonOptions.maxZoomPixelRatio",

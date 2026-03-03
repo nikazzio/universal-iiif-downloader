@@ -14,6 +14,7 @@ from urllib.parse import quote, unquote
 from fasthtml.common import Div, RedirectResponse, Request, Script
 
 from studio_ui.common.htmx import history_refresh_script
+from studio_ui.common.page_inventory import resolve_page_inventory
 from studio_ui.common.title_utils import resolve_preferred_title, truncate_title
 from studio_ui.common.toasts import build_toast
 from studio_ui.components.layout import base_layout
@@ -32,6 +33,7 @@ from studio_ui.pages.studio import studio_layout
 from studio_ui.routes import export_handlers as export_monitor_handlers
 from studio_ui.routes.discovery_helpers import start_downloader_thread
 from universal_iiif_core.config_manager import get_config_manager
+from universal_iiif_core.iiif_logic import total_canvases as manifest_total_canvases
 from universal_iiif_core.iiif_resolution import probe_remote_max_dimensions
 from universal_iiif_core.jobs import job_manager
 from universal_iiif_core.logger import get_logger
@@ -107,6 +109,16 @@ def _resolve_studio_title(doc_id: str, meta: dict, ms_row: dict) -> tuple[str, s
     if not full_title or full_title == doc_id:
         full_title = fallback_title or doc_id
     return full_title, truncate_title(full_title, max_len=70, suffix="[...]")
+
+
+def _manifest_total_pages(manifest_json: dict, ms_row: dict | None = None) -> int:
+    """Resolve expected page count from manifest with DB fallback."""
+    with suppress(Exception):
+        total = int(manifest_total_canvases(manifest_json or {}))
+        if total > 0:
+            return total
+    fallback = int((ms_row or {}).get("total_canvases") or 0)
+    return max(fallback, 0)
 
 
 def _to_downloads_url(path: Path) -> str:
@@ -347,11 +359,19 @@ def build_studio_tab_content(
     meta = storage.load_metadata(doc_id, library) or {}
     ms_row = VaultManager().get_manuscript(doc_id) or {}
     full_title, _truncated_title = _resolve_studio_title(doc_id, meta, ms_row)
-    meta = {**meta, "full_display_title": full_title}
     paths = storage.get_document_paths(doc_id, library)
     scans_dir = Path(paths["scans"])
-    total_pages = len(list(scans_dir.glob("pag_*.jpg"))) if scans_dir.exists() else 0
     manifest_json = load_json(paths["manifest"]) or {}
+    inventory = resolve_page_inventory(doc_id=doc_id, scans_dir=scans_dir)
+    manifest_pages = _manifest_total_pages(manifest_json, ms_row)
+    total_pages = int(inventory.local_pages_count)
+    meta = {
+        **meta,
+        "full_display_title": full_title,
+        "local_pages_count": int(inventory.local_pages_count),
+        "temp_pages_count": int(inventory.temp_pages_count),
+        "manifest_total_pages": manifest_pages,
+    }
     encoded_doc = quote(doc_id, safe="")
     encoded_lib = quote(library, safe="")
     export_url = f"/studio/partial/export?doc_id={encoded_doc}&library={encoded_lib}&page={page_idx}"
@@ -384,10 +404,9 @@ def studio_page(request: Request, doc_id: str = "", library: str = "", page: int
         meta = storage.load_metadata(doc_id, library) or {}
         ms_row = VaultManager().get_manuscript(doc_id) or {}
         full_title, title = _resolve_studio_title(doc_id, meta, ms_row)
-        meta = {**meta, "full_display_title": full_title}
-
         scans_dir = Path(paths["scans"])
-        total_pages = len(list(scans_dir.glob("pag_*.jpg"))) if scans_dir.exists() else 0
+        inventory = resolve_page_inventory(doc_id=doc_id, scans_dir=scans_dir)
+        total_pages = int(inventory.local_pages_count)
 
         # Base URLs
         base_url = f"{request.url.scheme}://{request.url.netloc}"
@@ -405,6 +424,34 @@ def studio_page(request: Request, doc_id: str = "", library: str = "", page: int
             return panel
 
         manifest_json, initial_canvas = _load_manifest_payload(manifest_path, page)
+        manifest_pages = _manifest_total_pages(manifest_json, ms_row)
+        meta = {
+            **meta,
+            "full_display_title": full_title,
+            "local_pages_count": int(inventory.local_pages_count),
+            "temp_pages_count": int(inventory.temp_pages_count),
+            "manifest_total_pages": manifest_pages,
+        }
+        require_complete_local = bool(
+            get_config_manager().get_setting("viewer.mirador.require_complete_local_images", True)
+        )
+        allow_remote_preview = str(request.query_params.get("allow_remote_preview") or "").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
+        should_gate_mirador = (
+            require_complete_local
+            and not allow_remote_preview
+            and manifest_pages > 0
+            and int(inventory.local_pages_count) < int(manifest_pages)
+        )
+        mirador_override_url = (
+            f"/studio?doc_id={doc_q}&library={lib_q}&page={int(page)}&allow_remote_preview=1"
+            if should_gate_mirador
+            else ""
+        )
 
         content = studio_layout(
             title,
@@ -420,6 +467,11 @@ def studio_page(request: Request, doc_id: str = "", library: str = "", page: int
             asset_status=str(ms_row.get("asset_state") or ms_row.get("status") or "unknown"),
             has_native_pdf=bool(ms_row.get("has_native_pdf")) if ms_row.get("has_native_pdf") is not None else None,
             pdf_local_available=bool(ms_row.get("pdf_local_available")),
+            local_pages_count=int(inventory.local_pages_count),
+            temp_pages_count=int(inventory.temp_pages_count),
+            manifest_total_pages=int(manifest_pages),
+            mirador_enabled=not should_gate_mirador,
+            mirador_override_url=mirador_override_url,
         )
         if is_hx:
             return content
