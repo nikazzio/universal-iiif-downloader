@@ -153,8 +153,39 @@ def _upsert_saved_entry(
 
 
 def _download_manager_fragment(limit: int = 50):
+    _finalize_orphan_stop_requests()
     jobs = VaultManager().list_download_jobs(limit=limit)
     return render_download_manager(jobs)
+
+
+def _runtime_db_job_ids() -> set[str]:
+    active = job_manager.list_jobs(active_only=True)
+    ids: set[str] = set()
+    for jid, info in active.items():
+        db_id = str(info.get("db_job_id") or jid or "").strip()
+        if db_id:
+            ids.add(db_id)
+    return ids
+
+
+def _finalize_orphan_stop_requests() -> None:
+    """Close stale pausing/cancelling rows that no longer have an in-memory owner."""
+    vault = VaultManager()
+    runtime_ids = _runtime_db_job_ids()
+    for row in vault.get_active_downloads():
+        job_id = str(row.get("job_id") or "").strip()
+        status = str(row.get("status") or "").strip().lower()
+        if not job_id or status not in {"pausing", "cancelling"}:
+            continue
+        if job_id in runtime_ids:
+            continue
+        target = "paused" if status == "pausing" else "cancelled"
+        curr = int(row.get("current") or 0)
+        total = int(row.get("total") or 0)
+        try:
+            vault.update_download_job(job_id, current=curr, total=total, status=target, error=None)
+        except Exception:
+            logger.debug("Failed to finalize orphan stop request for %s", job_id, exc_info=True)
 
 
 def discovery_page(request: Request):
@@ -542,14 +573,22 @@ def cancel_download(download_id: str, doc_id: str = "", library: str = ""):
     except Exception:
         logger.debug("Failed to mark job cancelled", exc_info=True)
 
+    cancelled = False
     try:
-        job_manager.request_cancel(download_id)
+        cancelled = bool(job_manager.request_cancel(download_id))
     except Exception:
         logger.debug("Failed to request job cancellation from JobManager", exc_info=True)
 
+    if not cancelled:
+        # No in-memory worker owns this row anymore; finalize immediately.
+        try:
+            vault.update_download_job(download_id, current=curr, total=total, status="cancelled", error=None)
+        except Exception:
+            logger.debug("Failed to finalize orphan cancellation for %s", download_id, exc_info=True)
+
     return _with_toast(
         _download_manager_fragment(),
-        f"Annullamento richiesto per {doc_id}.",
+        f"Annullamento {'richiesto' if cancelled else 'completato'} per {doc_id}.",
         tone="info",
     )
 
@@ -583,7 +622,7 @@ def pause_download(download_id: str):
         logger.debug("Failed to request job pause", exc_info=True)
 
     # Fallback for queued jobs not tracked in memory after app restarts.
-    if not paused and status == "queued":
+    if not paused and status in {"queued", "running", "pausing"}:
         try:
             vault.update_download_job(download_id, current=curr, total=total, status="paused", error=None)
             paused = True

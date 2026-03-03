@@ -158,34 +158,62 @@ def _download_missing_canvases(
 
     with ThreadPoolExecutor(max_workers=self.workers) as executor:
         future_to_index = {
-            executor.submit(self.download_page, canvas, canvas_idx, self.temp_dir): local_idx
+            executor.submit(self.download_page, canvas, canvas_idx, self.temp_dir, should_cancel): local_idx
             for local_idx, canvas_idx, canvas in to_download
         }
         for future in self._iter_download_futures(future_to_index, len(to_download)):
             idx = future_to_index[future]
-            try:
-                result = future.result()
-            except Exception:
-                result = None
-            if result:
-                fname, stats = result
-                downloaded[idx] = fname
-                if stats:
-                    page_stats.append(stats)
-
-            if progress_callback:
-                completed = sum(1 for f in downloaded if f)
-                try:
-                    progress_callback(completed, total_canvases)
-                except Exception:
-                    self.logger.debug("Progress callback raised an exception", exc_info=True)
+            _consume_download_future(future, idx, downloaded, page_stats)
+            _emit_canvas_progress(self, downloaded, total_canvases, progress_callback)
 
             if should_cancel and should_cancel():
                 # Final state (paused vs cancelled) is determined by JobManager
                 # based on pause/cancel flags, so avoid hardcoding "cancelled" here.
+                _cancel_pending_futures(future_to_index, current=future)
                 break
 
     return downloaded, page_stats
+
+
+def _consume_download_future(
+    future,
+    idx: int,
+    downloaded: list[str | None],
+    page_stats: list[dict[str, object]],
+) -> None:
+    try:
+        result = future.result()
+    except Exception:
+        result = None
+    if not result:
+        return
+    fname, stats = result
+    downloaded[idx] = fname
+    if stats:
+        page_stats.append(stats)
+
+
+def _emit_canvas_progress(
+    self,
+    downloaded: list[str | None],
+    total_canvases: int,
+    progress_callback: Callable[[int, int], None] | None,
+) -> None:
+    if not progress_callback:
+        return
+    completed = sum(1 for f in downloaded if f)
+    try:
+        progress_callback(completed, total_canvases)
+    except Exception:
+        self.logger.debug("Progress callback raised an exception", exc_info=True)
+
+
+def _cancel_pending_futures(future_to_index: dict, current) -> None:
+    for pending in future_to_index:
+        if pending is current:
+            continue
+        with suppress(Exception):
+            pending.cancel()
 
 
 def _iter_download_futures(self, future_to_index: dict, total_to_download: int):

@@ -231,12 +231,64 @@ def test_cancel_download_marks_cancelling_without_error(monkeypatch):
     vm.update_download_job("job_cancel_api", current=2, total=10, status="running")
 
     monkeypatch.setattr(discovery_handlers.job_manager, "request_cancel", lambda _job_id: True)
+    monkeypatch.setattr(
+        discovery_handlers.job_manager,
+        "list_jobs",
+        lambda active_only=False: {"runtime_1": {"db_job_id": "job_cancel_api", "status": "running"}},
+    )
     result = discovery_handlers.cancel_download("job_cancel_api")
     assert "Annullamento richiesto" in repr(result)
 
     row = vm.get_download_job("job_cancel_api") or {}
     assert str(row.get("status") or "").lower() == "cancelling"
     assert row.get("error") is None
+
+
+def test_cancel_download_orphan_finalizes_cancelled(monkeypatch):
+    """When no runtime owner exists, cancel should close immediately."""
+    vm = VaultManager()
+    vm.create_download_job("job_cancel_orphan", "DOC_CANCEL_ORPHAN", "Gallica", "https://example.org/manifest.json")
+    vm.update_download_job("job_cancel_orphan", current=2, total=10, status="running")
+
+    monkeypatch.setattr(discovery_handlers.job_manager, "request_cancel", lambda _job_id: False)
+    result = discovery_handlers.cancel_download("job_cancel_orphan")
+    assert "Annullamento completato" in repr(result)
+
+    row = vm.get_download_job("job_cancel_orphan") or {}
+    assert str(row.get("status") or "").lower() == "cancelled"
+    assert row.get("error") is None
+
+
+def test_pause_download_orphan_running_finalizes_paused(monkeypatch):
+    """When no runtime owner exists, pause on running should close to paused."""
+    vm = VaultManager()
+    vm.create_download_job("job_pause_orphan", "DOC_PAUSE_ORPHAN", "Gallica", "https://example.org/manifest.json")
+    vm.update_download_job("job_pause_orphan", current=3, total=10, status="running")
+
+    monkeypatch.setattr(discovery_handlers.job_manager, "request_pause", lambda _job_id: False)
+    result = discovery_handlers.pause_download("job_pause_orphan")
+    assert "Pausa richiesta" in repr(result)
+
+    row = vm.get_download_job("job_pause_orphan") or {}
+    assert str(row.get("status") or "").lower() == "paused"
+    assert row.get("error") is None
+
+
+def test_download_manager_finalizes_orphan_stop_requests(monkeypatch):
+    """Polling should auto-close stale pausing/cancelling rows without runtime owner."""
+    vm = VaultManager()
+    vm.create_download_job("job_pausing_orphan", "DOC_P_ORPHAN", "Gallica", "https://example.org/manifest.json")
+    vm.create_download_job("job_cancelling_orphan", "DOC_C_ORPHAN", "Gallica", "https://example.org/manifest.json")
+    vm.update_download_job("job_pausing_orphan", current=2, total=10, status="pausing", error=None)
+    vm.update_download_job("job_cancelling_orphan", current=2, total=10, status="cancelling", error=None)
+
+    monkeypatch.setattr(discovery_handlers.job_manager, "list_jobs", lambda active_only=False: {})
+    _ = discovery_handlers.download_manager()
+
+    pausing_row = vm.get_download_job("job_pausing_orphan") or {}
+    cancelling_row = vm.get_download_job("job_cancelling_orphan") or {}
+    assert str(pausing_row.get("status") or "").lower() == "paused"
+    assert str(cancelling_row.get("status") or "").lower() == "cancelled"
 
 
 def test_resume_download_reuses_same_job(monkeypatch):
