@@ -60,3 +60,29 @@ def test_cleanup_stale_data_removes_old_jobs_and_prunes_tmp(tmp_path, monkeypatc
     assert removed >= 1
     # ensure temp folder pruned
     assert not temp_for_doc.exists()
+
+
+def test_reset_active_downloads_closes_transitional_statuses():
+    """Startup reset should close lingering stop requests too."""
+    vm = VaultManager()
+    manifest = "https://example.org/manifest.json"
+    vm.create_download_job("reset_q", "doc-q", "Gallica", manifest)
+    vm.create_download_job("reset_p", "doc-p", "Gallica", manifest)
+    vm.create_download_job("reset_r", "doc-r", "Gallica", manifest)
+    vm.create_download_job("reset_c", "doc-c", "Gallica", manifest)
+    vm.create_download_job("reset_s", "doc-s", "Gallica", manifest)
+
+    vm.update_download_job("reset_q", current=0, total=10, status="queued")
+    vm.update_download_job("reset_p", current=1, total=10, status="pending")
+    vm.update_download_job("reset_r", current=2, total=10, status="running")
+    vm.update_download_job("reset_c", current=3, total=10, status="cancelling", error=None)
+    vm.update_download_job("reset_s", current=4, total=10, status="pausing", error=None)
+
+    updated = vm.reset_active_downloads()
+    assert updated == 5
+
+    assert (vm.get_download_job("reset_q") or {}).get("status") == "error"
+    assert (vm.get_download_job("reset_p") or {}).get("status") == "error"
+    assert (vm.get_download_job("reset_r") or {}).get("status") == "error"
+    assert (vm.get_download_job("reset_c") or {}).get("status") == "cancelled"
+    assert (vm.get_download_job("reset_s") or {}).get("status") == "paused"

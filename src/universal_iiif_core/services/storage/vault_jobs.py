@@ -429,10 +429,11 @@ def delete_export_job(self, job_id: str) -> bool:
 
 
 def reset_active_downloads(self, mark: str = "error", message: str = "Server restarted"):
-    """Mark any downloads left in 'pending' or 'running' state as stopped.
+    """Mark stale active/transitional downloads as terminal on startup.
 
-    This is intended to be called at application startup so that stale
-    download jobs don't cause the UI to continue polling indefinitely.
+    - queued/pending/running -> ``mark`` (default: ``error``)
+    - cancelling -> cancelled
+    - pausing -> paused
     """
     conn = self._get_conn()
     cursor = conn.cursor()
@@ -444,10 +445,18 @@ def reset_active_downloads(self, mark: str = "error", message: str = "Server res
         cursor.execute(
             """
             UPDATE download_jobs
-            SET status = ?,
-                error_message = COALESCE(error_message, ?) || ' (server restart)',
+            SET status = CASE
+                    WHEN status = 'cancelling' THEN 'cancelled'
+                    WHEN status = 'pausing' THEN 'paused'
+                    ELSE ?
+                END,
+                error_message = CASE
+                    WHEN status IN ('cancelling', 'pausing') THEN NULL
+                    ELSE COALESCE(error_message, ?) || ' (server restart)'
+                END,
+                finished_at = CURRENT_TIMESTAMP,
                 updated_at = CURRENT_TIMESTAMP
-            WHERE status IN ('queued', 'pending', 'running')
+            WHERE status IN ('queued', 'pending', 'running', 'cancelling', 'pausing')
         """,
             (mark, message),
         )
