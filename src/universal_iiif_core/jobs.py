@@ -201,21 +201,22 @@ class JobManager:
         job_type: str,
         db_job_id: str | None,
     ) -> None:
-        completed_successfully = False
         self._inject_worker_callbacks(job_id, job_kwargs, job_type, db_job_id)
         self._mark_running(job_id, job_type, db_job_id)
 
         try:
             result = task_func(*args, **job_kwargs)
+        except Exception as exc:
+            if self.is_stop_requested(job_id):
+                self._mark_stopped(job_id, job_type, db_job_id)
+            else:
+                self._mark_failure(job_id, exc, job_type, db_job_id)
+        else:
             if self.is_stop_requested(job_id):
                 self._mark_stopped(job_id, job_type, db_job_id)
             else:
                 self._mark_success(job_id, result, job_type, db_job_id)
-                completed_successfully = True
-        except Exception as exc:
-            self._mark_failure(job_id, exc, job_type, db_job_id)
         finally:
-            self._finalize_incomplete_download(job_id, job_type, db_job_id, completed_successfully)
             self._on_worker_finished(job_id, job_type)
 
     def _on_worker_finished(self, job_id: str, job_type: str) -> None:
@@ -240,15 +241,18 @@ class JobManager:
     def _build_progress_callback(self, job_id: str, job_type: str, db_job_id: str | None) -> Callable:
         def update_progress(current, total, msg=None):
             try:
+                progress_ratio = (current / total) if int(total or 0) > 0 else 0.0
                 self.update_job(
                     job_id,
-                    progress=current / total,
+                    progress=progress_ratio,
                     message=msg or f"Processing {current}/{total}",
                 )
             except Exception:
                 logger.debug("Failed to update in-memory job progress for %s", job_id, exc_info=True)
 
             if job_type != "download":
+                return
+            if self.is_stop_requested(job_id):
                 return
             try:
                 self._update_db_safe(db_job_id or job_id, status="running", current=current, total=total)
@@ -266,7 +270,6 @@ class JobManager:
             return
         try:
             self._update_db_safe(db_job_id or job_id, status="running")
-            VaultManager().update_download_job(db_job_id or job_id, 0, 0, status="running", queue_position=0)
         except DatabaseError:
             logger.debug("_update_db_safe failed to mark running for %s", db_job_id or job_id, exc_info=True)
 
@@ -319,54 +322,6 @@ class JobManager:
             self._jobs[job_id]["error"] = error_text
             self._jobs[job_id]["message"] = message_text
 
-    def _finalize_incomplete_download(
-        self,
-        job_id: str,
-        job_type: str,
-        db_job_id: str | None,
-        completed_successfully: bool,
-    ) -> None:
-        if job_type != "download" or completed_successfully:
-            return
-
-        try:
-            snapshot = self.get_job(job_id) or {}
-            existing = VaultManager().get_download_job(db_job_id or job_id) or {}
-            curr = int(existing.get("current", 0) or 0)
-            total = int(existing.get("total", 0) or 0)
-            pause_requested = bool(snapshot.get("pause_requested"))
-            cancel_requested = bool(snapshot.get("cancel_requested"))
-            if (pause_requested and not cancel_requested) or snapshot.get("status") == "paused":
-                self._update_db_safe(
-                    db_job_id or job_id,
-                    status="paused",
-                    error=None,
-                    current=curr,
-                    total=total,
-                )
-                return
-
-            cancelled = bool(cancel_requested or snapshot.get("status") == "cancelled")
-            if cancelled:
-                self._update_db_safe(
-                    db_job_id or job_id,
-                    status="cancelled",
-                    error=None,
-                    current=curr,
-                    total=total,
-                )
-                return
-            final_error = snapshot.get("message")
-            self._update_db_safe(
-                db_job_id or job_id,
-                status="error",
-                error=final_error,
-                current=curr,
-                total=total,
-            )
-        except DatabaseError:
-            logger.exception("Failed to write final state for %s", db_job_id or job_id)
-
     # --- DB helper methods to keep complexity low ---
     def _maybe_create_db_record(self, job_id: str, db_job_id: str | None, kwargs: dict | Any) -> None:
         try:
@@ -406,6 +361,7 @@ class JobManager:
         """
         try:
             vm = VaultManager()
+            terminal_statuses = {"paused", "cancelled", "completed", "error"}
             if status == "completed":
                 existing = vm.get_download_job(db_job_id) or {}
                 curr = int(existing.get("current", 0) or 0)
@@ -414,13 +370,23 @@ class JobManager:
             else:
                 existing = vm.get_download_job(db_job_id) or {}
                 existing_status = str(existing.get("status") or "").lower()
-                if status == "cancelling" and existing_status in {"paused", "cancelled", "completed", "error"}:
-                    return
+                target_status = str(status or existing_status or "running").lower()
+                is_transitional = target_status in {"queued", "running", "cancelling", "pausing"}
+                preserves_terminal = is_transitional and existing_status in terminal_statuses
+                preserves_stop_transition = target_status == "running" and existing_status in {"cancelling", "pausing"}
+                if (
+                    preserves_terminal
+                    or preserves_stop_transition
+                ):
+                    target_status = existing_status
                 existing_current = int(existing.get("current", 0) or 0)
                 existing_total = int(existing.get("total", existing_current) or existing_current)
                 c = existing_current if current is None else int(current)
                 t = existing_total if total is None else int(total)
-                vm.update_download_job(db_job_id, current=c, total=t, status=(status or "running"), error=error)
+                next_error = error
+                if target_status in {"queued", "running", "cancelling", "pausing", "paused", "cancelled", "completed"}:
+                    next_error = None
+                vm.update_download_job(db_job_id, current=c, total=t, status=target_status, error=next_error)
         except DatabaseError:
             logger.debug("_update_db_safe failed for %s", db_job_id, exc_info=True)
 
@@ -502,13 +468,13 @@ class JobManager:
     def _pause_snapshot_locked(
         info: dict[str, Any],
         db_id: str,
-        to_mark_cancelling: list[str],
+        to_mark_pausing: list[str],
         to_mark_paused: list[str],
     ) -> None:
         if info.get("status") == "running":
-            info["status"] = "cancelling"
+            info["status"] = "pausing"
             info["message"] = "Pausing..."
-            to_mark_cancelling.append(db_id)
+            to_mark_pausing.append(db_id)
         elif info.get("status") == "queued":
             info["status"] = "paused"
             info["message"] = "Paused by user"
@@ -517,15 +483,15 @@ class JobManager:
 
     @staticmethod
     def _apply_pause_status_updates(
-        to_mark_cancelling: list[str],
+        to_mark_pausing: list[str],
         to_mark_paused: list[str],
         update_db_safe: Callable[..., None],
     ) -> None:
-        for db_id in to_mark_cancelling:
+        for db_id in to_mark_pausing:
             try:
-                update_db_safe(db_id, status="cancelling", error=None)
+                update_db_safe(db_id, status="pausing", error=None)
             except DatabaseError:
-                logger.debug("Failed to mark job cancelling while pausing: %s", db_id, exc_info=True)
+                logger.debug("Failed to mark job pausing: %s", db_id, exc_info=True)
         for db_id in to_mark_paused:
             try:
                 update_db_safe(db_id, status="paused", error=None)
@@ -535,7 +501,7 @@ class JobManager:
     def request_pause(self, id_or_db_id: str) -> bool:
         """Request pause for a job by either job_id or external db_job_id."""
         to_mark_paused: list[str] = []
-        to_mark_cancelling: list[str] = []
+        to_mark_pausing: list[str] = []
 
         with self._lock:
             target_job_ids = self._target_job_ids_locked(id_or_db_id)
@@ -549,10 +515,10 @@ class JobManager:
                 if jid in self._download_queue:
                     self._pause_queued_job_locked(jid, info, db_id, to_mark_paused)
                 else:
-                    self._pause_snapshot_locked(info, db_id, to_mark_cancelling, to_mark_paused)
+                    self._pause_snapshot_locked(info, db_id, to_mark_pausing, to_mark_paused)
 
-        self._apply_pause_status_updates(to_mark_cancelling, to_mark_paused, self._update_db_safe)
-        return bool(to_mark_cancelling or to_mark_paused)
+        self._apply_pause_status_updates(to_mark_pausing, to_mark_paused, self._update_db_safe)
+        return bool(to_mark_pausing or to_mark_paused)
 
     def prioritize_download(self, id_or_db_id: str) -> bool:
         """Move a queued download to the front of the queue."""

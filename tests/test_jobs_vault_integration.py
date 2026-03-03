@@ -108,11 +108,11 @@ def test_job_cancel_request_marks_final_cancelled_state(tmp_path, monkeypatch):
 
     for _ in range(300):
         st = job_manager.get_job(jid).get("status")
-        if st == "failed":
+        if st == "cancelled":
             break
         time.sleep(0.01)
     else:
-        pytest.fail("Cancelled job did not transition to failed state")
+        pytest.fail("Cancelled job did not transition to cancelled state")
 
     vm = VaultManager(db_path)
     for _ in range(300):

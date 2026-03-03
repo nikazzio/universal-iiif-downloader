@@ -94,7 +94,7 @@ def update_download_job(
 
                 log_message = "Download update: job=%s doc=%s title=%s %s/%s status=%s"
                 log_args = (job_id, doc_id or "-", title or "-", current, total, status)
-                if status in {"completed", "error", "cancelled", "cancelling", "paused"}:
+                if status in {"completed", "error", "cancelled", "cancelling", "pausing", "paused"}:
                     logger.info(log_message, *log_args)
                 else:
                     logger.debug(log_message, *log_args)
@@ -151,11 +151,12 @@ def get_active_downloads(self):
         """
         SELECT job_id, doc_id, library, status, current_page, total_pages, error_message, queue_position, priority
         FROM download_jobs
-        WHERE status IN ('running', 'queued', 'cancelling')
+        WHERE status IN ('running', 'queued', 'cancelling', 'pausing')
         ORDER BY CASE
             WHEN status = 'running' THEN 0
-            WHEN status = 'cancelling' THEN 1
-            ELSE 2
+            WHEN status = 'pausing' THEN 1
+            WHEN status = 'cancelling' THEN 2
+            ELSE 3
         END, priority DESC, queue_position ASC, updated_at DESC
     """
     )
@@ -238,10 +239,11 @@ def list_download_jobs(self, limit: int = 50):
                 CASE
                     WHEN dj.status = 'running' THEN 0
                     WHEN dj.status = 'queued' THEN 1
-                    WHEN dj.status = 'cancelling' THEN 2
-                    WHEN dj.status = 'paused' THEN 3
-                    WHEN dj.status = 'error' THEN 4
-                    ELSE 5
+                    WHEN dj.status = 'pausing' THEN 2
+                    WHEN dj.status = 'cancelling' THEN 3
+                    WHEN dj.status = 'paused' THEN 4
+                    WHEN dj.status = 'error' THEN 5
+                    ELSE 6
                 END,
                 dj.priority DESC,
                 dj.queue_position ASC,

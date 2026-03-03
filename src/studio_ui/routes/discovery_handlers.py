@@ -477,6 +477,16 @@ def download_manager():
     return _download_manager_fragment()
 
 
+def _pause_guard_response(status: str):
+    if status == "paused":
+        return _with_feedback_toast("Già in pausa", "Questo job è già in pausa.", tone="info")
+    if status == "pausing":
+        return _with_feedback_toast("Pausa in corso", "La pausa è già stata richiesta.", tone="info")
+    if status not in {"queued", "running"}:
+        return _with_feedback_toast("Pausa non disponibile", "Il job non è in uno stato pausabile.", tone="info")
+    return None
+
+
 def cancel_download(download_id: str, doc_id: str = "", library: str = ""):
     """Cancel a queued/running download job."""
     vault = VaultManager()
@@ -517,14 +527,13 @@ def pause_download(download_id: str):
     curr = int(job.get("current") or 0)
     total = int(job.get("total") or 0)
 
-    if status == "paused":
-        return _with_feedback_toast("Già in pausa", "Questo job è già in pausa.", tone="info")
-    if status not in {"queued", "running", "cancelling"}:
-        return _with_feedback_toast("Pausa non disponibile", "Il job non è in uno stato pausabile.", tone="info")
+    guard = _pause_guard_response(status)
+    if guard is not None:
+        return guard
 
     if status == "running":
         try:
-            vault.update_download_job(download_id, current=curr, total=total, status="cancelling", error=None)
+            vault.update_download_job(download_id, current=curr, total=total, status="pausing", error=None)
         except Exception:
             logger.debug("Failed to mark job as pausing", exc_info=True)
 
@@ -605,7 +614,7 @@ def remove_download(download_id: str):
     if not job:
         return _with_feedback_toast("Job non trovato", "Il download selezionato non esiste.", tone="info")
 
-    if status in {"queued", "running", "cancelling", "pending", "starting"}:
+    if status in {"queued", "running", "pausing", "cancelling", "pending", "starting"}:
         return _with_feedback_toast("Rimozione non disponibile", "Annulla prima il download attivo.", tone="info")
 
     if not vault.delete_download_job(download_id):
