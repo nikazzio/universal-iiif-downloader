@@ -38,8 +38,16 @@ class HostRateLimiter:
         self._cooldown_until = 0.0
         self._lock = threading.Lock()
 
-    def wait_turn(self, *, window_s: int, max_requests: int) -> None:
+    def wait_turn(
+        self,
+        *,
+        window_s: int,
+        max_requests: int,
+        should_cancel: Callable[[], bool] | None = None,
+    ) -> bool:
         while True:
+            if should_cancel and should_cancel():
+                return False
             wait_s = 0.0
             now = time.time()
             with self._lock:
@@ -50,7 +58,7 @@ class HostRateLimiter:
                     self._timestamps.popleft()
                 if len(self._timestamps) < max_requests and wait_s <= 0:
                     self._timestamps.append(now)
-                    return
+                    return True
                 if self._timestamps:
                     wait_s = max(wait_s, self._timestamps[0] + float(window_s) - now)
                 else:
@@ -147,27 +155,35 @@ class PageDownloader:
         self.cm = downloader.cm
         self.base_url = CanvasServiceLocator.locate(canvas)
 
-    def fetch(self) -> tuple[str, dict[str, Any]] | None:
+    def fetch(self, should_cancel: Callable[[], bool] | None = None) -> tuple[str, dict[str, Any]] | None:
         """Download (or resume) the requested canvas."""
+        if should_cancel and should_cancel():
+            return None
         if not self.base_url:
             return None
         base_url = self.base_url
 
+        if should_cancel and should_cancel():
+            return None
         if resumed := self.resume_cached():
             return resumed
 
+        if should_cancel and should_cancel():
+            return None
         iiif_q = str(self.cm.get_setting("images.iiif_quality", "default") or "default")
         strategy = self._get_strategy()
         urls_to_try = [f"{base_url}/full/{self._format_dimension(s)}/0/{iiif_q}.jpg" for s in strategy]
 
         downloaded = self.downloader._download_with_retries(
-            urls_to_try, self.filename, self.canvas, self.index, base_url
+            urls_to_try, self.filename, self.canvas, self.index, base_url, should_cancel=should_cancel
         )
         if downloaded:
             return downloaded
 
+        if should_cancel and should_cancel():
+            return None
         return self.downloader._stitch_tiles_from_service(
-            self.cm, self.filename, base_url, self.canvas, self.index, iiif_q
+            self.cm, self.filename, base_url, self.canvas, self.index, iiif_q, should_cancel=should_cancel
         )
 
     def _get_strategy(self) -> list[str]:
@@ -480,10 +496,10 @@ class IIIFDownloader:
             self._host_limiter.set_cooldown(int(self.network_policy.get("cooldown_on_429_s") or 0))
         return wait
 
-    def _wait_rate_gate(self) -> None:
+    def _wait_rate_gate(self, should_cancel: Callable[[], bool] | None = None) -> bool:
         window_s = int(self.network_policy.get("burst_window_s") or 60)
         max_requests = int(self.network_policy.get("burst_max_requests") or 100)
-        self._host_limiter.wait_turn(window_s=window_s, max_requests=max_requests)
+        return self._host_limiter.wait_turn(window_s=window_s, max_requests=max_requests, should_cancel=should_cancel)
 
     def extract_metadata(self):
         """Extract and save basic metadata from the manifest."""
@@ -535,13 +551,80 @@ class IIIFDownloader:
             return items
         return []
 
-    def download_page(self, canvas: dict[str, Any], index: int, folder: Path | str):
+    def download_page(
+        self,
+        canvas: dict[str, Any],
+        index: int,
+        folder: Path | str,
+        should_cancel: Callable[[], bool] | None = None,
+    ):
         """Download a single page image from a canvas."""
         try:
-            return PageDownloader(self, canvas, index, folder).fetch()
+            return PageDownloader(self, canvas, index, folder).fetch(should_cancel=should_cancel)
         except Exception:
             self.logger.debug("Failed to download page %s", index, exc_info=True)
             return None
+
+    @staticmethod
+    def _stop_requested(should_cancel: Callable[[], bool] | None) -> bool:
+        return bool(should_cancel and should_cancel())
+
+    def _wait_before_download_attempt(self, should_cancel: Callable[[], bool] | None = None) -> bool:
+        if self._stop_requested(should_cancel):
+            return False
+        now = time.time()
+        if now < self._backoff_until:
+            jitter = SECURE_RANDOM.uniform(0.1, 0.5)
+            time.sleep(self._backoff_until - now + jitter)
+        if self._stop_requested(should_cancel):
+            return False
+        if not self._wait_rate_gate(should_cancel=should_cancel):
+            return False
+        delay = SECURE_RANDOM.uniform(
+            float(self.network_policy.get("min_delay_s") or 0.1),
+            float(self.network_policy.get("max_delay_s") or 0.2),
+        )
+        if delay > 0:
+            time.sleep(delay)
+        return not self._stop_requested(should_cancel)
+
+    def _save_download_response(
+        self,
+        response: requests.Response,
+        *,
+        filename: Path,
+        canvas: dict[str, Any],
+        index: int,
+        url: str,
+    ) -> tuple[str, dict[str, Any]] | None:
+        if response.status_code != 200 or not response.content:
+            return None
+        with filename.open("wb") as file_handle:
+            file_handle.write(response.content)
+        with Image.open(str(filename)) as img:
+            width, height = img.size
+        stats = {
+            "page_index": index,
+            "filename": filename.name,
+            "original_url": url,
+            "thumbnail_url": self._get_thumbnail_url(canvas),
+            "size_bytes": len(response.content),
+            "width": width,
+            "height": height,
+            "resolution_category": "High" if width > 2500 else "Medium",
+        }
+        return str(filename), stats
+
+    def _apply_backoff_for_status(self, status_code: int, retry_after_header: str | None, *, attempt: int) -> None:
+        if status_code not in {403, 429}:
+            return
+        wait = self._compute_backoff_wait(
+            attempt=attempt,
+            status_code=int(status_code),
+            retry_after_header=retry_after_header,
+        )
+        with self._lock:
+            self._backoff_until = time.time() + wait
 
     def _download_with_retries(
         self,
@@ -550,63 +633,48 @@ class IIIFDownloader:
         canvas: dict[str, Any],
         index: int,
         base_url: str,
+        should_cancel: Callable[[], bool] | None = None,
     ):
         retries = max(1, int(self.network_policy.get("retry_max_attempts") or 1))
         for attempt in range(retries):
-            now = time.time()
-            if now < self._backoff_until:
-                jitter = SECURE_RANDOM.uniform(0.1, 0.5)
-                time.sleep(self._backoff_until - now + jitter)
-            self._wait_rate_gate()
-            delay = SECURE_RANDOM.uniform(
-                float(self.network_policy.get("min_delay_s") or 0.1),
-                float(self.network_policy.get("max_delay_s") or 0.2),
-            )
-            time.sleep(delay)
+            if not self._wait_before_download_attempt(should_cancel=should_cancel):
+                return None
 
             for url in urls_to_try:
+                if self._stop_requested(should_cancel):
+                    return None
                 try:
-                    r = self.session.get(url, timeout=self._request_timeout)
-                    if r.status_code == 200 and r.content:
-                        with filename.open("wb") as f:
-                            f.write(r.content)
-                        with Image.open(str(filename)) as img:
-                            width, height = img.size
-                        stats = {
-                            "page_index": index,
-                            "filename": filename.name,
-                            "original_url": url,
-                            "thumbnail_url": self._get_thumbnail_url(canvas),
-                            "size_bytes": len(r.content),
-                            "width": width,
-                            "height": height,
-                            "resolution_category": "High" if width > 2500 else "Medium",
-                        }
-                        return str(filename), stats
-                    if r.status_code != 200:
+                    response = self.session.get(url, timeout=self._request_timeout)
+                    saved = self._save_download_response(
+                        response,
+                        filename=filename,
+                        canvas=canvas,
+                        index=index,
+                        url=url,
+                    )
+                    if saved:
+                        return saved
+                    if response.status_code != 200:
                         self.logger.debug(
                             "Canvas %s returned status %s for %s: %s",
                             index,
-                            r.status_code,
+                            response.status_code,
                             url,
-                            r.text[:200],
+                            response.text[:200],
                         )
-                    if r.status_code in {403, 429}:
-                        wait = self._compute_backoff_wait(
-                            attempt=attempt,
-                            status_code=int(r.status_code),
-                            retry_after_header=r.headers.get("Retry-After"),
-                        )
-                        with self._lock:
-                            self._backoff_until = time.time() + wait
+                    self._apply_backoff_for_status(
+                        int(response.status_code),
+                        response.headers.get("Retry-After"),
+                        attempt=attempt,
+                    )
+                    if response.status_code in {403, 429}:
                         break
                 except Exception as exc:
                     self.logger.debug("Download attempt failed for %s: %s", url, exc, exc_info=True)
                     continue
-        if attempt == retries - 1:
-            message = f"Failed to download canvas {index} after {retries} attempts; URLs tried: {urls_to_try}"
-            self.logger.warning(message)
-            self._mark_job_error(index, message)
+        message = f"Failed to download canvas {index} after {retries} attempts; URLs tried: {urls_to_try}"
+        self.logger.warning(message)
+        self._mark_job_error(index, message)
         return None
 
     def _mark_job_error(self, current_index: int, message: str) -> None:
@@ -637,11 +705,16 @@ class IIIFDownloader:
         canvas: dict[str, Any],
         index: int,
         iiif_q: str,
+        should_cancel: Callable[[], bool] | None = None,
     ):
+        if should_cancel and should_cancel():
+            return None
         acquired = self._tile_stitch_sem.acquire(timeout=1)
         if not acquired:
             return None
         try:
+            if should_cancel and should_cancel():
+                return None
             try:
                 max_ram_gb = float(cm.get_setting("images.tile_stitch_max_ram_gb", 2) or 2)
             except (TypeError, ValueError):

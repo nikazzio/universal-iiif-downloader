@@ -512,8 +512,8 @@ def render_download_status(download_id: str, doc_id: str, library: str, status_d
     progress_bg_cls = "w-full bg-slate-700 rounded-full h-2.5 mb-2"
     progress_bar_cls = "bg-indigo-500 h-2.5 rounded-full transition-all duration-500 ease-out"
 
-    # 1.b Cancelling state
-    if status == "cancelling":
+    # 1.b Stopping states
+    if status in {"cancelling", "pausing"}:
         header = Div(
             Div(
                 H3(title, cls=header_title_cls),
@@ -526,14 +526,23 @@ def render_download_status(download_id: str, doc_id: str, library: str, status_d
 
         percent_block = Div(
             Div(f"{percent}%", cls=percent_cls),
-            P("Annullamento...", cls="text-sm text-red-400"),
+            P(
+                "Annullamento..." if status == "cancelling" else "Messa in pausa...",
+                cls="text-sm text-red-400" if status == "cancelling" else "text-sm text-amber-300",
+            ),
             cls="flex items-center gap-4 mb-4",
         )
 
         progress_bar = Div(Div(Div(cls=progress_bar_cls, style=f"width: {percent}%"), cls=progress_bg_cls))
 
         body = Div(
-            header, percent_block, progress_bar, P("Annullamento in corso...", cls="text-xs text-slate-500 italic")
+            header,
+            percent_block,
+            progress_bar,
+            P(
+                "Annullamento in corso..." if status == "cancelling" else "Pausa in corso...",
+                cls="text-xs text-slate-500 italic",
+            ),
         )
 
         return Div(
@@ -545,8 +554,28 @@ def render_download_status(download_id: str, doc_id: str, library: str, status_d
         )
 
     # 1. Caso Errore
-    if "error" in status or error:
+    if status in {"error", "failed"}:
         return render_error_message("Errore durante il download", str(error or status))
+
+    # 1.c Terminal stop states (must not keep polling)
+    if status in {"paused", "cancelled"}:
+        icon = "⏸️" if status == "paused" else "🛑"
+        title_text = "Download in pausa" if status == "paused" else "Download annullato"
+        detail_text = (
+            f"Il download di '{doc_id}' è in pausa. Puoi riprenderlo dal Download Manager."
+            if status == "paused"
+            else f"Il download di '{doc_id}' è stato annullato."
+        )
+        return Div(
+            Div(
+                Span(icon, cls="text-4xl mb-4 block"),
+                H3(title_text, cls="text-xl font-bold text-slate-100 mb-2"),
+                P(detail_text, cls="text-slate-400 mb-2"),
+                P(f"Stato finale: {status.upper()}", cls="text-xs text-slate-500"),
+                cls="text-center",
+            ),
+            cls="bg-slate-900/40 border border-slate-700 p-8 rounded-lg shadow-sm",
+        )
 
     # 2. Caso Completato
     if percent >= 100 or status == "completed":
@@ -635,7 +664,7 @@ def render_pdf_capability_badge(has_pdf: bool) -> Div:
 
 def render_download_manager(jobs: list[dict]) -> Div:
     """Render the full download manager panel."""
-    active_statuses = {"queued", "running", "cancelling", "pending", "starting"}
+    active_statuses = {"queued", "running", "cancelling", "pausing", "pending", "starting"}
     should_poll = any(str(job.get("status") or "").lower() in active_statuses for job in jobs)
 
     if not jobs:
@@ -669,6 +698,7 @@ def _download_job_badge(status: str, queue_position: int) -> tuple[str, str]:
         "running": "bg-indigo-800 text-indigo-100",
         "queued": "bg-slate-700 text-slate-100",
         "cancelling": "bg-amber-700 text-amber-100",
+        "pausing": "bg-amber-700 text-amber-100",
         "paused": "bg-violet-800 text-violet-100",
         "completed": "bg-emerald-700 text-emerald-100",
         "cancelled": "bg-slate-700 text-slate-200",
@@ -757,7 +787,7 @@ def _download_job_actions(status: str, job_id: str, doc_id: str, library: str) -
             )
         )
 
-    if status in {"running", "queued", "cancelling"}:
+    if status in {"running", "queued", "cancelling", "pausing"}:
         right_actions.append(
             Button(
                 "⛔ Annulla",
@@ -799,9 +829,15 @@ def _download_job_progress(status: str, current: int, total: int, percent: int, 
     )
     if status == "queued":
         return Div(P("In attesa di uno slot libero...", cls="text-[11px] text-slate-400 mt-2"), cls="mt-1")
+    if status == "cancelling":
+        return Div(P("Richiesta di arresto in corso...", cls="text-[11px] text-amber-300 mt-2"), cls="mt-1")
+    if status == "pausing":
+        return Div(P("Messa in pausa in corso...", cls="text-[11px] text-amber-300 mt-2"), cls="mt-1")
     if status == "paused":
         return Div(P("Download in pausa.", cls="text-[11px] text-violet-300 mt-2"), cls="mt-1")
-    if status in {"error", "cancelled"} and error:
+    if status == "cancelled":
+        return Div(P("Download annullato dall'utente.", cls="text-[11px] text-slate-300 mt-2"), cls="mt-1")
+    if status == "error" and error:
         return Div(P(error, cls="text-[11px] text-rose-300 mt-2"), cls="mt-1")
     return progress
 

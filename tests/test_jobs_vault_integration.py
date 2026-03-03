@@ -80,8 +80,8 @@ def test_job_records_failure_in_db(tmp_path, monkeypatch):
     assert rec.get("error")
 
 
-def test_job_cancel_request_marks_final_error(tmp_path, monkeypatch):
-    """Ensure cancellation request is observable by task and reflected in DB final state."""
+def test_job_cancel_request_marks_final_cancelled_state(tmp_path, monkeypatch):
+    """Ensure cancellation request is reflected as a cancelled (non-error) final DB state."""
     db_path = str(tmp_path / "vault.db")
     import universal_iiif_core.jobs as jobs_mod
 
@@ -108,18 +108,63 @@ def test_job_cancel_request_marks_final_error(tmp_path, monkeypatch):
 
     for _ in range(300):
         st = job_manager.get_job(jid).get("status")
-        if st == "failed":
+        if st == "cancelled":
             break
         time.sleep(0.01)
     else:
-        pytest.fail("Cancelled job did not transition to failed state")
+        pytest.fail("Cancelled job did not transition to cancelled state")
 
     vm = VaultManager(db_path)
-    rec = vm.get_download_job("canceljob")
+    for _ in range(300):
+        rec = vm.get_download_job("canceljob")
+        if rec and str(rec.get("status") or "").lower() == "cancelled":
+            break
+        time.sleep(0.01)
+    else:
+        pytest.fail("Cancelled job did not transition to cancelled state in DB")
+
     assert rec is not None
-    assert rec.get("status") in {"error", "cancelled"}
-    assert rec.get("error") in (
-        "Cancelled by user",
-        "task cancelled cooperatively",
-        "Error: task cancelled cooperatively",
+    assert rec.get("status") == "cancelled"
+    assert rec.get("error") is None
+
+
+def test_job_pause_request_marks_final_paused_state(tmp_path, monkeypatch):
+    """Pause request on a running task should end in paused, not cancelled."""
+    db_path = str(tmp_path / "vault.db")
+    import universal_iiif_core.jobs as jobs_mod
+
+    monkeypatch.setattr(jobs_mod, "VaultManager", lambda: VaultManager(db_path))
+    job_manager._jobs.clear()
+    job_manager._download_queue.clear()
+    job_manager._active_downloads.clear()
+
+    def pausable_task(progress_callback=None, should_cancel=None, **kwargs):
+        for step in range(1, 40):
+            time.sleep(0.01)
+            if progress_callback:
+                progress_callback(step, 40)
+            if should_cancel and should_cancel():
+                raise RuntimeError("task paused cooperatively")
+        return "should-not-complete"
+
+    job_manager.submit_job(
+        pausable_task,
+        kwargs={"db_job_id": "pausejob", "doc_id": "doc4", "library": "Lib"},
+        job_type="download",
     )
+
+    time.sleep(0.05)
+    assert job_manager.request_pause("pausejob") is True
+
+    vm = VaultManager(db_path)
+    for _ in range(300):
+        rec = vm.get_download_job("pausejob")
+        if rec and str(rec.get("status") or "").lower() == "paused":
+            break
+        time.sleep(0.01)
+    else:
+        pytest.fail("Paused job did not transition to paused state in DB")
+
+    assert rec is not None
+    assert rec.get("status") == "paused"
+    assert rec.get("error") is None

@@ -11,6 +11,44 @@ from ...logger import get_logger
 logger = get_logger(__name__)
 
 
+def _status_and_error_updates(status: str, error: str | None) -> tuple[list[str], list[Any], set[str]]:
+    transitional_statuses = {"queued", "running", "cancelling", "pausing"}
+    terminal_statuses = {"paused", "cancelled", "completed", "error"}
+    if status in transitional_statuses:
+        updates = [
+            "status = CASE "
+            "WHEN status IN ('paused', 'cancelled', 'completed', 'error') THEN status "
+            "ELSE ? END",
+            "error_message = CASE "
+            "WHEN status IN ('paused', 'cancelled', 'completed', 'error') THEN error_message "
+            "ELSE ? END",
+        ]
+        return updates, [status, error], terminal_statuses
+    return ["status = ?", "error_message = ?"], [status, error], terminal_statuses
+
+
+def _append_optional_queue_fields(
+    updates: list[str],
+    params: list[Any],
+    queue_position: int | None,
+    priority: int | None,
+) -> None:
+    if queue_position is not None:
+        updates.append("queue_position = ?")
+        params.append(int(queue_position))
+    if priority is not None:
+        updates.append("priority = ?")
+        params.append(int(priority))
+
+
+def _append_lifecycle_updates(updates: list[str], status: str, terminal_statuses: set[str]) -> None:
+    if status == "running":
+        updates.append("started_at = COALESCE(started_at, CURRENT_TIMESTAMP)")
+        updates.append("finished_at = NULL")
+    if status in terminal_statuses:
+        updates.append("finished_at = CURRENT_TIMESTAMP")
+
+
 def create_download_job(self, job_id: str, doc_id: str, library: str, manifest_url: str):
     """Crea traccia del download nel DB."""
     conn = self._get_conn()
@@ -58,22 +96,14 @@ def update_download_job(
         updates = [
             "current_page = ?",
             "total_pages = ?",
-            "status = ?",
-            "error_message = ?",
             "updated_at = CURRENT_TIMESTAMP",
         ]
-        params: list[Any] = [current, total, status, error]
-        if queue_position is not None:
-            updates.append("queue_position = ?")
-            params.append(int(queue_position))
-        if priority is not None:
-            updates.append("priority = ?")
-            params.append(int(priority))
-        if status == "running":
-            updates.append("started_at = COALESCE(started_at, CURRENT_TIMESTAMP)")
-            updates.append("finished_at = NULL")
-        if status in {"completed", "error", "cancelled", "paused"}:
-            updates.append("finished_at = CURRENT_TIMESTAMP")
+        params: list[Any] = [current, total]
+        status_updates, status_params, terminal_statuses = _status_and_error_updates(status, error)
+        updates.extend(status_updates)
+        params.extend(status_params)
+        _append_optional_queue_fields(updates, params, queue_position, priority)
+        _append_lifecycle_updates(updates, status, terminal_statuses)
         sql = f"UPDATE download_jobs SET {', '.join(updates)} WHERE job_id = ?"  # noqa: S608
         params.append(job_id)
         cursor.execute(sql, tuple(params))
@@ -94,7 +124,7 @@ def update_download_job(
 
                 log_message = "Download update: job=%s doc=%s title=%s %s/%s status=%s"
                 log_args = (job_id, doc_id or "-", title or "-", current, total, status)
-                if status in {"completed", "error", "cancelled", "cancelling", "paused"}:
+                if status in {"completed", "error", "cancelled", "cancelling", "pausing", "paused"}:
                     logger.info(log_message, *log_args)
                 else:
                     logger.debug(log_message, *log_args)
@@ -151,11 +181,12 @@ def get_active_downloads(self):
         """
         SELECT job_id, doc_id, library, status, current_page, total_pages, error_message, queue_position, priority
         FROM download_jobs
-        WHERE status IN ('running', 'queued', 'cancelling')
+        WHERE status IN ('running', 'queued', 'cancelling', 'pausing')
         ORDER BY CASE
             WHEN status = 'running' THEN 0
-            WHEN status = 'cancelling' THEN 1
-            ELSE 2
+            WHEN status = 'pausing' THEN 1
+            WHEN status = 'cancelling' THEN 2
+            ELSE 3
         END, priority DESC, queue_position ASC, updated_at DESC
     """
     )
@@ -238,10 +269,11 @@ def list_download_jobs(self, limit: int = 50):
                 CASE
                     WHEN dj.status = 'running' THEN 0
                     WHEN dj.status = 'queued' THEN 1
-                    WHEN dj.status = 'cancelling' THEN 2
-                    WHEN dj.status = 'paused' THEN 3
-                    WHEN dj.status = 'error' THEN 4
-                    ELSE 5
+                    WHEN dj.status = 'pausing' THEN 2
+                    WHEN dj.status = 'cancelling' THEN 3
+                    WHEN dj.status = 'paused' THEN 4
+                    WHEN dj.status = 'error' THEN 5
+                    ELSE 6
                 END,
                 dj.priority DESC,
                 dj.queue_position ASC,
@@ -427,10 +459,11 @@ def delete_export_job(self, job_id: str) -> bool:
 
 
 def reset_active_downloads(self, mark: str = "error", message: str = "Server restarted"):
-    """Mark any downloads left in 'pending' or 'running' state as stopped.
+    """Mark stale active/transitional downloads as terminal on startup.
 
-    This is intended to be called at application startup so that stale
-    download jobs don't cause the UI to continue polling indefinitely.
+    - queued/pending/running -> ``mark`` (default: ``error``)
+    - cancelling -> cancelled
+    - pausing -> paused
     """
     conn = self._get_conn()
     cursor = conn.cursor()
@@ -442,10 +475,18 @@ def reset_active_downloads(self, mark: str = "error", message: str = "Server res
         cursor.execute(
             """
             UPDATE download_jobs
-            SET status = ?,
-                error_message = COALESCE(error_message, ?) || ' (server restart)',
+            SET status = CASE
+                    WHEN status = 'cancelling' THEN 'cancelled'
+                    WHEN status = 'pausing' THEN 'paused'
+                    ELSE ?
+                END,
+                error_message = CASE
+                    WHEN status IN ('cancelling', 'pausing') THEN NULL
+                    ELSE COALESCE(error_message, ?) || ' (server restart)'
+                END,
+                finished_at = CURRENT_TIMESTAMP,
                 updated_at = CURRENT_TIMESTAMP
-            WHERE status IN ('queued', 'pending', 'running')
+            WHERE status IN ('queued', 'pending', 'running', 'cancelling', 'pausing')
         """,
             (mark, message),
         )

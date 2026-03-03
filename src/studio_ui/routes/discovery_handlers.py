@@ -63,6 +63,37 @@ def _downloads_doc_path(library: str, doc_id: str) -> Path:
     return cm.get_downloads_dir() / library / doc_id
 
 
+def _find_manuscript_by_id_and_library(doc_id: str, library: str) -> dict | None:
+    target_id = str(doc_id or "").strip()
+    target_library = str(library or "").strip()
+    if not target_id or not target_library:
+        return None
+
+    vm = VaultManager()
+    for row in vm.get_all_manuscripts():
+        if str(row.get("id") or "").strip() == target_id and str(row.get("library") or "").strip() == target_library:
+            return row
+
+    fallback = vm.get_manuscript(target_id) or {}
+    if str(fallback.get("library") or "").strip() == target_library:
+        return fallback
+    return None
+
+
+def _is_manuscript_complete(row: dict | None) -> bool:
+    if not row:
+        return False
+    status = str(row.get("status") or "").strip().lower()
+    asset_state = str(row.get("asset_state") or "").strip().lower()
+    downloaded = int(row.get("downloaded_canvases") or 0)
+    total = int(row.get("total_canvases") or 0)
+    if status in {"complete", "completed"}:
+        return True
+    if asset_state == "complete":
+        return True
+    return total > 0 and downloaded >= total
+
+
 def _upsert_saved_entry(
     manifest_url: str,
     doc_id: str,
@@ -122,8 +153,43 @@ def _upsert_saved_entry(
 
 
 def _download_manager_fragment(limit: int = 50):
+    _finalize_orphan_stop_requests()
     jobs = VaultManager().list_download_jobs(limit=limit)
     return render_download_manager(jobs)
+
+
+def _runtime_db_job_ids() -> set[str]:
+    active = job_manager.list_jobs(active_only=False)
+    active_statuses = {"pending", "queued", "running", "pausing", "cancelling"}
+    ids: set[str] = set()
+    for jid, info in active.items():
+        status = str(info.get("status") or "").strip().lower()
+        if status not in active_statuses:
+            continue
+        db_id = str(info.get("db_job_id") or jid or "").strip()
+        if db_id:
+            ids.add(db_id)
+    return ids
+
+
+def _finalize_orphan_stop_requests() -> None:
+    """Close stale pausing/cancelling rows that no longer have an in-memory owner."""
+    vault = VaultManager()
+    runtime_ids = _runtime_db_job_ids()
+    for row in vault.get_active_downloads():
+        job_id = str(row.get("job_id") or "").strip()
+        status = str(row.get("status") or "").strip().lower()
+        if not job_id or status not in {"pausing", "cancelling"}:
+            continue
+        if job_id in runtime_ids:
+            continue
+        target = "paused" if status == "pausing" else "cancelled"
+        curr = int(row.get("current") or 0)
+        total = int(row.get("total") or 0)
+        try:
+            vault.update_download_job(job_id, current=curr, total=total, status=target, error=None)
+        except Exception:
+            logger.debug("Failed to finalize orphan stop request for %s", job_id, exc_info=True)
 
 
 def discovery_page(request: Request):
@@ -404,6 +470,14 @@ def add_and_download(manifest_url: str, doc_id: str, library: str):
         if not manifest_url or not doc_id or not library:
             return _with_feedback_toast("Dati mancanti", "Manifest, ID e biblioteca sono obbligatori.", tone="danger")
 
+        existing = _find_manuscript_by_id_and_library(doc_id, library)
+        if _is_manuscript_complete(existing):
+            return _with_toast(
+                _download_manager_fragment(),
+                f"Documento già completo in libreria ({library} / {doc_id}).",
+                tone="info",
+            )
+
         info, _err = _analyze_manifest_safe(manifest_url)
         info = info or {}
         _upsert_saved_entry(
@@ -477,6 +551,16 @@ def download_manager():
     return _download_manager_fragment()
 
 
+def _pause_guard_response(status: str):
+    if status == "paused":
+        return _with_feedback_toast("Già in pausa", "Questo job è già in pausa.", tone="info")
+    if status == "pausing":
+        return _with_feedback_toast("Pausa in corso", "La pausa è già stata richiesta.", tone="info")
+    if status not in {"queued", "running"}:
+        return _with_feedback_toast("Pausa non disponibile", "Il job non è in uno stato pausabile.", tone="info")
+    return None
+
+
 def cancel_download(download_id: str, doc_id: str = "", library: str = ""):
     """Cancel a queued/running download job."""
     vault = VaultManager()
@@ -489,18 +573,26 @@ def cancel_download(download_id: str, doc_id: str = "", library: str = ""):
     total = job.get("total", 0)
     try:
         # Mark as cancelling first so UI shows immediate feedback
-        vault.update_download_job(download_id, current=curr, total=total, status="cancelling", error="Cancelling")
+        vault.update_download_job(download_id, current=curr, total=total, status="cancelling", error=None)
     except Exception:
         logger.debug("Failed to mark job cancelled", exc_info=True)
 
+    cancelled = False
     try:
-        job_manager.request_cancel(download_id)
+        cancelled = bool(job_manager.request_cancel(download_id))
     except Exception:
         logger.debug("Failed to request job cancellation from JobManager", exc_info=True)
 
+    if not cancelled:
+        # No in-memory worker owns this row anymore; finalize immediately.
+        try:
+            vault.update_download_job(download_id, current=curr, total=total, status="cancelled", error=None)
+        except Exception:
+            logger.debug("Failed to finalize orphan cancellation for %s", download_id, exc_info=True)
+
     return _with_toast(
         _download_manager_fragment(),
-        f"Annullamento richiesto per {doc_id}.",
+        f"Annullamento {'richiesto' if cancelled else 'completato'} per {doc_id}.",
         tone="info",
     )
 
@@ -517,14 +609,13 @@ def pause_download(download_id: str):
     curr = int(job.get("current") or 0)
     total = int(job.get("total") or 0)
 
-    if status == "paused":
-        return _with_feedback_toast("Già in pausa", "Questo job è già in pausa.", tone="info")
-    if status not in {"queued", "running", "cancelling"}:
-        return _with_feedback_toast("Pausa non disponibile", "Il job non è in uno stato pausabile.", tone="info")
+    guard = _pause_guard_response(status)
+    if guard is not None:
+        return guard
 
     if status == "running":
         try:
-            vault.update_download_job(download_id, current=curr, total=total, status="cancelling", error="Pausing")
+            vault.update_download_job(download_id, current=curr, total=total, status="pausing", error=None)
         except Exception:
             logger.debug("Failed to mark job as pausing", exc_info=True)
 
@@ -535,9 +626,9 @@ def pause_download(download_id: str):
         logger.debug("Failed to request job pause", exc_info=True)
 
     # Fallback for queued jobs not tracked in memory after app restarts.
-    if not paused and status == "queued":
+    if not paused and status in {"queued", "running", "pausing"}:
         try:
-            vault.update_download_job(download_id, current=curr, total=total, status="paused", error="Paused by user")
+            vault.update_download_job(download_id, current=curr, total=total, status="paused", error=None)
             paused = True
         except Exception:
             logger.debug("Fallback pause update failed", exc_info=True)
@@ -570,9 +661,12 @@ def resume_download(download_id: str):
         return _with_feedback_toast("Resume non disponibile", "Dati job insufficienti.", tone="danger")
 
     try:
-        new_download_id = start_downloader_thread(manifest_url, doc_id, library)
-        if new_download_id and new_download_id != download_id:
-            vault.delete_download_job(download_id)
+        start_downloader_thread(
+            manifest_url,
+            doc_id,
+            library,
+            existing_job_id=download_id,
+        )
         return _with_toast(_download_manager_fragment(), f"Resume avviato per {doc_id}.", tone="success")
     except Exception:
         logger.exception("Resume failed for paused job %s", download_id)
@@ -589,7 +683,12 @@ def retry_download(download_id: str):
     if not manifest_url or not doc_id or not library:
         return _with_feedback_toast("Retry non disponibile", "Dati job insufficienti.", tone="danger")
     try:
-        start_downloader_thread(manifest_url, doc_id, library)
+        start_downloader_thread(
+            manifest_url,
+            doc_id,
+            library,
+            existing_job_id=download_id,
+        )
         return _with_toast(_download_manager_fragment(), f"Retry accodato per {doc_id}.", tone="info")
     except Exception:
         logger.exception("Retry enqueue failed for job %s", download_id)
@@ -605,7 +704,7 @@ def remove_download(download_id: str):
     if not job:
         return _with_feedback_toast("Job non trovato", "Il download selezionato non esiste.", tone="info")
 
-    if status in {"queued", "running", "cancelling", "pending", "starting"}:
+    if status in {"queued", "running", "pausing", "cancelling", "pending", "starting"}:
         return _with_feedback_toast("Rimozione non disponibile", "Annulla prima il download attivo.", tone="info")
 
     if not vault.delete_download_job(download_id):
