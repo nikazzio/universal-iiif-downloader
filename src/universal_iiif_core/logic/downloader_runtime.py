@@ -85,7 +85,7 @@ def run(
 
     valid = [f for f in downloaded if f]
     try:
-        final_files = [] if (should_cancel and should_cancel()) else self._finalize_downloads(valid)
+        final_files = self._finalize_downloads(valid)
     except Exception as exc:
         self.vault.update_status(self.ms_id, "error", str(exc))
         raise
@@ -231,16 +231,28 @@ def _store_page_stats(self, page_stats):
 
 
 def _finalize_downloads(self, valid):
-    _ = valid
+    validated_staged: list[Path] = []
+    validated_pages: set[int] = set()
+    temp_root = self.temp_dir.resolve()
+    for raw_path in valid:
+        file_path = Path(raw_path)
+        page_num = _page_number_from_filename(file_path.name)
+        if page_num is None or not file_path.exists():
+            continue
+        validated_pages.add(page_num)
+        with suppress(Exception):
+            if file_path.resolve().is_relative_to(temp_root):
+                validated_staged.append(file_path)
+
     total_expected = int(getattr(self, "expected_total_canvases", 0) or getattr(self, "total_canvases", 0) or 0)
-    known_pages = _known_page_numbers(self)
+    known_pages = _page_numbers_in_dir(self.scans_dir) | validated_pages
     expected_pages = set(range(1, total_expected + 1)) if total_expected > 0 else set()
 
     # Keep staged files in temp until the full manuscript is available.
     if total_expected > 0 and not expected_pages.issubset(known_pages):
         return []
 
-    for staged_file in sorted(self.temp_dir.glob("pag_*.jpg")):
+    for staged_file in sorted(set(validated_staged)):
         dest = self.scans_dir / staged_file.name
         if not dest.exists():
             shutil.move(str(staged_file), str(dest))
@@ -291,16 +303,18 @@ def _page_numbers_in_dir(directory: Path) -> set[int]:
     if not directory.exists():
         return pages
     for image in directory.glob("pag_*.jpg"):
-        stem = image.stem or ""
-        try:
-            pages.add(int(stem.split("_")[-1]) + 1)
-        except ValueError:
-            continue
+        page_num = _page_number_from_filename(image.name)
+        if page_num is not None:
+            pages.add(page_num)
     return pages
 
 
-def _known_page_numbers(self) -> set[int]:
-    return _page_numbers_in_dir(self.scans_dir) | _page_numbers_in_dir(self.temp_dir)
+def _page_number_from_filename(filename: str) -> int | None:
+    stem = Path(filename).stem or ""
+    try:
+        return int(stem.split("_")[-1]) + 1
+    except ValueError:
+        return None
 
 
 def run_batch_ocr(self, image_files: list[str], model_name: str):
