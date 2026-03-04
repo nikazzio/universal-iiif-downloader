@@ -45,12 +45,25 @@ More details: [CONFIG_REFERENCE.md](https://github.com/nikazzio/universal-iiif-s
 **Probable cause**: scans were not extracted/downloaded as expected.  
 **Quick fix**:
 - check the document folder under `downloads/...`,
+- check staging under `data/local/temp_images/<doc_id>/`,
 - verify scans are present before opening Studio,
 - retry extraction/download for missing pages.
 
+If pages are staged but not promoted yet, review:
+- `settings.storage.partial_promotion_mode` (`never|on_pause`)
+- `settings.viewer.mirador.require_complete_local_images`
+
 More details: [ARCHITECTURE.md](https://github.com/nikazzio/universal-iiif-studio/blob/main/docs/ARCHITECTURE.md)
 
-## 6) Native PDF vs generated PDF: which one is used?
+## 6) Pause works, but why are some pages still in temp?
+
+**Behavior**:
+- with `partial_promotion_mode=never`, validated pages can remain in staging until completeness gate is satisfied;
+- with `partial_promotion_mode=on_pause`, pausing promotes validated staged pages to `scans/`.
+
+Segmented retries (`retry_missing` / `retry_range`) still converge correctly because completeness checks count previously staged validated pages.
+
+## 7) Native PDF vs generated PDF: which one is used?
 
 **Behavior**:
 - if the manifest exposes a native PDF and `settings.pdf.prefer_native_pdf=true`, native flow is preferred;
@@ -58,14 +71,14 @@ More details: [ARCHITECTURE.md](https://github.com/nikazzio/universal-iiif-studi
 
 More details: [CONFIG_REFERENCE.md](https://github.com/nikazzio/universal-iiif-studio/blob/main/docs/CONFIG_REFERENCE.md)
 
-## 7) Can I export very high quality PDF without keeping everything high-res locally?
+## 8) Can I export very high quality PDF without keeping everything high-res locally?
 
 Yes. Use an export profile with `image_source_mode=remote_highres_temp`.
 High-res pages are fetched for that job and cleaned after export when enabled.
 
 More details: [PDF-Export-Profiles](PDF-Export-Profiles.md)
 
-## 8) Wiki sync ran, but wiki was not updated
+## 9) Wiki sync ran, but wiki was not updated
 
 **Probable cause**: push not enabled, wiki disabled, or missing permissions.  
 **Quick fix**:
@@ -80,14 +93,14 @@ python scripts/sync_wiki.py --repo owner/repo --dry-run
 
 More details: [WIKI_MAINTENANCE.md](../WIKI_MAINTENANCE.md)
 
-## 9) Where should I edit wiki pages?
+## 10) Where should I edit wiki pages?
 
 Always edit source pages in `docs/wiki/` inside the main repository.  
 The GitHub wiki is a publish target, not the source of truth.
 
 More details: [WIKI_MAINTENANCE.md](../WIKI_MAINTENANCE.md)
 
-## 10) Where is the complete configuration reference?
+## 11) Where is the complete configuration reference?
 
 Use the canonical docs:
 - full keys: [CONFIG_REFERENCE.md](https://github.com/nikazzio/universal-iiif-studio/blob/main/docs/CONFIG_REFERENCE.md)

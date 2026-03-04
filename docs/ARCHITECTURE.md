@@ -27,6 +27,7 @@ The application is strictly divided into two main layers. The **UI Layer** depen
 * **Downloader Logic**:
   * Implements the **Golden Flow** (Native PDF check -> Extraction -> Fallback to IIIF).
   * Manages threading and DB updates.
+  * Uses staged local pages in `temp_images/<doc_id>` before promoting validated files into `scans/`.
   * Split across `logic/downloader.py` (orchestrator), `logic/downloader_pdf.py` (PDF/native pipeline), and `logic/downloader_runtime.py` (canvas/runtime pipeline).
 * **Network Layer (`utils.py`)**:
   * Provides a resilient `requests.Session`.
@@ -57,9 +58,10 @@ Queued jobs are promoted FIFO (with optional prioritization) and each running wo
 
 1. **Check Native PDF**: Does the manifest provide a download link?
     * **YES + `settings.pdf.prefer_native_pdf=true`**: Download the PDF. Then, **EXTRACT** pages to high-quality JPGs in `scans/` (Critical for Studio compatibility).
-    * **NO**: Fallback to downloading IIIF tiles/canvases one by one into `scans/`.
+    * **NO**: Fallback to downloading IIIF tiles/canvases one by one into staging (`temp_images/<doc_id>`), then promote validated pages into `scans/`.
 2. **Optional Compiled PDF**: If (and only if) no native PDF was used **AND** `settings.pdf.create_pdf_from_images=true`, generate a PDF from the downloaded images.
 3. **Completion**: Update DB status and manuscript `asset_state` (`complete` or `partial`).
+4. **Segmented Resume Safety**: Retry/range runs count already-staged validated pages together with current-run pages before promotion, so partial batches converge without deadlock.
 
 ### 3. Studio & OCR
 
@@ -83,7 +85,7 @@ Queued jobs are promoted FIFO (with optional prioritization) and each running wo
 
 ## Key Design Decisions
 
-1. **Scans as Source of Truth**: The `scans/` directory must always contain extracted JPGs. The Viewer, OCR, and Cropper tools rely on these files, regardless of whether the source was a IIIF server or a PDF.
+1. **Scans as Operational Source + Temp Staging**: `scans/` is the operational source for Viewer/OCR/Cropper, but runtime can stage validated pages in `temp_images/<doc_id>` before promotion. Promotion policy can stay strict (`never`) or happen on pause (`settings.storage.partial_promotion_mode=on_pause`).
 2. **Zero Legacy**: Deprecated APIs are removed or stubbed. No "dead code" is allowed in the codebase.
 3. **Network Resilience**: The system assumes library servers are hostile (rate limits, firewalls) and uses aggressive retry logic and header mimicking.
 4. **Pure HTTP Front-end**: No heavy client-side frameworks (React/Vue). The UI logic is driven by Python via FastHTML and HTMX.
@@ -106,6 +108,7 @@ This section centralizes design rationale that is intentionally excluded from `A
    - Ensures local/user data locations are environment-resolved consistently.
 3. **Scans-first runtime model**
    - `scans/` remains the operational source for viewer, OCR, and crop tools.
+   - `temp_images/<doc_id>` is a staging layer for validated pages and segmented retries.
    - Native PDF support is an ingestion strategy, not a runtime storage replacement.
 4. **Complexity ceiling (C901 <= 10)**
    - Enforces decomposition into testable single-purpose helpers.

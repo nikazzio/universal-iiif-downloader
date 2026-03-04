@@ -28,6 +28,8 @@ iiif-cli "<manifest-url>"
 - `Studio`: document workspace.
 - `Export`: batch/single export hub.
 
+If a download is paused/incomplete, pages may temporarily stay in `data/local/temp_images/<doc_id>` before promotion to `downloads/<library>/<doc_id>/scans/`, depending on `settings.storage.partial_promotion_mode`.
+
 ## Canonical Docs
 
 - Full setup and troubleshooting: [README.md](https://github.com/nikazzio/universal-iiif-studio/blob/main/README.md)
