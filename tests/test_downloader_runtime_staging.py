@@ -1,5 +1,7 @@
 from pathlib import Path
 
+from PIL import Image
+
 from universal_iiif_core.logic import downloader_runtime
 
 
@@ -32,11 +34,16 @@ class _DummyDownloader:
         self.vault = _Vault()
 
 
+def _write_valid_jpg(path: Path, color: str = "white") -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    Image.new("RGB", (16, 16), color=color).save(path, format="JPEG")
+
+
 def test_finalize_downloads_keeps_temp_files_when_incomplete(tmp_path):
     """Incomplete downloads must keep staged images in temp dir."""
     dummy = _DummyDownloader(tmp_path, expected_total=3)
     staged = dummy.temp_dir / "pag_0000.jpg"
-    staged.write_bytes(b"temp-jpg")
+    _write_valid_jpg(staged)
 
     out = downloader_runtime._finalize_downloads(dummy, [str(staged)])
     assert out == []
@@ -49,8 +56,8 @@ def test_finalize_downloads_promotes_temp_files_when_complete(tmp_path):
     dummy = _DummyDownloader(tmp_path, expected_total=2)
     p0 = dummy.temp_dir / "pag_0000.jpg"
     p1 = dummy.temp_dir / "pag_0001.jpg"
-    p0.write_bytes(b"temp-0")
-    p1.write_bytes(b"temp-1")
+    _write_valid_jpg(p0)
+    _write_valid_jpg(p1)
 
     out = downloader_runtime._finalize_downloads(dummy, [str(p0), str(p1)])
     assert len(out) == 2
@@ -62,9 +69,9 @@ def test_finalize_downloads_promotes_temp_files_when_complete(tmp_path):
 def test_sync_asset_state_counts_known_pages_from_scans_and_temp(tmp_path):
     """Asset sync should consider both scans and staged pages."""
     dummy = _DummyDownloader(tmp_path, expected_total=5)
-    (dummy.scans_dir / "pag_0000.jpg").write_bytes(b"scan-0")
-    (dummy.temp_dir / "pag_0001.jpg").write_bytes(b"temp-1")
-    (dummy.temp_dir / "pag_0002.jpg").write_bytes(b"temp-2")
+    _write_valid_jpg(dummy.scans_dir / "pag_0000.jpg")
+    _write_valid_jpg(dummy.temp_dir / "pag_0001.jpg")
+    _write_valid_jpg(dummy.temp_dir / "pag_0002.jpg")
 
     downloader_runtime._sync_asset_state(dummy, total_expected=5)
 
@@ -79,13 +86,30 @@ def test_finalize_downloads_does_not_promote_unvalidated_temp_files(tmp_path):
     dummy = _DummyDownloader(tmp_path, expected_total=1)
     validated = dummy.temp_dir / "pag_0000.jpg"
     stale = dummy.temp_dir / "pag_0001.jpg"
-    validated.write_bytes(b"ok")
+    _write_valid_jpg(validated)
     stale.write_bytes(b"stale")
 
     out = downloader_runtime._finalize_downloads(dummy, [str(validated)])
     assert len(out) == 1
     assert (dummy.scans_dir / "pag_0000.jpg").exists()
     assert not (dummy.scans_dir / "pag_0001.jpg").exists()
+
+
+def test_finalize_downloads_promotes_previous_valid_temp_pages_when_now_complete(tmp_path):
+    """Segmented runs should promote all validated staged pages once complete."""
+    dummy = _DummyDownloader(tmp_path, expected_total=5)
+    staged = []
+    for idx in range(5):
+        image_path = dummy.temp_dir / f"pag_{idx:04d}.jpg"
+        _write_valid_jpg(image_path)
+        staged.append(image_path)
+
+    # Simulate current run validating only the last segment (pages 3-5).
+    out = downloader_runtime._finalize_downloads(dummy, [str(staged[2]), str(staged[3]), str(staged[4])])
+    assert len(out) == 5
+    for idx in range(5):
+        assert (dummy.scans_dir / f"pag_{idx:04d}.jpg").exists()
+    assert not dummy.temp_dir.exists()
 
 
 class _RunDummy:

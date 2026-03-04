@@ -231,18 +231,7 @@ def _store_page_stats(self, page_stats):
 
 
 def _finalize_downloads(self, valid):
-    validated_staged: list[Path] = []
-    validated_pages: set[int] = set()
-    temp_root = self.temp_dir.resolve()
-    for raw_path in valid:
-        file_path = Path(raw_path)
-        page_num = _page_number_from_filename(file_path.name)
-        if page_num is None or not file_path.exists():
-            continue
-        validated_pages.add(page_num)
-        with suppress(Exception):
-            if file_path.resolve().is_relative_to(temp_root):
-                validated_staged.append(file_path)
+    validated_staged, validated_pages = _collect_validated_staged_files(self, valid)
 
     total_expected = int(getattr(self, "expected_total_canvases", 0) or getattr(self, "total_canvases", 0) or 0)
     known_pages = _page_numbers_in_dir(self.scans_dir) | validated_pages
@@ -269,6 +258,43 @@ def _finalize_downloads(self, valid):
             self.logger.debug("Failed to clean temp dir %s", self.temp_dir, exc_info=True)
 
     return [str(path) for path in sorted(self.scans_dir.glob("pag_*.jpg"))]
+
+
+def _collect_validated_staged_files(self, valid: list[str]) -> tuple[list[Path], set[int]]:
+    validated_pages: set[int] = set()
+    staged_by_name: dict[str, Path] = {}
+    temp_root = self.temp_dir.resolve()
+
+    for raw_path in valid:
+        file_path = Path(raw_path)
+        page_num = _page_number_from_filename(file_path.name)
+        if page_num is None or not file_path.exists() or not _is_valid_image_file(file_path):
+            continue
+        validated_pages.add(page_num)
+        with suppress(Exception):
+            if file_path.resolve().is_relative_to(temp_root):
+                staged_by_name[file_path.name] = file_path
+
+    if self.temp_dir.exists():
+        for staged_file in self.temp_dir.glob("pag_*.jpg"):
+            page_num = _page_number_from_filename(staged_file.name)
+            if page_num is None or not _is_valid_image_file(staged_file):
+                continue
+            validated_pages.add(page_num)
+            staged_by_name.setdefault(staged_file.name, staged_file)
+
+    return list(staged_by_name.values()), validated_pages
+
+
+def _is_valid_image_file(image_path: Path) -> bool:
+    try:
+        from PIL import Image
+
+        with Image.open(image_path) as img:
+            img.verify()
+        return True
+    except Exception:
+        return False
 
 
 def _sync_asset_state(self, total_expected: int) -> None:
