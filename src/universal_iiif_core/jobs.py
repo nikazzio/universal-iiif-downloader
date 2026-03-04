@@ -1,9 +1,11 @@
+import shutil
 import threading
 import time
 import uuid
 from collections import deque
 from collections.abc import Callable
 from contextlib import suppress
+from pathlib import Path
 from typing import Any
 
 from .config_manager import get_config_manager
@@ -143,15 +145,18 @@ class JobManager:
         return True
 
     def _enqueue_download_job(self, job_id: str, db_job_id: str | None) -> None:
+        target_id = db_job_id or job_id
+        current, total = 0, 0
         try:
+            current, total = self._read_db_progress(target_id)
             self._update_db_safe(
-                db_job_id or job_id,
+                target_id,
                 status="queued",
-                current=0,
-                total=0,
+                current=current,
+                total=total,
             )
         except DatabaseError:
-            logger.debug("Failed to mark queued for %s", db_job_id or job_id, exc_info=True)
+            logger.debug("Failed to mark queued for %s", target_id, exc_info=True)
         with self._lock:
             self._download_queue.append(job_id)
             self._refresh_queue_positions_locked()
@@ -198,10 +203,11 @@ class JobManager:
             info["queue_position"] = idx
             db_job_id = info.get("db_job_id") or job_id
             try:
+                current, total = self._read_db_progress(str(db_job_id))
                 VaultManager().update_download_job(
                     db_job_id,
-                    current=0,
-                    total=0,
+                    current=current,
+                    total=total,
                     status="queued",
                     queue_position=idx,
                     priority=int(info.get("priority") or 0),
@@ -317,6 +323,9 @@ class JobManager:
                 self._update_db_safe(db_job_id or job_id, status=target_status, error=None)
             except DatabaseError:
                 logger.debug("Failed to mark %s in vault DB: %s", target_status, db_job_id or job_id, exc_info=True)
+            if paused:
+                with suppress(Exception):
+                    self._promote_staged_pages_on_pause(job_id=job_id, db_job_id=db_job_id)
         with self._lock:
             self._jobs[job_id]["status"] = target_status
             self._jobs[job_id]["message"] = target_message
@@ -340,6 +349,150 @@ class JobManager:
             self._jobs[job_id]["message"] = message_text
 
     # --- DB helper methods to keep complexity low ---
+    @staticmethod
+    def _is_within(candidate: Path, root: Path) -> bool:
+        try:
+            return candidate.resolve().is_relative_to(root.resolve())
+        except Exception:
+            return False
+
+    @staticmethod
+    def _is_valid_staged_image(image_path: Path) -> bool:
+        try:
+            from PIL import Image
+
+            with Image.open(image_path) as img:
+                img.verify()
+            return True
+        except Exception:
+            return False
+
+    @staticmethod
+    def _partial_promotion_mode() -> str:
+        try:
+            cm = get_config_manager()
+            mode = str(cm.get_setting("storage.partial_promotion_mode", "never") or "never").strip().lower()
+        except Exception:
+            return "never"
+        return mode if mode in {"never", "on_pause"} else "never"
+
+    def _resolve_pause_promotion_identity(self, *, job_id: str, db_job_id: str | None) -> tuple[str, str]:
+        with self._lock:
+            snapshot = dict(self._jobs.get(job_id) or {})
+        kwargs = dict(snapshot.get("kwargs") or {})
+        doc_id = str(kwargs.get("doc_id") or "").strip()
+        library = str(kwargs.get("library") or "").strip()
+        if doc_id and library:
+            return doc_id, library
+
+        row = VaultManager().get_download_job(str(db_job_id or job_id)) or {}
+        if not doc_id:
+            doc_id = str(row.get("doc_id") or "").strip()
+        if not library:
+            library = str(row.get("library") or "").strip()
+        return doc_id, library
+
+    def _resolve_pause_promotion_overwrite(self, *, job_id: str) -> bool:
+        with self._lock:
+            snapshot = dict(self._jobs.get(job_id) or {})
+        kwargs = dict(snapshot.get("kwargs") or {})
+        if "overwrite_existing_scans" in kwargs:
+            return bool(kwargs.get("overwrite_existing_scans"))
+        return bool(kwargs.get("force_redownload", False))
+
+    def _resolve_pause_promotion_paths(self, *, doc_id: str, library: str) -> tuple[Path, Path] | None:
+        cm = get_config_manager()
+        temp_root = Path(cm.get_temp_dir()).resolve()
+        temp_dir = (temp_root / doc_id).resolve()
+        if not self._is_within(temp_dir, temp_root) or not temp_dir.exists():
+            return None
+
+        downloads_root = Path(cm.get_downloads_dir()).resolve()
+        manuscript = VaultManager().get_manuscript(doc_id) or {}
+        local_path_raw = str(manuscript.get("local_path") or "").strip()
+        if local_path_raw:
+            doc_dir = Path(local_path_raw).resolve()
+            if not self._is_within(doc_dir, downloads_root):
+                logger.warning("Skipping partial promotion outside downloads root for %s: %s", doc_id, doc_dir)
+                return None
+        else:
+            doc_dir = (downloads_root / library / doc_id).resolve()
+            if not self._is_within(doc_dir, downloads_root):
+                logger.warning("Skipping partial promotion due to unsafe derived path for %s", doc_id)
+                return None
+
+        scans_dir = doc_dir / "scans"
+        scans_dir.mkdir(parents=True, exist_ok=True)
+        return temp_dir, scans_dir
+
+    def _promote_validated_staged_pages(
+        self,
+        *,
+        temp_dir: Path,
+        scans_dir: Path,
+        overwrite_existing_scans: bool,
+    ) -> tuple[int, int]:
+        promoted = 0
+        skipped = 0
+        for staged_file in sorted(temp_dir.glob("pag_*.jpg")):
+            if not self._is_valid_staged_image(staged_file):
+                continue
+            dest = scans_dir / staged_file.name
+            if dest.exists():
+                if overwrite_existing_scans:
+                    try:
+                        shutil.copy2(str(staged_file), str(dest))
+                        promoted += 1
+                    except OSError:
+                        logger.debug("Failed to overwrite staged page %s", staged_file, exc_info=True)
+                    finally:
+                        with suppress(OSError):
+                            staged_file.unlink()
+                    continue
+                skipped += 1
+                with suppress(OSError):
+                    staged_file.unlink()
+                continue
+            try:
+                shutil.move(str(staged_file), str(dest))
+                promoted += 1
+            except OSError:
+                logger.debug("Failed to promote staged page %s", staged_file, exc_info=True)
+
+        with suppress(OSError):
+            if temp_dir.exists() and not any(temp_dir.iterdir()):
+                temp_dir.rmdir()
+        return promoted, skipped
+
+    def _promote_staged_pages_on_pause(self, *, job_id: str, db_job_id: str | None) -> None:
+        if self._partial_promotion_mode() != "on_pause":
+            return
+
+        doc_id, library = self._resolve_pause_promotion_identity(job_id=job_id, db_job_id=db_job_id)
+        if not doc_id:
+            return
+
+        paths = self._resolve_pause_promotion_paths(doc_id=doc_id, library=library)
+        if paths is None:
+            return
+        temp_dir, scans_dir = paths
+
+        overwrite_existing_scans = self._resolve_pause_promotion_overwrite(job_id=job_id)
+        promoted, skipped = self._promote_validated_staged_pages(
+            temp_dir=temp_dir,
+            scans_dir=scans_dir,
+            overwrite_existing_scans=overwrite_existing_scans,
+        )
+
+        if promoted > 0 or skipped > 0:
+            logger.info(
+                "Partial promotion on pause for %s: promoted=%s skipped=%s overwrite=%s",
+                doc_id,
+                promoted,
+                skipped,
+                overwrite_existing_scans,
+            )
+
     def _maybe_create_db_record(self, job_id: str, db_job_id: str | None, kwargs: dict | Any) -> None:
         try:
             vault = VaultManager()
@@ -347,9 +500,19 @@ class JobManager:
             library = str(kwargs.get("library") or "-") if isinstance(kwargs, dict) else "-"
             manifest_url = str(kwargs.get("manifest_url") or "") if isinstance(kwargs, dict) else ""
             target = db_job_id or job_id
+            previous = vault.get_download_job(target) or {}
+            prev_current = int(previous.get("current", 0) or 0)
+            prev_total = int(previous.get("total", 0) or 0)
             vault.create_download_job(target, doc_id, library, manifest_url)
+            if prev_current > 0 or prev_total > 0:
+                vault.update_download_job(target, current=prev_current, total=prev_total, status="queued", error=None)
         except DatabaseError:
             logger.debug("_maybe_create_db_record failed for %s", db_job_id or job_id, exc_info=True)
+
+    @staticmethod
+    def _read_db_progress(db_job_id: str) -> tuple[int, int]:
+        row = VaultManager().get_download_job(db_job_id) or {}
+        return int(row.get("current", 0) or 0), int(row.get("total", 0) or 0)
 
     def _mark_db_running(self, db_job_id: str) -> None:
         try:
@@ -391,10 +554,7 @@ class JobManager:
                 is_transitional = target_status in {"queued", "running", "cancelling", "pausing"}
                 preserves_terminal = is_transitional and existing_status in terminal_statuses
                 preserves_stop_transition = target_status == "running" and existing_status in {"cancelling", "pausing"}
-                if (
-                    preserves_terminal
-                    or preserves_stop_transition
-                ):
+                if preserves_terminal or preserves_stop_transition:
                     target_status = existing_status
                 existing_current = int(existing.get("current", 0) or 0)
                 existing_total = int(existing.get("total", existing_current) or existing_current)

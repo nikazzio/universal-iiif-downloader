@@ -419,6 +419,7 @@ def _doc_card(doc: dict, *, compact: bool = False) -> Div:
     total = int(doc.get("total_canvases") or 0)
     downloaded = int(doc.get("downloaded_canvases") or 0)
     progress = f"{downloaded}/{total}" if total > 0 else "0/0"
+    temp_pages_count = int(doc.get("temp_pages_count") or 0)
     missing_count = len(doc.get("missing_pages") or [])
     if missing_count <= 0 and total > downloaded:
         missing_count = max(total - downloaded, 0)
@@ -503,6 +504,7 @@ def _doc_card(doc: dict, *, compact: bool = False) -> Div:
     )
     technical_rows = Div(
         _tech_row("Pagine scaricate", progress),
+        _tech_row("Pagine temporanee", str(temp_pages_count)),
         _tech_row("Pagine mancanti", str(missing_count)),
         _tech_row("Data", date_label or "-"),
         _tech_row("Lingua", lang or "-"),

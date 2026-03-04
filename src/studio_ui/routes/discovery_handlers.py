@@ -188,8 +188,17 @@ def _finalize_orphan_stop_requests() -> None:
         total = int(row.get("total") or 0)
         try:
             vault.update_download_job(job_id, current=curr, total=total, status=target, error=None)
+            if target == "paused":
+                _apply_partial_promotion_on_paused(job_id)
         except Exception:
             logger.debug("Failed to finalize orphan stop request for %s", job_id, exc_info=True)
+
+
+def _apply_partial_promotion_on_paused(download_id: str) -> None:
+    try:
+        job_manager._promote_staged_pages_on_pause(job_id=str(download_id), db_job_id=str(download_id))  # noqa: SLF001
+    except Exception:
+        logger.debug("Failed partial promotion on pause for %s", download_id, exc_info=True)
 
 
 def discovery_page(request: Request):
@@ -629,6 +638,7 @@ def pause_download(download_id: str):
     if not paused and status in {"queued", "running", "pausing"}:
         try:
             vault.update_download_job(download_id, current=curr, total=total, status="paused", error=None)
+            _apply_partial_promotion_on_paused(download_id)
             paused = True
         except Exception:
             logger.debug("Fallback pause update failed", exc_info=True)

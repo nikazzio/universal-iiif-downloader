@@ -59,6 +59,7 @@ def run(
     self.extract_metadata()
     canvases = self.get_canvases()
     total_pages = len(canvases)
+    self.expected_total_canvases = total_pages
     selected_pages, canvas_plan = self._build_canvas_plan(canvases, target_pages)
     operation_total = len(canvas_plan)
     if operation_total == 0:
@@ -230,49 +231,133 @@ def _store_page_stats(self, page_stats):
 
 
 def _finalize_downloads(self, valid):
-    final_files = []
-    for temp_file in valid:
-        p = Path(temp_file)
-        dest = self.scans_dir / p.name
+    validated_staged, validated_pages = _collect_validated_staged_files(self, valid)
+
+    total_expected = int(getattr(self, "expected_total_canvases", 0) or getattr(self, "total_canvases", 0) or 0)
+    known_pages = _page_numbers_in_dir(self.scans_dir) | validated_pages
+    expected_pages = set(range(1, total_expected + 1)) if total_expected > 0 else set()
+
+    # Keep staged files in temp until the full manuscript is available.
+    if total_expected > 0 and not expected_pages.issubset(known_pages):
+        return []
+
+    for staged_file in sorted(set(validated_staged)):
+        dest = self.scans_dir / staged_file.name
         if not dest.exists():
-            shutil.move(str(p), str(dest))
-        elif self.overwrite_existing_scans:
-            shutil.copy2(str(p), str(dest))
-            with suppress(OSError):
-                p.unlink()
-        final_files.append(str(dest))
+            shutil.move(str(staged_file), str(dest))
+            continue
+        if self.overwrite_existing_scans:
+            shutil.copy2(str(staged_file), str(dest))
+        with suppress(OSError):
+            staged_file.unlink()
+
     try:
         clean_dir(self.temp_dir)
     except OSError:
         with suppress(Exception):
             self.logger.debug("Failed to clean temp dir %s", self.temp_dir, exc_info=True)
 
-    return final_files
+    return _collect_finalized_scan_files(self, expected_pages=expected_pages, validated_pages=validated_pages)
+
+
+def _collect_validated_staged_files(self, valid: list[str]) -> tuple[list[Path], set[int]]:
+    validated_pages: set[int] = set()
+    staged_by_name: dict[str, Path] = {}
+    temp_root = self.temp_dir.resolve()
+
+    for raw_path in valid:
+        file_path = Path(raw_path)
+        page_num = _page_number_from_filename(file_path.name)
+        if page_num is None or not file_path.exists() or not _is_valid_image_file(file_path):
+            continue
+        validated_pages.add(page_num)
+        with suppress(Exception):
+            if file_path.resolve().is_relative_to(temp_root):
+                staged_by_name[file_path.name] = file_path
+
+    if self.temp_dir.exists():
+        for staged_file in self.temp_dir.glob("pag_*.jpg"):
+            page_num = _page_number_from_filename(staged_file.name)
+            if page_num is None or not _is_valid_image_file(staged_file):
+                continue
+            validated_pages.add(page_num)
+            staged_by_name.setdefault(staged_file.name, staged_file)
+
+    return list(staged_by_name.values()), validated_pages
+
+
+def _collect_finalized_scan_files(self, *, expected_pages: set[int], validated_pages: set[int]) -> list[str]:
+    """Return only finalized files in scope for this manifest run.
+
+    Scope priority:
+    - expected manifest pages when known (`expected_pages`)
+    - otherwise pages validated during this run (`validated_pages`)
+    - finally fallback to all scan pages (legacy/defensive path)
+    """
+    scoped_pages = expected_pages or validated_pages or _page_numbers_in_dir(self.scans_dir)
+    files: list[str] = []
+    for page_num in sorted(scoped_pages):
+        scan_path = self.scans_dir / f"pag_{page_num - 1:04d}.jpg"
+        if scan_path.exists():
+            files.append(str(scan_path))
+    return files
+
+
+def _is_valid_image_file(image_path: Path) -> bool:
+    try:
+        from PIL import Image
+
+        with Image.open(image_path) as img:
+            img.verify()
+        return True
+    except Exception:
+        return False
 
 
 def _sync_asset_state(self, total_expected: int) -> None:
-    scan_count = len(list(self.scans_dir.glob("pag_*.jpg")))
+    scans_pages = _page_numbers_in_dir(self.scans_dir)
+    temp_pages = _page_numbers_in_dir(self.temp_dir)
+    known_pages = scans_pages | temp_pages
+    known_count = len(known_pages)
     pdf_available = 1 if any(self.pdf_dir.glob("*.pdf")) else 0
-    if scan_count <= 0 and total_expected > 0:
+    if known_count <= 0 and total_expected > 0:
         state = "saved"
-    elif total_expected <= 0 or scan_count >= total_expected:
+    elif total_expected <= 0 or known_count >= total_expected:
         state = "complete"
     else:
         state = "partial"
     missing = []
-    if total_expected > 0 and scan_count < total_expected:
-        existing = {int(p.stem.split("_")[-1]) + 1 for p in self.scans_dir.glob("pag_*.jpg")}
-        missing = [i for i in range(1, total_expected + 1) if i not in existing]
+    if total_expected > 0 and known_count < total_expected:
+        missing = [i for i in range(1, total_expected + 1) if i not in known_pages]
     self.vault.upsert_manuscript(
         self.ms_id,
         status=state,
         asset_state=state,
         total_canvases=total_expected,
-        downloaded_canvases=scan_count,
+        downloaded_canvases=known_count,
         pdf_local_available=pdf_available,
         missing_pages_json=json.dumps(missing),
         last_sync_at=time.strftime("%Y-%m-%d %H:%M:%S"),
     )
+
+
+def _page_numbers_in_dir(directory: Path) -> set[int]:
+    pages: set[int] = set()
+    if not directory.exists():
+        return pages
+    for image in directory.glob("pag_*.jpg"):
+        page_num = _page_number_from_filename(image.name)
+        if page_num is not None:
+            pages.add(page_num)
+    return pages
+
+
+def _page_number_from_filename(filename: str) -> int | None:
+    stem = Path(filename).stem or ""
+    try:
+        return int(stem.split("_")[-1]) + 1
+    except ValueError:
+        return None
 
 
 def run_batch_ocr(self, image_files: list[str], model_name: str):

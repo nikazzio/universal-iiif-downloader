@@ -102,6 +102,8 @@ Meaning:
 - `images.iiif_quality`: IIIF quality segment in image URLs (recommended `default`)
 - `pdf.profiles.default`: default export profile (`balanced`, `high_quality`, `archival_highres`, `lightweight`)
 - `pdf.profiles.catalog.<profile>.max_parallel_page_fetch`: parallel fetch cap for remote high-res temp exports
+- `storage.partial_promotion_mode`: controls if validated staged pages are promoted from temp to scans (`never|on_pause`)
+- `viewer.mirador.require_complete_local_images`: when `true`, Studio viewer is gated until local page availability is complete
 - PDF profiles are created/edited in `Settings > PDF Export`; item Export tab only selects a profile per job
 
 ## Output Layout
@@ -110,8 +112,15 @@ For each manuscript:
 - `downloads/<Library>/<DocumentId>/scans/`: page images (`pag_XXXX.jpg`)
 - `downloads/<Library>/<DocumentId>/pdf/`: native and/or compiled PDF outputs
 - `downloads/<Library>/<DocumentId>/data/`: metadata and processing JSON artifacts
+- `data/local/temp_images/<DocumentId>/`: staging area for validated pages before final promotion to `scans/`
 
 All runtime paths are resolved via `ConfigManager`.
+
+Download staging behavior:
+- runtime validates pages in `temp_images/<DocumentId>` and promotes to `scans/` when completeness gates are satisfied.
+- segmented/retry runs are supported: previously staged validated pages are counted together with current-run pages.
+- optional pause-time promotion is controlled by `settings.storage.partial_promotion_mode`.
+- with `on_pause`, staged pages are promoted when a running job is paused; existing scans are overwritten only for explicit refresh/redownload flows.
 
 ## Dev Commands
 
@@ -141,6 +150,8 @@ ruff format .
 
 Studio loads but pages are missing
 - Check `downloads/<Library>/<DocumentId>/scans/` for `pag_XXXX.jpg` files.
+- Check `data/local/temp_images/<DocumentId>/` for staged pages.
+- If pages are intentionally kept staged, use `settings.storage.partial_promotion_mode=on_pause` to promote on pause.
 - Verify `config.json` PDF flags (`prefer_native_pdf`, `create_pdf_from_images`).
 
 No results in Discovery for a known Gallica title

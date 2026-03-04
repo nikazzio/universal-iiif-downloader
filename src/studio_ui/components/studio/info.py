@@ -41,6 +41,13 @@ def _flatten_text(value):
     return str(value)
 
 
+def _as_int(value, default: int = 0) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
 def _ensure_list(value):
     if value is None:
         return []
@@ -358,6 +365,9 @@ def info_tab_content(meta, total_pages, manifest_json, page_idx, doc_id, library
     # ensure we compute a concrete URL string (or None) and use it for A(...)
     resource_url = _resolve_url(resource) if resource else None
     thumbnail_url = _thumbnail_url(canvas.get("thumbnail")) or _thumbnail_url(manifest.get("thumbnail"))
+    local_pages_count = _as_int(meta.get("local_pages_count"), default=0)
+    temp_pages_count = _as_int(meta.get("temp_pages_count"), default=0)
+    manifest_total_pages = _as_int(meta.get("manifest_total_pages"), default=0)
     canvas_preview = (
         Div(
             Img(src=thumbnail_url, alt=canvas_label or title, cls="w-full h-52 object-cover rounded-xl"),
@@ -373,6 +383,9 @@ def info_tab_content(meta, total_pages, manifest_json, page_idx, doc_id, library
         info_row("ID Documento", doc_id),
         info_row("Diritti", rights_value),
         info_row("Pagine rilevate", str(total_pages)),
+        info_row("Pagine locali", str(local_pages_count)),
+        info_row("Pagine temporanee", str(temp_pages_count)),
+        info_row("Pagine attese (manifest)", str(manifest_total_pages)) if manifest_total_pages > 0 else None,
         info_row("Canvases IIIF", f"{canvas_count}") if canvas_count else info_row("Canvases IIIF", "N/D"),
         info_row("Data download", meta.get("download_date")),
         info_row("Direzione di lettura", viewing_direction),

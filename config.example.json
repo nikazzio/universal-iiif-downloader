@@ -143,12 +143,16 @@
             "thumbnails_retention_days": 14,
             "highres_temp_retention_hours": 6,
             "auto_prune_on_startup": false,
-            "max_exports_per_item": 5
+            "max_exports_per_item": 5,
+            "partial_promotion_mode": "never"
         },
         "logging": {"level": "INFO"},
         "testing": {"run_live_tests": false},
         "viewer": {
-            "mirador": {"openSeadragonOptions": {"maxZoomPixelRatio": 5, "maxZoomLevel": 25, "minZoomLevel": 0.35}},
+            "mirador": {
+                "require_complete_local_images": true,
+                "openSeadragonOptions": {"maxZoomPixelRatio": 5, "maxZoomLevel": 25, "minZoomLevel": 0.35}
+            },
             "visual_filters": {
                 "defaults": {
                     "brightness": 1.0,

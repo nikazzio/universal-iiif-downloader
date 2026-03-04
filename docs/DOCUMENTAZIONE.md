@@ -39,6 +39,7 @@ Parametri **override per biblioteca** (attivi solo con `settings.network.librari
 * `settings.storage.exports_retention_days`: retention globale degli export PDF salvati.
 * `settings.storage.thumbnails_retention_days`: retention della cache miniature usata nel tab Export.
 * `settings.storage.auto_prune_on_startup`: se attivo, applica pruning retention all'avvio (export + temp high-res).
+* `settings.storage.partial_promotion_mode`: gestione promozione pagine validate da `temp_images` a `scans` (`never` oppure `on_pause`).
 
 Nel pannello **Settings > PDF Export** trovi i controlli con help text esplicativi:
 * sub-tab **Predefiniti e copertina**:
@@ -127,7 +128,7 @@ Quando avvii un download, il sistema decide la strategia migliore:
 
 1. **Controllo PDF Nativo**: Cerca se la biblioteca offre un PDF ufficiale.
    * **Se c'è** e `settings.pdf.prefer_native_pdf=true`: lo scarica e **estrae automaticamente** le pagine in immagini JPG ad alta risoluzione (nella cartella `scans/`). Questo garantisce che lo Studio funzioni anche con i PDF.
-   * **Se non c'è**: Scarica le immagini dai server IIIF una per una.
+   * **Se non c'è**: Scarica le immagini dai server IIIF una per una in area temporanea (`temp_images/{doc_id}`), valida i file e poi li promuove in `scans/` quando la condizione di completezza e soddisfatta.
 1. **Generazione PDF opzionale**: Se (e solo se) il download è avvenuto per immagini sciolte, il sistema genera un PDF compilativo solo con `settings.pdf.create_pdf_from_images=true`.
 
 ### 🧪 Strategia immagini: come leggere davvero le opzioni
@@ -155,6 +156,19 @@ Per collezioni con pagine molto pesanti, il flusso consigliato e:
 * scarica la high-res solo sulle pagine necessarie con il pulsante **High-Res** della miniatura;
 * quando serve un PDF finale ad altissima qualita, usa un profilo con `image_source_mode=remote_highres_temp`;
 * abilita `cleanup_temp_after_export` nel profilo per eliminare in automatico i temporanei high-res a fine export.
+
+### 🗂️ Staging locale (`temp_images` -> `scans`)
+
+Comportamento runtime attuale:
+* le pagine validate possono essere tenute in `temp_images/{doc_id}` finche il documento non e completo;
+* i retry segmentati (`Retry missing` / `Retry range`) conteggiano anche le pagine gia validate in temp, quindi il sistema converge correttamente alla promozione finale;
+* la policy `settings.storage.partial_promotion_mode` controlla una promozione anticipata:
+  - `never` (default): promozione solo quando il gate di completezza e soddisfatto;
+  - `on_pause`: quando metti in pausa un job running, le pagine validate vengono promosse in `scans`; le scansioni esistenti vengono sovrascritte solo nei flussi espliciti di refresh/ridownload.
+
+Resume:
+* il resume considera sia `scans/` sia `temp_images/{doc_id}` per capire cosa manca davvero;
+* questo evita duplicazioni e riparte solo dalle pagine effettivamente mancanti.
 
 ### 📚 Libreria Locale (Local Assets)
 
@@ -229,6 +243,7 @@ Dettagli UX attuali:
 * **File System**:
   * `downloads/{Lib}/{ID}/scans/`: Immagini JPG (Sorgente di verità).
   * `downloads/{Lib}/{ID}/data/`: Metadati JSON e trascrizioni.
+  * `data/local/temp_images/{ID}/`: staging locale delle pagine validate prima della promozione in `scans/`.
   * `data/vault.db`: Database SQLite per lo stato dei job e ricerche globali.
 
 ## 6. Troubleshooting
@@ -239,6 +254,9 @@ Dettagli UX attuali:
   * Controlla i log (`logs/app.log`). Se il worker Python crasha, l'overlay potrebbe non ricevere il segnale di stop. Ricarica la pagina.
 * **PDF scaricato ma Studio vuoto**:
   * Verifica che l'estrazione delle immagini sia avvenuta. Controlla se la cartella `scans/` contiene file `pag_xxxx.jpg`.
+* **Pagine presenti solo in `temp_images`**:
+  * Comportamento possibile con `partial_promotion_mode=never`: il sistema sta mantenendo staging coerente.
+  * Se ti serve disponibilita immediata in Studio dopo pausa, imposta `settings.storage.partial_promotion_mode=on_pause`.
 * **`/studio` ti porta in Libreria**:
   * È comportamento previsto: Studio richiede il contesto documento (`doc_id` + `library`).
 

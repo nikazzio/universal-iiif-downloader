@@ -11,7 +11,11 @@ from universal_iiif_core.config_manager import get_config_manager
 from universal_iiif_core.services.storage.vault_manager import VaultManager
 
 
-def _request(path: str = "/studio", headers: dict[str, str] | None = None) -> Request:
+def _request(
+    path: str = "/studio",
+    headers: dict[str, str] | None = None,
+    query_string: str = "",
+) -> Request:
     header_items = []
     for key, value in (headers or {}).items():
         header_items.append((key.lower().encode("latin-1"), value.encode("latin-1")))
@@ -23,7 +27,7 @@ def _request(path: str = "/studio", headers: dict[str, str] | None = None) -> Re
             "scheme": "http",
             "server": ("testserver", 80),
             "path": path,
-            "query_string": b"",
+            "query_string": query_string.encode("latin-1"),
             "headers": header_items,
         }
     )
@@ -81,6 +85,111 @@ def test_studio_renders_workspace_with_doc_context():
     rendered = str(response)
     assert "Urb lat 1779" in rendered
     assert "mirador-viewer" in rendered
+
+
+def test_studio_blocks_mirador_when_local_images_are_incomplete():
+    """Studio should gate Mirador until local pages match manifest pages."""
+    doc_id = "MSS_PARTIAL_LOCAL"
+    library = "Vaticana"
+    cm = get_config_manager()
+    old_gate = cm.get_setting("viewer.mirador.require_complete_local_images", True)
+    doc_root = Path(cm.get_downloads_dir()) / library / doc_id
+    scans_dir = doc_root / "scans"
+    data_dir = doc_root / "data"
+    scans_dir.mkdir(parents=True, exist_ok=True)
+    data_dir.mkdir(parents=True, exist_ok=True)
+
+    (scans_dir / "pag_0000.jpg").write_bytes(b"stub")
+    (data_dir / "manifest.json").write_text(
+        json.dumps(
+            {
+                "items": [
+                    {"id": "https://example.org/canvas/1"},
+                    {"id": "https://example.org/canvas/2"},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    (data_dir / "metadata.json").write_text(
+        json.dumps({"label": "Partial Local"}),
+        encoding="utf-8",
+    )
+
+    VaultManager().upsert_manuscript(
+        doc_id,
+        library=library,
+        local_path=str(doc_root),
+        status="partial",
+        asset_state="partial",
+        total_canvases=2,
+        downloaded_canvases=1,
+    )
+
+    try:
+        cm.set_setting("viewer.mirador.require_complete_local_images", True)
+        response = studio_handlers.studio_page(_request(), doc_id=doc_id, library=library, page=1)
+        rendered = str(response)
+        assert 'data-mirador-gated="1"' in rendered
+        assert "Viewer bloccato finche non sono disponibili tutte le immagini locali." in rendered
+        assert "Pagine temporanee" in rendered
+        assert "const containerId = 'mirador-viewer';" not in rendered
+    finally:
+        cm.set_setting("viewer.mirador.require_complete_local_images", old_gate)
+
+
+def test_studio_allows_mirador_override_with_query_flag():
+    """Manual override should bypass local-readiness Mirador gating."""
+    doc_id = "MSS_PARTIAL_LOCAL_OVERRIDE"
+    library = "Vaticana"
+    cm = get_config_manager()
+    old_gate = cm.get_setting("viewer.mirador.require_complete_local_images", True)
+    doc_root = Path(cm.get_downloads_dir()) / library / doc_id
+    scans_dir = doc_root / "scans"
+    data_dir = doc_root / "data"
+    scans_dir.mkdir(parents=True, exist_ok=True)
+    data_dir.mkdir(parents=True, exist_ok=True)
+
+    (scans_dir / "pag_0000.jpg").write_bytes(b"stub")
+    (data_dir / "manifest.json").write_text(
+        json.dumps(
+            {
+                "items": [
+                    {"id": "https://example.org/canvas/1"},
+                    {"id": "https://example.org/canvas/2"},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    (data_dir / "metadata.json").write_text(
+        json.dumps({"label": "Partial Override"}),
+        encoding="utf-8",
+    )
+
+    VaultManager().upsert_manuscript(
+        doc_id,
+        library=library,
+        local_path=str(doc_root),
+        status="partial",
+        asset_state="partial",
+        total_canvases=2,
+        downloaded_canvases=1,
+    )
+
+    try:
+        cm.set_setting("viewer.mirador.require_complete_local_images", True)
+        response = studio_handlers.studio_page(
+            _request(query_string="allow_remote_preview=1"),
+            doc_id=doc_id,
+            library=library,
+            page=1,
+        )
+        rendered = str(response)
+        assert 'data-mirador-gated="1"' not in rendered
+        assert "const containerId = 'mirador-viewer';" in rendered
+    finally:
+        cm.set_setting("viewer.mirador.require_complete_local_images", old_gate)
 
 
 def test_studio_uses_library_title_and_shows_full_title_in_info():
