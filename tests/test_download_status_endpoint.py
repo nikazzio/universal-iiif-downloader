@@ -16,6 +16,7 @@ def test_download_status_endpoint_shows_progress():
     fragment = discovery_handlers.get_download_status(job_id, doc_id=doc_id, library=library)
     text = repr(fragment)
     assert "40%" in text or "2/5" in text
+    assert "every 3s" in text
 
 
 def test_download_status_endpoint_paused_is_terminal_no_polling():
@@ -31,7 +32,7 @@ def test_download_status_endpoint_paused_is_terminal_no_polling():
     fragment = discovery_handlers.get_download_status(job_id, doc_id=doc_id, library=library)
     text = repr(fragment)
     assert "Download in pausa" in text
-    assert "every 1s" not in text
+    assert "every 3s" not in text
 
 
 def test_download_status_endpoint_cancelled_is_terminal_no_polling():
@@ -47,4 +48,4 @@ def test_download_status_endpoint_cancelled_is_terminal_no_polling():
     fragment = discovery_handlers.get_download_status(job_id, doc_id=doc_id, library=library)
     text = repr(fragment)
     assert "Download annullato" in text
-    assert "every 1s" not in text
+    assert "every 3s" not in text

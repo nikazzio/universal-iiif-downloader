@@ -147,9 +147,12 @@ Behavior notes:
 - `settings.ui.theme_color` (`string`, default: `#E8A6B6`)
 - `settings.ui.items_per_page` (`int`, default: `12`)
 - `settings.ui.toast_duration` (`int`, default: `3000`)
+- `settings.ui.polling.download_manager_interval_seconds` (`int`, default: `3`, allowed range: `1..30`)
+- `settings.ui.polling.download_status_interval_seconds` (`int`, default: `3`, allowed range: `1..30`)
 
 Notes:
 - `theme_color` is kept for backward compatibility; current UI uses primary/accent keys and preset.
+- Download polling values are used by Discovery HTMX fragments only (Download Manager and single status card).
 
 ## `settings.images`
 
