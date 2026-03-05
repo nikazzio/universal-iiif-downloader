@@ -20,6 +20,11 @@ from fasthtml.common import (
     Span,
 )
 
+from studio_ui.common.polling import (
+    build_every_seconds_trigger,
+    get_download_manager_interval_seconds,
+    get_download_status_interval_seconds,
+)
 from studio_ui.common.title_utils import resolve_preferred_title, truncate_title
 from studio_ui.library_options import library_options
 
@@ -511,6 +516,7 @@ def render_download_status(download_id: str, doc_id: str, library: str, status_d
     percent_cls = "text-3xl font-extrabold text-indigo-400"
     progress_bg_cls = "w-full bg-slate-700 rounded-full h-2.5 mb-2"
     progress_bar_cls = "bg-indigo-500 h-2.5 rounded-full transition-all duration-500 ease-out"
+    status_poll_trigger = build_every_seconds_trigger(get_download_status_interval_seconds())
 
     # 1.b Stopping states
     if status in {"cancelling", "pausing"}:
@@ -548,7 +554,7 @@ def render_download_status(download_id: str, doc_id: str, library: str, status_d
         return Div(
             body,
             hx_get=f"/api/download_status/{download_id}?doc_id={doc_id}&library={library}",
-            hx_trigger="every 1s",
+            hx_trigger=status_poll_trigger,
             hx_swap="outerHTML",
             cls=card_cls,
         )
@@ -649,7 +655,7 @@ def render_download_status(download_id: str, doc_id: str, library: str, status_d
         body,
         controls,
         hx_get=f"/api/download_status/{download_id}?doc_id={doc_id}&library={library}",
-        hx_trigger="every 1s",
+        hx_trigger=status_poll_trigger,
         hx_swap="outerHTML",
         cls=card_cls,
     )
@@ -666,6 +672,7 @@ def render_download_manager(jobs: list[dict]) -> Div:
     """Render the full download manager panel."""
     active_statuses = {"queued", "running", "cancelling", "pausing", "pending", "starting"}
     should_poll = any(str(job.get("status") or "").lower() in active_statuses for job in jobs)
+    manager_poll_trigger = build_every_seconds_trigger(get_download_manager_interval_seconds())
 
     if not jobs:
         body = Div(
@@ -685,7 +692,7 @@ def render_download_manager(jobs: list[dict]) -> Div:
         attrs.update(
             {
                 "hx_get": "/api/download_manager",
-                "hx_trigger": "every 1s",
+                "hx_trigger": manager_poll_trigger,
                 "hx_swap": "outerHTML",
             }
         )

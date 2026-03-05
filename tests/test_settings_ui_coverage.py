@@ -28,6 +28,8 @@ def test_settings_page_exposes_critical_runtime_config_keys():
         "settings.library.default_mode",
         "settings.ui.items_per_page",
         "settings.ui.toast_duration",
+        "settings.ui.polling.download_manager_interval_seconds",
+        "settings.ui.polling.download_status_interval_seconds",
         "settings.images.download_strategy_mode",
         "settings.images.download_strategy_custom",
         "settings.images.iiif_quality",

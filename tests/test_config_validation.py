@@ -66,6 +66,8 @@ def test_validate_config_reports_out_of_range_values():
     data = _clone_default()
     data["settings"]["thumbnails"]["page_size"] = 500
     data["settings"]["images"]["tile_stitch_max_ram_gb"] = 0.01
+    data["settings"]["ui"]["polling"]["download_manager_interval_seconds"] = 0
+    data["settings"]["ui"]["polling"]["download_status_interval_seconds"] = 99
 
     issues = validate_config(data, schema=DEFAULT_CONFIG_JSON)
 
@@ -79,6 +81,18 @@ def test_validate_config_reports_out_of_range_values():
         issue.severity == SEVERITY_WARNING
         and issue.code == "out_of_range"
         and issue.path == "settings.images.tile_stitch_max_ram_gb"
+        for issue in issues
+    )
+    assert any(
+        issue.severity == SEVERITY_WARNING
+        and issue.code == "out_of_range"
+        and issue.path == "settings.ui.polling.download_manager_interval_seconds"
+        for issue in issues
+    )
+    assert any(
+        issue.severity == SEVERITY_WARNING
+        and issue.code == "out_of_range"
+        and issue.path == "settings.ui.polling.download_status_interval_seconds"
         for issue in issues
     )
 

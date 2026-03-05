@@ -93,13 +93,13 @@ def test_download_manager_polls_only_with_active_jobs():
     active_fragment = discovery_handlers.download_manager()
     active_text = repr(active_fragment)
     assert 'hx-get="/api/download_manager"' in active_text
-    assert 'hx-trigger="every 1s"' in active_text
+    assert 'hx-trigger="every 3s"' in active_text
 
     vm.update_download_job("poll_active_1", current=10, total=10, status="completed")
     idle_fragment = discovery_handlers.download_manager()
     idle_text = repr(idle_fragment)
     assert 'hx-get="/api/download_manager"' not in idle_text
-    assert 'hx-trigger="every 1s"' not in idle_text
+    assert 'hx-trigger="every 3s"' not in idle_text
 
 
 def test_download_manager_shows_live_progress_counts():

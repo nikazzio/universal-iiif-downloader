@@ -65,6 +65,10 @@ DEFAULT_CONFIG_JSON: dict[str, Any] = {
             "theme_color": "#E8A6B6",
             "items_per_page": 12,
             "toast_duration": 3000,
+            "polling": {
+                "download_manager_interval_seconds": 3,
+                "download_status_interval_seconds": 3,
+            },
         },
         "images": {
             "download_strategy_mode": "balanced",
