@@ -466,6 +466,19 @@ def library_start_download(
             action_required=action_required,
             sort_by=sort_by,
         )
+    if _effective_state(ms) != "saved":
+        return _refresh_response(
+            message="Download completo disponibile solo per documenti in stato Remoto.",
+            tone="info",
+            view=view,
+            q=q,
+            state=state,
+            library_filter=library_filter,
+            category=category,
+            mode=mode,
+            action_required=action_required,
+            sort_by=sort_by,
+        )
     try:
         start_downloader_thread(manifest_url, doc_id, library)
         return _refresh_response(

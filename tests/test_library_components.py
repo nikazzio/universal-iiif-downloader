@@ -1,4 +1,5 @@
 from studio_ui.components.library import render_library_card, render_library_page
+from studio_ui.components.library_cards import _card_action_flags
 
 
 def _base_doc(**overrides):
@@ -105,3 +106,11 @@ def test_library_archive_view_has_persisted_collapsible_sections():
     """Archive sections should expose stable collapsible keys for persistence."""
     rendered = repr(render_library_page([_base_doc()], mode="archivio", default_mode="operativa"))
     assert 'data-collapsible-key="archive:' in rendered
+
+
+def test_card_action_flags_enable_download_full_only_for_remote_state():
+    """'Scarica locale' must be enabled only for saved/remote items."""
+    assert _card_action_flags({"asset_state": "saved"}).get("download_full") is True
+    assert _card_action_flags({"asset_state": "partial"}).get("download_full") is False
+    assert _card_action_flags({"asset_state": "complete"}).get("download_full") is False
+    assert _card_action_flags({"asset_state": "error"}).get("download_full") is False
