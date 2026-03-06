@@ -126,7 +126,7 @@ def _card_action_flags(doc: dict) -> dict[str, bool]:
     has_missing = bool(doc.get("has_missing_pages"))
     local_pages_count = int(doc.get("local_pages_count") or 0)
     return {
-        "download_full": not is_running and state != "complete",
+        "download_full": not is_running and state == "saved",
         "retry_missing": not is_running and has_missing,
         "cleanup_partial": not is_running and state in {"partial", "error"},
         "optimize_scans": not is_running and local_pages_count > 0,
