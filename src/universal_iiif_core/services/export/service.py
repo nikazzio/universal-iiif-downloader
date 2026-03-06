@@ -258,7 +258,9 @@ def _resolve_custom_selected_pages_for_source(
             raise ValueError(f"Pagine fuori range manifesto remoto: {out_of_range}")
         return requested_pages
     if not available_pages:
-        return requested_pages
+        raise ValueError(
+            "Impossibile validare pagine richieste: nessuna scansione locale e manifest remoto senza conteggio pagine."
+        )
 
     available_set = set(available_pages)
     missing = [page for page in requested_pages if page not in available_set]
@@ -499,6 +501,17 @@ def list_item_pdf_files(doc_id: str, library: str) -> list[dict[str, Any]]:
     return rows
 
 
+def _load_export_manifest_payload(paths: dict[str, Path], source_url: str) -> dict:
+    manifest_payload = load_json(paths["manifest"]) or {}
+    if not isinstance(manifest_payload, dict):
+        manifest_payload = {}
+    if not manifest_payload and source_url:
+        remote_manifest = get_json(source_url, retries=2) or {}
+        if isinstance(remote_manifest, dict) and remote_manifest:
+            manifest_payload = remote_manifest
+    return manifest_payload
+
+
 def _export_single_item_to_output(
     *,
     item: dict[str, str],
@@ -530,11 +543,7 @@ def _export_single_item_to_output(
     scans_dir = Path(paths["scans"])
     metadata = load_json(paths["metadata"]) or {}
     source_url = str(metadata.get("manifest") or metadata.get("manifest_url") or item.get("manifest_url") or "")
-    manifest_payload = load_json(paths["manifest"]) or {}
-    if not manifest_payload and source_url:
-        remote_manifest = get_json(source_url, retries=2) or {}
-        if isinstance(remote_manifest, dict):
-            manifest_payload = remote_manifest
+    manifest_payload = _load_export_manifest_payload(paths, source_url)
 
     cm = get_config_manager()
     _resolved_profile_name, profile = resolve_effective_profile(

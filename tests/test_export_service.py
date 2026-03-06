@@ -4,6 +4,7 @@ import json
 import zipfile
 from pathlib import Path
 
+import pytest
 from PIL import Image
 
 from universal_iiif_core.config_manager import get_config_manager
@@ -141,3 +142,38 @@ def test_execute_export_job_remote_temp_works_without_local_scans(monkeypatch):
     )
     assert output.exists()
     assert output.suffix.lower() == ".pdf"
+
+
+def test_execute_export_job_remote_temp_custom_requires_manifest_or_local(monkeypatch):
+    """Custom selection in remote-temp mode must fail when pages cannot be validated."""
+    cm = get_config_manager()
+    doc_id = "DOC_EXPORT_REMOTE_CUSTOM_INVALID"
+    library = "Gallica"
+    root = cm.get_downloads_dir() / library / doc_id
+    data_dir = root / "data"
+    data_dir.mkdir(parents=True, exist_ok=True)
+    (data_dir / "metadata.json").write_text(
+        json.dumps(
+            {
+                "title": "Remote Custom Invalid",
+                "manifest_url": "https://example.org/remote/manifest-invalid.json",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        "universal_iiif_core.services.export.service.get_json",
+        lambda *_a, **_k: {},
+    )
+
+    with pytest.raises(ValueError, match="Impossibile validare pagine richieste"):
+        execute_export_job(
+            job_id="exp_pdf_remote_custom_invalid",
+            items=[{"doc_id": doc_id, "library": library}],
+            export_format="pdf_images",
+            selection_mode="custom",
+            selected_pages_raw="1",
+            destination="local_filesystem",
+            image_source_mode="remote_highres_temp",
+        )

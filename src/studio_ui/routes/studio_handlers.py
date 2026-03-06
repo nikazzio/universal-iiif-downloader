@@ -544,6 +544,29 @@ def _select_studio_manifest_url(
     return local_manifest_url
 
 
+def _resolve_manifest_for_selected_source(
+    *,
+    read_source_mode: str,
+    page: int,
+    manifest_path: Path,
+    remote_manifest_url: str,
+    fallback_manifest: dict,
+    fallback_canvas: str | None,
+) -> tuple[dict, str | None, bool]:
+    manifest_exists_local = manifest_path.exists()
+    if read_source_mode == "remote" and remote_manifest_url:
+        remote_manifest = get_json(remote_manifest_url, retries=2) or {}
+        if isinstance(remote_manifest, dict) and remote_manifest:
+            return remote_manifest, _resolve_initial_canvas(remote_manifest, page), manifest_exists_local
+
+    if read_source_mode == "local" and manifest_exists_local:
+        local_manifest, local_canvas = _load_manifest_payload(manifest_path, page)
+        if local_manifest:
+            return local_manifest, local_canvas, True
+
+    return fallback_manifest, fallback_canvas, manifest_exists_local
+
+
 def _persist_studio_source_state(
     *,
     doc_id: str,
@@ -599,14 +622,7 @@ def studio_page(request: Request, doc_id: str = "", library: str = "", page: int
                 return _with_toast(panel, message, tone="danger")
             return panel
 
-        manifest_pages = _manifest_total_pages(manifest_json, ms_row)
-        meta = {
-            **meta,
-            "full_display_title": full_title,
-            "local_pages_count": int(inventory.local_pages_count),
-            "temp_pages_count": int(inventory.temp_pages_count),
-            "manifest_total_pages": manifest_pages,
-        }
+        resolved_manifest_pages = _manifest_total_pages(manifest_json, ms_row)
         require_complete_local = bool(
             get_config_manager().get_setting("viewer.mirador.require_complete_local_images", True)
         )
@@ -619,7 +635,7 @@ def studio_page(request: Request, doc_id: str = "", library: str = "", page: int
         read_source_mode, should_gate_mirador = _resolve_studio_read_source_mode(
             ms_row=ms_row,
             local_pages_count=int(inventory.local_pages_count),
-            manifest_pages=int(manifest_pages),
+            manifest_pages=int(resolved_manifest_pages),
             require_complete_local=require_complete_local,
             allow_remote_preview=allow_remote_preview,
         )
@@ -632,6 +648,29 @@ def studio_page(request: Request, doc_id: str = "", library: str = "", page: int
             local_manifest_url=local_manifest_url,
             remote_manifest_url=remote_manifest_url,
         )
+        manifest_json, initial_canvas, manifest_exists_local = _resolve_manifest_for_selected_source(
+            read_source_mode=read_source_mode,
+            page=int(page),
+            manifest_path=manifest_path,
+            remote_manifest_url=remote_manifest_url,
+            fallback_manifest=manifest_json,
+            fallback_canvas=initial_canvas,
+        )
+        if not manifest_json:
+            message = "Manifesto non trovato."
+            panel = Div(message, cls="p-10")
+            if is_hx:
+                return _with_toast(panel, message, tone="danger")
+            return panel
+
+        manifest_pages = _manifest_total_pages(manifest_json, ms_row)
+        meta = {
+            **meta,
+            "full_display_title": full_title,
+            "local_pages_count": int(inventory.local_pages_count),
+            "temp_pages_count": int(inventory.temp_pages_count),
+            "manifest_total_pages": manifest_pages,
+        }
         mirador_override_url = (
             f"/studio?doc_id={doc_q}&library={lib_q}&page={int(page)}&allow_remote_preview=1"
             if should_gate_mirador

@@ -165,6 +165,21 @@ def test_library_optimize_local_scans_keeps_local_flags_when_optimization_fails(
         cm.set_downloads_dir(str(old_downloads))
 
 
+def test_library_optimize_local_scans_rejects_path_traversal(tmp_path):
+    """Optimization endpoint must reject paths resolving outside downloads root."""
+    cm = get_config_manager()
+    old_downloads = cm.get_downloads_dir()
+    try:
+        tmp_downloads = tmp_path / "downloads"
+        cm.set_downloads_dir(str(tmp_downloads))
+        result = library_handlers.library_optimize_local_scans("DOC_TRAV", "../outside")
+        rendered = repr(result)
+        assert "Percorso documento non valido" in rendered
+        assert not (tmp_path / "outside").exists()
+    finally:
+        cm.set_downloads_dir(str(old_downloads))
+
+
 def test_library_start_download_skips_complete_entries(monkeypatch):
     """Complete items should not enqueue a full re-download from Library."""
     vm = VaultManager()

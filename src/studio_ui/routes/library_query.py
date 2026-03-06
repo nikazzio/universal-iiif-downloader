@@ -160,8 +160,7 @@ def _to_downloads_url(path: Path) -> str:
 def _thumbnail_from_manifest_payload(payload: dict, *, manifest_url: str = "", doc_id: str = "") -> str:
     if not isinstance(payload, dict):
         return ""
-    thumb = IIIFManifestParser._extract_thumbnail(payload, manifest_url=manifest_url, doc_id=doc_id or None)
-    return str(thumb or "").strip()
+    return IIIFManifestParser.extract_thumbnail(payload, manifest_url=manifest_url, doc_id=doc_id or None)
 
 
 def _manifest_thumbnail_url(row: dict) -> str:

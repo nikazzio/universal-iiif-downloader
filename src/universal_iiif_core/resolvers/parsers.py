@@ -252,6 +252,12 @@ class IIIFManifestParser:
         )
 
     @staticmethod
+    def extract_thumbnail(manifest: dict[str, Any], manifest_url: str = "", doc_id: str | None = None) -> str:
+        """Public helper to extract thumbnail URL from manifest payload."""
+        thumb = IIIFManifestParser._extract_thumbnail(manifest, manifest_url, doc_id)
+        return str(thumb or "").strip()
+
+    @staticmethod
     def _thumb_from_manifest_thumbnail(manifest: dict[str, Any]) -> str | None:
         """Extract thumbnail from top-level `thumbnail` field."""
         thumbnail_obj = manifest.get("thumbnail")

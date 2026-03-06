@@ -317,7 +317,26 @@ def library_optimize_local_scans(
     library = _decode(library)
     storage = OCRStorage()
     paths = storage.get_document_paths(doc_id, library)
-    scans_dir = Path(paths["scans"])
+    cm = get_config_manager()
+    downloads_root = cm.get_downloads_dir().resolve()
+    doc_root = Path(paths["root"]).resolve()
+    try:
+        doc_root.relative_to(downloads_root)
+    except Exception:
+        return _refresh_response(
+            message="Percorso documento non valido.",
+            tone="danger",
+            view=view,
+            q=q,
+            state=state,
+            library_filter=library_filter,
+            category=category,
+            mode=mode,
+            action_required=action_required,
+            sort_by=sort_by,
+        )
+
+    scans_dir = doc_root / "scans"
     if not scans_dir.exists():
         return _refresh_response(
             message="Nessuna scansione locale disponibile da ottimizzare.",
@@ -332,7 +351,6 @@ def library_optimize_local_scans(
             sort_by=sort_by,
         )
 
-    cm = get_config_manager()
     max_long_edge_px = max(
         512,
         min(_safe_int(cm.get_setting("images.local_optimize.max_long_edge_px", 2600), 2600), 12000),

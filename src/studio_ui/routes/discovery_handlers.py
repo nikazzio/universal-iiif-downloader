@@ -183,8 +183,52 @@ def _upsert_saved_entry(
 def _thumbnail_url_from_manifest(manifest_payload: dict, *, manifest_url: str = "", doc_id: str = "") -> str:
     if not isinstance(manifest_payload, dict):
         return ""
-    thumb = IIIFManifestParser._extract_thumbnail(manifest_payload, manifest_url=manifest_url, doc_id=doc_id or None)
-    return str(thumb or "").strip()
+    return IIIFManifestParser.extract_thumbnail(manifest_payload, manifest_url=manifest_url, doc_id=doc_id or None)
+
+
+def _stream_thumbnail_bytes(url: str, *, max_bytes: int) -> BytesIO | None:
+    session = get_request_session()
+    with session.get(url, timeout=15, stream=True) as response:
+        response.raise_for_status()
+        content_length = response.headers.get("Content-Length")
+        if content_length is not None:
+            try:
+                if int(content_length) > max_bytes:
+                    return None
+            except ValueError:
+                pass
+
+        buffer = BytesIO()
+        downloaded = 0
+        for chunk in response.iter_content(chunk_size=8192):
+            if not chunk:
+                continue
+            downloaded += len(chunk)
+            if downloaded > max_bytes:
+                return None
+            buffer.write(chunk)
+    if buffer.tell() <= 0:
+        return None
+    buffer.seek(0)
+    return buffer
+
+
+def _save_preview_jpeg(buffer: BytesIO, preview_path: Path) -> bool:
+    from PIL import DecompressionBombError, Image, UnidentifiedImageError
+
+    try:
+        with Image.open(buffer) as img:
+            rgb = img.convert("RGB")
+            width, height = rgb.size
+            long_edge = max(width, height)
+            if long_edge > 640:
+                scale = 640 / float(long_edge)
+                target_size = (max(1, int(width * scale)), max(1, int(height * scale)))
+                rgb = rgb.resize(target_size, Image.Resampling.LANCZOS)
+            rgb.save(preview_path, format="JPEG", quality=82, optimize=True, progressive=True)
+        return True
+    except (DecompressionBombError, OSError, UnidentifiedImageError):
+        return False
 
 
 def _download_prefetch_preview(data_dir: Path, thumbnail_url: str) -> str:
@@ -194,22 +238,13 @@ def _download_prefetch_preview(data_dir: Path, thumbnail_url: str) -> str:
     if not clean_url.lower().startswith(("http://", "https://")):
         return ""
     preview_path = data_dir / "preview.jpg"
+    max_bytes = 5 * 1024 * 1024
     try:
-        response = get_request_session().get(clean_url, timeout=15)
-        response.raise_for_status()
-        if not response.content:
+        buffer = _stream_thumbnail_bytes(clean_url, max_bytes=max_bytes)
+        if buffer is None:
             return ""
-        from PIL import Image
-
-        with Image.open(BytesIO(response.content)) as img:
-            rgb = img.convert("RGB")
-            width, height = rgb.size
-            long_edge = max(width, height)
-            if long_edge > 640:
-                scale = 640 / float(long_edge)
-                target_size = (max(1, int(width * scale)), max(1, int(height * scale)))
-                rgb = rgb.resize(target_size, Image.Resampling.LANCZOS)
-            rgb.save(preview_path, format="JPEG", quality=82, optimize=True, progressive=True)
+        if not _save_preview_jpeg(buffer, preview_path):
+            return ""
         return str(preview_path)
     except Exception:
         logger.debug("Unable to persist prefetch preview from %s", clean_url, exc_info=True)
