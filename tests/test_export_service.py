@@ -4,6 +4,7 @@ import json
 import zipfile
 from pathlib import Path
 
+import pytest
 from PIL import Image
 
 from universal_iiif_core.config_manager import get_config_manager
@@ -88,3 +89,91 @@ def test_execute_export_job_batches_zip_outputs_into_bundle():
     with zipfile.ZipFile(output, "r") as archive:
         names = archive.namelist()
     assert len(names) >= 2
+
+
+def test_execute_export_job_remote_temp_works_without_local_scans(monkeypatch):
+    """Remote-temp source should export PDF even when local scans are missing."""
+    cm = get_config_manager()
+    doc_id = "DOC_EXPORT_REMOTE_ONLY"
+    library = "Gallica"
+    root = cm.get_downloads_dir() / library / doc_id
+    data_dir = root / "data"
+    data_dir.mkdir(parents=True, exist_ok=True)
+
+    (data_dir / "metadata.json").write_text(
+        json.dumps(
+            {
+                "title": "Remote Only Document",
+                "manifest_url": "https://example.org/remote/manifest.json",
+            }
+        ),
+        encoding="utf-8",
+    )
+    (data_dir / "manifest.json").write_text(
+        json.dumps(
+            {
+                "items": [
+                    {"id": "https://example.org/canvas/1"},
+                    {"id": "https://example.org/canvas/2"},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    def _fake_fetch_highres_page_image(_manifest, page, out_file, iiif_quality="default"):
+        _ = iiif_quality
+        Image.new("RGB", (1200, 1800), (240, 240, 240)).save(out_file, format="JPEG", quality=88)
+        return True, f"page {page} ok"
+
+    monkeypatch.setattr(
+        "universal_iiif_core.services.export.service.fetch_highres_page_image",
+        _fake_fetch_highres_page_image,
+    )
+
+    output = execute_export_job(
+        job_id="exp_pdf_remote_saved",
+        items=[{"doc_id": doc_id, "library": library}],
+        export_format="pdf_images",
+        selection_mode="all",
+        selected_pages_raw="",
+        destination="local_filesystem",
+        image_source_mode="remote_highres_temp",
+    )
+    assert output.exists()
+    assert output.suffix.lower() == ".pdf"
+
+
+def test_execute_export_job_remote_temp_custom_requires_manifest_or_local(monkeypatch):
+    """Custom selection in remote-temp mode must fail when pages cannot be validated."""
+    cm = get_config_manager()
+    doc_id = "DOC_EXPORT_REMOTE_CUSTOM_INVALID"
+    library = "Gallica"
+    root = cm.get_downloads_dir() / library / doc_id
+    data_dir = root / "data"
+    data_dir.mkdir(parents=True, exist_ok=True)
+    (data_dir / "metadata.json").write_text(
+        json.dumps(
+            {
+                "title": "Remote Custom Invalid",
+                "manifest_url": "https://example.org/remote/manifest-invalid.json",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        "universal_iiif_core.services.export.service.get_json",
+        lambda *_a, **_k: {},
+    )
+
+    with pytest.raises(ValueError, match="Impossibile validare pagine richieste"):
+        execute_export_job(
+            job_id="exp_pdf_remote_custom_invalid",
+            items=[{"doc_id": doc_id, "library": library}],
+            export_format="pdf_images",
+            selection_mode="custom",
+            selected_pages_raw="1",
+            destination="local_filesystem",
+            image_source_mode="remote_highres_temp",
+        )
