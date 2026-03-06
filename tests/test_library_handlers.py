@@ -205,6 +205,32 @@ def test_library_start_download_skips_complete_entries(monkeypatch):
     assert called["count"] == 0
 
 
+def test_library_start_download_rejects_non_remote_states(monkeypatch):
+    """Full download action should be enabled only for saved/remote manuscripts."""
+    vm = VaultManager()
+    vm.upsert_manuscript(
+        "DOC_PARTIAL",
+        library="Gallica",
+        manifest_url="https://example.org/m.json",
+        status="paused",
+        asset_state="partial",
+        total_canvases=10,
+        downloaded_canvases=4,
+    )
+
+    called = {"count": 0}
+
+    def _fake_start(*_a, **_k):
+        called["count"] += 1
+        return "jid"
+
+    monkeypatch.setattr(library_handlers, "start_downloader_thread", _fake_start)
+
+    result = library_handlers.library_start_download("DOC_PARTIAL", "Gallica")
+    assert "solo per documenti in stato Remoto" in repr(result)
+    assert called["count"] == 0
+
+
 def test_library_retry_missing_queues_specific_pages(monkeypatch):
     """Retry missing should enqueue only missing pages from missing_pages_json."""
     vm = VaultManager()
