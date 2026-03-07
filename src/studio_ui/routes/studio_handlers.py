@@ -1270,11 +1270,15 @@ def get_studio_export_thumbs(
 ):
     """Return one thumbnails page slice for Studio Export tab."""
     doc_id, library = unquote(doc_id), unquote(library)
+    optimization_meta = _load_last_optimization_meta(doc_id)
+    highres_feedback_by_num, _ = _resolve_highres_page_feedback(doc_id, library)
     thumb_state = _build_export_thumbnail_slice(
         doc_id,
         library,
         thumb_page=int(thumb_page or 1),
         page_size=int(page_size or 0),
+        page_delta_by_num=_page_delta_map(optimization_meta),
+        page_feedback_by_num=highres_feedback_by_num,
     )
     return render_export_thumbnails_panel(
         doc_id=doc_id,

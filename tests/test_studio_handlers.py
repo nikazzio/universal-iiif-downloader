@@ -480,6 +480,9 @@ def test_export_panel_uses_submit_trigger_and_card_based_thumbnail_selection():
     assert "studio-thumb-meta" in rendered
     assert "studio-thumb-highres-btn" in rendered
     assert 'id="studio-export-optimize-btn"' in rendered
+    assert 'id="studio-export-live-state-poller"' in rendered
+    assert 'hx-target="#studio-export-thumbs-slot"' in rendered
+    assert "/api/studio/export/thumbs?doc_id=" in rendered
     assert "data-export-subtab" in rendered
     assert "studio-export-profile-form" not in rendered
     assert "window.__studioExportListenersBound" in rendered
@@ -705,6 +708,57 @@ def test_studio_export_live_state_keeps_requested_subtab():
     panel = studio_handlers.get_studio_export_live_state(doc_id=doc_id, library=library, subtab="jobs")
     rendered = repr(panel)
     assert 'id="studio-export-subtab-jobs" class="mt-3"' in rendered
+
+
+def test_export_thumbs_endpoint_preserves_delta_and_highres_feedback(tmp_path):
+    """Thumb pagination endpoint should keep per-page delta and high-res in-flight feedback."""
+    cm = get_config_manager()
+    old_downloads = cm.get_downloads_dir()
+    try:
+        tmp_downloads = tmp_path / "downloads"
+        cm.set_downloads_dir(str(tmp_downloads))
+
+        vm = VaultManager()
+        doc_id = "DOC_THUMBS_STATE"
+        library = "Vaticana"
+        doc_root = Path(tmp_downloads) / library / doc_id
+        scans_dir = doc_root / "scans"
+        data_dir = doc_root / "data"
+        scans_dir.mkdir(parents=True, exist_ok=True)
+        data_dir.mkdir(parents=True, exist_ok=True)
+        for idx in range(4):
+            Image.new("RGB", (1600, 1200), (220, 220, 220)).save(scans_dir / f"pag_{idx:04d}.jpg", format="JPEG")
+        (data_dir / "manifest.json").write_text(
+            json.dumps({"items": [{"id": "https://example.org/canvas/1"}]}),
+            encoding="utf-8",
+        )
+
+        vm.upsert_manuscript(
+            doc_id,
+            library=library,
+            local_path=str(doc_root),
+            status="saved",
+            asset_state="saved",
+            local_optimization_meta_json=json.dumps(
+                {"page_deltas": [{"page": 3, "bytes_saved": 2048}]},
+                ensure_ascii=False,
+            ),
+        )
+        vm.create_download_job("job_highres_running", doc_id, library, "https://example.org/manifest.json")
+        vm.update_download_job("job_highres_running", current=1, total=4, status="running")
+        vm.set_manuscript_ui_pref(
+            doc_id,
+            "studio_export_highres_jobs",
+            {"3": {"job_id": "job_highres_running", "state": "queued"}},
+        )
+
+        panel = studio_handlers.get_studio_export_thumbs(doc_id=doc_id, library=library, thumb_page=3, page_size=1)
+        rendered = repr(panel)
+        assert "Pag. 3" in rendered
+        assert "High-Res in corso" in rendered
+        assert "-2.0 KB" in rendered
+    finally:
+        cm.set_downloads_dir(str(old_downloads))
 
 
 def test_export_thumb_page_size_preference_is_persisted_per_item():

@@ -372,10 +372,7 @@ def _render_export_pages_subtab(
         f"/api/studio/export/optimize_scans?doc_id={encoded_doc}&library={encoded_lib}"
         f"&thumb_page={thumb_page}&page_size={thumb_page_size}"
     )
-    live_poll_url = (
-        f"/api/studio/export/live_state?doc_id={encoded_doc}&library={encoded_lib}"
-        f"&thumb_page={thumb_page}&page_size={thumb_page_size}"
-    )
+    live_poll_url = f"/api/studio/export/thumbs?doc_id={encoded_doc}&library={encoded_lib}"
 
     return Div(
         Div(
@@ -569,11 +566,8 @@ def _render_export_pages_subtab(
                 id="studio-export-live-state-poller",
                 hx_get=live_poll_url,
                 hx_trigger="load, every 4s",
-                hx_include=(
-                    "#studio-export-selected-pages,#studio-export-thumb-page,"
-                    "#studio-export-page-size,#studio-export-subtab-state"
-                ),
-                hx_target="#studio-export-panel",
+                hx_include="#studio-export-thumb-page,#studio-export-page-size",
+                hx_target="#studio-export-thumbs-slot",
                 hx_swap="outerHTML",
                 cls="hidden" if has_active_page_actions else "hidden",
             )
