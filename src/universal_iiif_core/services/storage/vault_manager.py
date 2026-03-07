@@ -590,7 +590,7 @@ class VaultManager:
                 return default
             try:
                 return json.loads(raw)
-            except DatabaseError:
+            except (json.JSONDecodeError, TypeError, ValueError):
                 return default
         finally:
             conn.close()
@@ -647,7 +647,7 @@ class VaultManager:
                 return default
             try:
                 return json.loads(raw)
-            except DatabaseError:
+            except (json.JSONDecodeError, TypeError, ValueError):
                 return default
         finally:
             conn.close()

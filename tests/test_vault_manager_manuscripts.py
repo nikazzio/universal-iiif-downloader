@@ -195,3 +195,25 @@ def test_studio_recent_contexts_skip_removed_items():
     recents = vm.list_studio_recent_contexts(limit=8)
     assert len(recents) == 1
     assert recents[0].get("doc_id") == "DOC_KEEP_RECENT"
+
+
+def test_get_app_ui_pref_returns_default_on_malformed_json():
+    """Malformed app preference JSON should not crash and must return default."""
+    vm = VaultManager()
+    conn = vm._get_conn()  # noqa: SLF001
+    cur = conn.cursor()
+    cur.execute(
+        """
+        INSERT INTO app_ui_preferences (pref_key, pref_value_json, updated_at)
+        VALUES (?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(pref_key) DO UPDATE SET
+            pref_value_json = excluded.pref_value_json,
+            updated_at = CURRENT_TIMESTAMP
+        """,
+        ("studio.last_context", "{not-json"),
+    )
+    conn.commit()
+    conn.close()
+
+    fallback = {"doc_id": "fallback"}
+    assert vm.get_app_ui_pref("studio.last_context", fallback) == fallback

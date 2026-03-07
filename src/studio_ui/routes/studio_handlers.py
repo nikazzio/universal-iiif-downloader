@@ -1410,12 +1410,13 @@ def save_snippet_api(doc_id: str, library: str, page: int, crop_data: str, trans
         return build_toast(f"Errore salvataggio snippet: {e}", tone="danger")
 
 
-def save_transcription(doc_id: str, library: str, page: int, text: str):
+def save_transcription(doc_id: str, library: str, page: int, text: str, tab: str = "transcription"):
     """Save manual transcription edits from the Studio."""
     try:
         doc_id, library = unquote(doc_id), unquote(library)
         storage = OCRStorage()
         page_idx = int(page)
+        active_tab = _normalize_studio_tab(tab)
         existing = storage.load_transcription(doc_id, page_idx, library)
         normalized_existing = (existing.get("full_text") if existing else "") or ""
         normalized_new = text or ""
@@ -1424,7 +1425,7 @@ def save_transcription(doc_id: str, library: str, page: int, text: str):
             return [
                 Div("", cls="hidden"),
                 build_toast("Nessuna modifica rilevata; il testo è identico all'ultima versione.", tone="info"),
-                _studio_panel_refresh_script(doc_id, library, page_idx),
+                _studio_panel_refresh_script(doc_id, library, page_idx, active_tab),
             ]
 
         # Save the transcription
@@ -1438,7 +1439,7 @@ def save_transcription(doc_id: str, library: str, page: int, text: str):
         return [
             Div("", cls="hidden"),
             build_toast("Modifiche salvate con successo nello storico.", tone="success"),
-            _studio_panel_refresh_script(doc_id, library, page_idx),
+            _studio_panel_refresh_script(doc_id, library, page_idx, active_tab),
         ]
     except Exception as e:
         return [
