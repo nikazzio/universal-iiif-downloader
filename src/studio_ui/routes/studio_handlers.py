@@ -43,6 +43,7 @@ from universal_iiif_core.pdf_profiles import (
     resolve_effective_profile,
 )
 from universal_iiif_core.services.export import list_item_pdf_files
+from universal_iiif_core.services.export.service import parse_page_selection
 from universal_iiif_core.services.ocr.processor import OCRProcessor
 from universal_iiif_core.services.ocr.storage import OCRStorage
 from universal_iiif_core.services.scan_optimize import optimize_local_scans, summarize_scan_folder
@@ -450,6 +451,135 @@ def _page_delta_map(meta: dict[str, Any]) -> dict[int, dict[str, Any]]:
     return out
 
 
+_STUDIO_EXPORT_HIGHRES_PREF_KEY = "studio_export_highres_jobs"
+_ACTIVE_DOWNLOAD_STATES = {"queued", "running", "cancelling", "pausing"}
+
+
+def _normalize_highres_pref(raw_pref: Any) -> dict[int, dict[str, Any]]:
+    if not isinstance(raw_pref, dict):
+        return {}
+    normalized: dict[int, dict[str, Any]] = {}
+    for raw_page, payload in raw_pref.items():
+        try:
+            page_num = int(raw_page)
+        except (TypeError, ValueError):
+            continue
+        if page_num <= 0:
+            continue
+        if isinstance(payload, dict):
+            job_id = str(payload.get("job_id") or "").strip()
+            state = str(payload.get("state") or "").strip().lower()
+        else:
+            job_id = str(payload or "").strip()
+            state = ""
+        if not job_id:
+            continue
+        normalized[page_num] = {"job_id": job_id, "state": state}
+    return normalized
+
+
+def _load_highres_pref(doc_id: str) -> dict[int, dict[str, Any]]:
+    raw_pref = VaultManager().get_manuscript_ui_pref(doc_id, _STUDIO_EXPORT_HIGHRES_PREF_KEY, {})
+    return _normalize_highres_pref(raw_pref)
+
+
+def _save_highres_pref(doc_id: str, page_jobs: dict[int, dict[str, Any]]) -> None:
+    payload = {
+        str(int(page)): {
+            "job_id": str((entry or {}).get("job_id") or ""),
+            "state": str((entry or {}).get("state") or ""),
+        }
+        for page, entry in page_jobs.items()
+        if int(page) > 0 and str((entry or {}).get("job_id") or "").strip()
+    }
+    VaultManager().set_manuscript_ui_pref(doc_id, _STUDIO_EXPORT_HIGHRES_PREF_KEY, payload)
+
+
+def _highres_feedback_row(*, status: str, current: int, total: int) -> dict[str, str]:
+    status_key = str(status or "").strip().lower()
+    progress_suffix = ""
+    if total > 0:
+        progress_suffix = f" ({max(0, int(current))}/{max(0, int(total))})"
+    if status_key == "queued":
+        return {"state": "queued", "tone": "info", "label": "High-Res in coda"}
+    if status_key in {"running", "cancelling", "pausing"}:
+        return {"state": "running", "tone": "warning", "label": f"High-Res in corso{progress_suffix}"}
+    if status_key == "completed":
+        return {"state": "done", "tone": "success", "label": "High-Res completato"}
+    if status_key in {"error", "failed"}:
+        return {"state": "error", "tone": "danger", "label": "Errore High-Res"}
+    if status_key in {"cancelled", "paused"}:
+        return {"state": "error", "tone": "warning", "label": "High-Res interrotto"}
+    return {"state": "idle", "tone": "info", "label": "High-Res"}
+
+
+def _resolve_highres_page_feedback(doc_id: str, library: str) -> tuple[dict[int, dict[str, str]], bool]:
+    pref = _load_highres_pref(doc_id)
+    if not pref:
+        return {}, False
+
+    vm = VaultManager()
+    updated_pref: dict[int, dict[str, Any]] = {}
+    feedback_by_page: dict[int, dict[str, str]] = {}
+    has_active = False
+
+    for page_num, entry in pref.items():
+        job_id = str(entry.get("job_id") or "").strip()
+        if not job_id:
+            continue
+        job = vm.get_download_job(job_id) or {}
+        job_doc_id = str(job.get("doc_id") or "").strip()
+        job_library = str(job.get("library") or "").strip()
+        if job and (job_doc_id != doc_id or job_library != library):
+            continue
+
+        status = str(job.get("status") or entry.get("state") or "").strip().lower()
+        current = int(job.get("current") or 0)
+        total = int(job.get("total") or 0)
+        feedback = _highres_feedback_row(status=status, current=current, total=total)
+        feedback["job_id"] = job_id
+        feedback_by_page[page_num] = feedback
+
+        state = str(feedback.get("state") or "").strip().lower()
+        if status in _ACTIVE_DOWNLOAD_STATES or state in {"queued", "running"}:
+            has_active = True
+            updated_pref[page_num] = {"job_id": job_id, "state": status or state}
+        else:
+            updated_pref[page_num] = {"job_id": job_id, "state": state}
+
+    if updated_pref != pref:
+        with suppress(Exception):
+            _save_highres_pref(doc_id, updated_pref)
+    return feedback_by_page, has_active
+
+
+def _merge_page_feedback(
+    base: dict[int, dict[str, str]],
+    override: dict[int, dict[str, str]] | None = None,
+) -> dict[int, dict[str, str]]:
+    merged: dict[int, dict[str, str]] = {}
+    for page, payload in (base or {}).items():
+        try:
+            page_num = int(page)
+        except (TypeError, ValueError):
+            continue
+        if page_num <= 0:
+            continue
+        merged[page_num] = dict(payload or {})
+    for page, payload in (override or {}).items():
+        try:
+            page_num = int(page)
+        except (TypeError, ValueError):
+            continue
+        if page_num <= 0:
+            continue
+        next_payload = dict(payload or {})
+        if not next_payload:
+            continue
+        merged[page_num] = {**merged.get(page_num, {}), **next_payload}
+    return merged
+
+
 def _local_scan_info(scan_path: Path) -> tuple[int | None, int | None, int]:
     local_w = None
     local_h = None
@@ -659,18 +789,20 @@ def _build_studio_export_fragment(
     thumb_page: int = 1,
     page_size: int | None = None,
     selected_pages_raw: str = "",
-    selected_subtab: str = "build",
+    selected_subtab: str = "pages",
     page_feedback_by_num: dict[int, dict[str, str]] | None = None,
     optimize_feedback: dict[str, Any] | None = None,
 ):
     optimization_meta = _load_last_optimization_meta(doc_id)
+    highres_feedback_by_num, has_active_highres_jobs = _resolve_highres_page_feedback(doc_id, library)
+    merged_feedback_by_num = _merge_page_feedback(highres_feedback_by_num, page_feedback_by_num)
     thumb_state = _build_export_thumbnail_slice(
         doc_id,
         library,
         thumb_page=thumb_page,
         page_size=page_size,
         page_delta_by_num=_page_delta_map(optimization_meta),
-        page_feedback_by_num=page_feedback_by_num,
+        page_feedback_by_num=merged_feedback_by_num,
     )
     pdf_files = list_item_pdf_files(doc_id, library)
     for row in pdf_files:
@@ -696,6 +828,7 @@ def _build_studio_export_fragment(
         scan_summary=dict(thumb_state.get("scan_summary") or {}),
         optimization_meta=optimization_meta,
         optimize_feedback=optimize_feedback or {},
+        has_active_page_actions=has_active_highres_jobs,
     )
 
 
@@ -1155,6 +1288,29 @@ def get_studio_export_thumbs(
     )
 
 
+def get_studio_export_live_state(
+    doc_id: str,
+    library: str,
+    thumb_page: int = 1,
+    page_size: int = 0,
+    selected_pages: str = "",
+    subtab: str = "pages",
+):
+    """Polling endpoint for in-place Studio Export state refresh."""
+    doc_id, library = unquote(doc_id), unquote(library)
+    safe_subtab = str(subtab or "pages").strip().lower()
+    if safe_subtab not in {"pages", "build", "jobs"}:
+        safe_subtab = "pages"
+    return _build_studio_export_fragment(
+        doc_id,
+        library,
+        thumb_page=int(thumb_page or 1),
+        page_size=int(page_size or 0),
+        selected_pages_raw=selected_pages,
+        selected_subtab=safe_subtab,
+    )
+
+
 def _is_truthy_flag(raw: str | None) -> bool:
     value = str(raw or "").strip().lower()
     return value in {"1", "true", "on", "yes"}
@@ -1216,11 +1372,15 @@ def start_studio_export(
     force_remote_refetch: str = "",
     cleanup_temp_after_export: str = "",
     max_parallel_page_fetch: int = 0,
+    subtab: str = "pages",
 ):
     """Start one export job from Studio for the current item."""
     doc_id, library = unquote(doc_id), unquote(library)
     include_cover_bool = _is_truthy_flag(include_cover)
     include_colophon_bool = _is_truthy_flag(include_colophon)
+    selected_subtab = str(subtab or "pages").strip().lower()
+    if selected_subtab not in {"pages", "build", "jobs"}:
+        selected_subtab = "pages"
     if include_cover == "":
         include_cover_bool = True
     if include_colophon == "":
@@ -1256,6 +1416,7 @@ def start_studio_export(
                 thumb_page=int(thumb_page or 1),
                 page_size=int(page_size or 0),
                 selected_pages_raw=selected_pages,
+                selected_subtab=selected_subtab,
             ),
             f"Errore avvio export: {exc}",
             tone="danger",
@@ -1268,6 +1429,7 @@ def start_studio_export(
             thumb_page=int(thumb_page or 1),
             page_size=int(page_size or 0),
             selected_pages_raw=selected_pages,
+            selected_subtab=selected_subtab,
         ),
         "Export PDF avviato per l'item corrente.",
         tone="success",
@@ -1280,19 +1442,55 @@ def optimize_studio_export_scans(
     thumb_page: int = 1,
     page_size: int = 0,
     selected_pages: str = "",
+    optimize_scope: str = "all",
 ):
     """Optimize local scans for the current item from Studio Export."""
     doc_id, library = unquote(doc_id), unquote(library)
-    result = optimize_local_scans(doc_id, library)
+    scope = str(optimize_scope or "all").strip().lower()
+    target_pages: set[int] | None = None
+    if scope in {"selected", "selection"}:
+        try:
+            parsed = parse_page_selection(selected_pages or "")
+        except ValueError as exc:
+            return _with_toast(
+                _build_studio_export_fragment(
+                    doc_id,
+                    library,
+                    thumb_page=int(thumb_page or 1),
+                    page_size=int(page_size or 0),
+                    selected_pages_raw=selected_pages,
+                    selected_subtab="pages",
+                ),
+                f"Selezione non valida: {exc}",
+                tone="danger",
+            )
+        target_pages = {int(page) for page in parsed if int(page) > 0}
+        if not target_pages:
+            return _with_toast(
+                _build_studio_export_fragment(
+                    doc_id,
+                    library,
+                    thumb_page=int(thumb_page or 1),
+                    page_size=int(page_size or 0),
+                    selected_pages_raw=selected_pages,
+                    selected_subtab="pages",
+                ),
+                "Nessuna pagina selezionata da ottimizzare.",
+                tone="warning",
+            )
+
+    result = optimize_local_scans(doc_id, library, target_pages=target_pages)
     meta = dict(result.get("meta") or {})
     optimize_feedback = {
         "optimized_pages": int(meta.get("optimized_pages") or 0),
+        "skipped_pages": int(meta.get("skipped_pages") or 0),
         "errors": int(meta.get("errors") or 0),
         "bytes_before": int(meta.get("bytes_before") or 0),
         "bytes_after": int(meta.get("bytes_after") or 0),
         "bytes_saved": int(meta.get("bytes_saved") or 0),
         "savings_percent": float(meta.get("savings_percent") or 0.0),
         "optimized_at": str(meta.get("optimized_at") or ""),
+        "scope": "selected" if target_pages else "all",
     }
     return _with_toast(
         _build_studio_export_fragment(
@@ -1363,20 +1561,26 @@ def download_highres_export_page(
             tone="danger",
         )
 
-    return _with_toast(
-        _build_studio_export_fragment(
-            doc_id,
-            library,
-            thumb_page=int(thumb_page or 1),
-            page_size=int(page_size or 0),
-            selected_pages_raw=selected_pages,
-            selected_subtab="pages",
-            page_feedback_by_num={
-                page_num: {"tone": "info", "label": f"High-Res in coda (job {job_id})"},
+    pref = _load_highres_pref(doc_id)
+    pref[page_num] = {"job_id": job_id, "state": "queued"}
+    with suppress(Exception):
+        _save_highres_pref(doc_id, pref)
+
+    return _build_studio_export_fragment(
+        doc_id,
+        library,
+        thumb_page=int(thumb_page or 1),
+        page_size=int(page_size or 0),
+        selected_pages_raw=selected_pages,
+        selected_subtab="pages",
+        page_feedback_by_num={
+            page_num: {
+                "tone": "info",
+                "label": "High-Res in coda",
+                "state": "queued",
+                "job_id": job_id,
             },
-        ),
-        f"High-res pagina {page_num} in coda (job {job_id}).",
-        tone="info",
+        },
     )
 
 

@@ -698,8 +698,9 @@ def _style_tag():
         "background: rgba(var(--app-primary-rgb), 0.16); }\n",
         ".dark .studio-export-scope-btn { color: #cbd5e1; }\n",
         ".dark .studio-export-scope-btn:hover { background: rgba(var(--app-primary-rgb), 0.26); color: #f8fafc; }\n",
+        ".studio-thumb-card { display: grid; gap: 0.38rem; }\n",
         ".studio-thumb-meta { border: 1px solid rgba(148, 163, 184, 0.35); border-radius: 0.65rem; "
-        "padding: 0.38rem 0.5rem; background: rgba(255, 255, 255, 0.7); display: grid; gap: 0.36rem; }\n",
+        "padding: 0.5rem 0.56rem; background: rgba(255, 255, 255, 0.78); display: grid; gap: 0.42rem; }\n",
         ".dark .studio-thumb-meta { border-color: rgba(71, 85, 105, 0.75); background: rgba(15, 23, 42, 0.68); }\n",
         ".studio-thumb-dims { display: grid; gap: 0.2rem; }\n",
         ".studio-thumb-dims-row { display: flex; align-items: center; justify-content: space-between; gap: 0.45rem; "
@@ -711,9 +712,11 @@ def _style_tag():
         "monospace; text-align: right; }\n",
         ".dark .studio-thumb-dims-label { color: #94a3b8; }\n",
         ".dark .studio-thumb-dims-value { color: #e2e8f0; }\n",
-        ".studio-thumb-action { display: flex; justify-content: flex-end; }\n",
+        ".studio-thumb-action { display: flex; align-items: center; gap: 0.45rem; }\n",
         ".studio-thumb-highres-btn { white-space: nowrap; font-size: 0.72rem !important; "
-        "padding: 0.34rem 0.54rem !important; }\n",
+        "padding: 0.34rem 0.54rem !important; flex: 1 1 auto; }\n",
+        ".studio-export-sidepanel { box-shadow: inset 0 0 0 1px rgba(var(--app-primary-rgb), 0.06); }\n",
+        ".dark .studio-export-sidepanel { box-shadow: inset 0 0 0 1px rgba(var(--app-primary-rgb), 0.26); }\n",
         ".studio-export-page-card-selected { border-color: rgba(var(--app-primary-rgb), 0.66) !important; "
         "background: rgba(var(--app-primary-rgb), 0.10) !important; }\n",
         ".dark .studio-export-page-card-selected { border-color: rgba(var(--app-primary-rgb), 0.74) !important; "
@@ -734,6 +737,8 @@ def _style_tag():
         "color: var(--app-accent) !important; }\n",
         ".border-sky-200, .border-cyan-200, .dark .dark\\:border-sky-700\\/40, .dark .dark\\:border-cyan-700\\/40 { "
         "border-color: rgba(var(--app-accent-rgb), 0.45) !important; }\n",
+        ".htmx-indicator { opacity: 0; visibility: hidden; transition: opacity 0.14s ease; }\n",
+        ".htmx-request .htmx-indicator, .htmx-request.htmx-indicator { opacity: 1; visibility: visible; }\n",
         ".htmx-request .spinner { display: inline-block; width: 1rem; height: 1rem; ",
         "border: 2px solid #f3f4f6; border-top-color: var(--app-accent); border-radius: 50%; ",
         "animation: spin 0.8s linear infinite; }\n",

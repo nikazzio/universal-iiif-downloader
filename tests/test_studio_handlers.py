@@ -590,6 +590,123 @@ def test_studio_export_page_highres_button_has_feedback_hooks(tmp_path):
     assert 'hx-include="#studio-export-selected-pages,#studio-export-thumb-page,#studio-export-page-size"' in rendered
 
 
+def test_studio_optimize_scans_selected_scope_only_updates_selected_pages(tmp_path):
+    """Selected optimize scope should process selected pages and report skipped ones."""
+    cm = get_config_manager()
+    old_downloads = cm.get_downloads_dir()
+    try:
+        tmp_downloads = tmp_path / "downloads"
+        cm.set_downloads_dir(str(tmp_downloads))
+
+        vm = VaultManager()
+        doc_id = "DOC_OPTIMIZE_SELECTED_SCOPE"
+        library = "Gallica"
+        doc_root = Path(tmp_downloads) / library / doc_id
+        scans_dir = doc_root / "scans"
+        data_dir = doc_root / "data"
+        scans_dir.mkdir(parents=True, exist_ok=True)
+        data_dir.mkdir(parents=True, exist_ok=True)
+        Image.new("RGB", (1800, 1400), (240, 240, 240)).save(scans_dir / "pag_0000.jpg", format="JPEG", quality=94)
+        Image.new("RGB", (1800, 1400), (210, 210, 210)).save(scans_dir / "pag_0001.jpg", format="JPEG", quality=94)
+        (data_dir / "manifest.json").write_text(
+            json.dumps({"items": [{"id": "https://example.org/canvas/1"}]}),
+            encoding="utf-8",
+        )
+        vm.upsert_manuscript(
+            doc_id,
+            library=library,
+            local_path=str(doc_root),
+            status="partial",
+            asset_state="partial",
+        )
+
+        result = studio_handlers.optimize_studio_export_scans(
+            doc_id,
+            library,
+            thumb_page=1,
+            page_size=24,
+            selected_pages="1",
+            optimize_scope="selected",
+        )
+        rendered = repr(result)
+        assert "Ultimo run: (selezione)" in rendered
+
+        row = vm.get_manuscript(doc_id) or {}
+        meta = json.loads(str(row.get("local_optimization_meta_json") or "{}"))
+        assert int(meta.get("optimized_pages") or 0) == 1
+        assert int(meta.get("skipped_pages") or 0) >= 1
+    finally:
+        cm.set_downloads_dir(str(old_downloads))
+
+
+def test_studio_highres_queue_persists_page_job_without_toast(tmp_path, monkeypatch):
+    """Queuing high-res should persist per-page job state and render inline feedback only."""
+    cm = get_config_manager()
+    old_downloads = cm.get_downloads_dir()
+    try:
+        tmp_downloads = tmp_path / "downloads"
+        cm.set_downloads_dir(str(tmp_downloads))
+        doc_id = "DOC_HIGHRES_QUEUE_STATE"
+        library = "Vaticana"
+        doc_root = Path(tmp_downloads) / library / doc_id
+        scans_dir = doc_root / "scans"
+        data_dir = doc_root / "data"
+        scans_dir.mkdir(parents=True, exist_ok=True)
+        data_dir.mkdir(parents=True, exist_ok=True)
+        Image.new("RGB", (600, 900), (240, 240, 240)).save(scans_dir / "pag_0000.jpg", format="JPEG")
+        (data_dir / "manifest.json").write_text(
+            json.dumps({"items": [{"id": "https://example.org/canvas/1"}]}),
+            encoding="utf-8",
+        )
+        VaultManager().upsert_manuscript(
+            doc_id,
+            library=library,
+            local_path=str(doc_root),
+            manifest_url="https://example.org/manifest.json",
+            status="saved",
+            asset_state="saved",
+        )
+        monkeypatch.setattr(studio_handlers, "start_downloader_thread", lambda **_kwargs: "job_highres_test")
+
+        result = studio_handlers.download_highres_export_page(doc_id, library, page=1, thumb_page=1, page_size=24)
+        rendered = repr(result)
+        assert "High-Res in coda" in rendered
+        assert not isinstance(result, list)
+
+        pref = VaultManager().get_manuscript_ui_pref(doc_id, "studio_export_highres_jobs", {})
+        assert isinstance(pref, dict)
+        assert str((pref.get("1") or {}).get("job_id") or "") == "job_highres_test"
+    finally:
+        cm.set_downloads_dir(str(old_downloads))
+
+
+def test_studio_export_live_state_keeps_requested_subtab():
+    """Live-state endpoint should preserve requested subtab instead of forcing pages."""
+    doc_id = "MSS_LIVE_STATE_SUBTAB"
+    library = "Vaticana"
+    cm = get_config_manager()
+    doc_root = Path(cm.get_downloads_dir()) / library / doc_id
+    scans_dir = doc_root / "scans"
+    data_dir = doc_root / "data"
+    scans_dir.mkdir(parents=True, exist_ok=True)
+    data_dir.mkdir(parents=True, exist_ok=True)
+    Image.new("RGB", (600, 900), (250, 250, 250)).save(scans_dir / "pag_0000.jpg", format="JPEG")
+    (data_dir / "manifest.json").write_text(
+        json.dumps({"items": [{"id": "https://example.org/canvas/1"}]}),
+        encoding="utf-8",
+    )
+    VaultManager().upsert_manuscript(
+        doc_id,
+        library=library,
+        local_path=str(doc_root),
+        status="saved",
+        asset_state="saved",
+    )
+    panel = studio_handlers.get_studio_export_live_state(doc_id=doc_id, library=library, subtab="jobs")
+    rendered = repr(panel)
+    assert 'id="studio-export-subtab-jobs" class="mt-3"' in rendered
+
+
 def test_export_thumb_page_size_preference_is_persisted_per_item():
     """Changing thumb page size should persist and be reused when reopening export tab."""
     doc_id = "MSS_EXPORT_SIZE_PREF"

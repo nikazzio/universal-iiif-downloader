@@ -82,8 +82,13 @@ def _optimize_scan_file(
     return before, after, before_dims, after_dims
 
 
-def optimize_local_scans(doc_id: str, library: str) -> dict[str, Any]:
-    """Optimize all local `scans/pag_*.jpg` for one document."""
+def optimize_local_scans(
+    doc_id: str,
+    library: str,
+    *,
+    target_pages: set[int] | None = None,
+) -> dict[str, Any]:
+    """Optimize local `scans/pag_*.jpg` for one document (optionally filtered by page ids)."""
     storage = OCRStorage()
     paths = storage.get_document_paths(doc_id, library)
     cm = get_config_manager()
@@ -118,7 +123,10 @@ def optimize_local_scans(doc_id: str, library: str) -> dict[str, Any]:
     )
     jpeg_quality = max(10, min(_safe_int(cm.get_setting("images.local_optimize.jpeg_quality", 82), 82), 100))
 
+    requested_pages = {int(p) for p in (target_pages or set()) if int(p) > 0}
+
     optimized_pages = 0
+    skipped_pages = 0
     errors = 0
     total_before = 0
     total_after = 0
@@ -128,6 +136,9 @@ def optimize_local_scans(doc_id: str, library: str) -> dict[str, Any]:
         if not scan_path.is_file():
             continue
         page_num = _page_num_from_scan_name(scan_path.name)
+        if requested_pages and (not page_num or int(page_num) not in requested_pages):
+            skipped_pages += 1
+            continue
         try:
             before, after, before_dims, after_dims = _optimize_scan_file(
                 scan_path,
@@ -171,6 +182,7 @@ def optimize_local_scans(doc_id: str, library: str) -> dict[str, Any]:
         "max_long_edge_px": int(max_long_edge_px),
         "jpeg_quality": int(jpeg_quality),
         "optimized_pages": int(optimized_pages),
+        "skipped_pages": int(skipped_pages),
         "errors": int(errors),
         "bytes_before": int(total_before),
         "bytes_after": int(total_after),
@@ -189,8 +201,9 @@ def optimize_local_scans(doc_id: str, library: str) -> dict[str, Any]:
     )
 
     tone = "success" if optimized_pages > 0 and errors == 0 else "warning" if optimized_pages > 0 else "danger"
+    scope_label = "selezionate" if requested_pages else "totali"
     message = (
-        f"Ottimizzazione completata: {optimized_pages} pagine, risparmio {saved_bytes // 1024} KB."
+        f"Ottimizzazione completata: {optimized_pages} pagine {scope_label}, risparmio {saved_bytes // 1024} KB."
         if optimized_pages > 0
         else "Ottimizzazione non completata: nessuna pagina valida aggiornata."
     )
