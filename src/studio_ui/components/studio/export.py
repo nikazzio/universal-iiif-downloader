@@ -112,6 +112,17 @@ def _thumbnail_card(*, item: dict, doc_id: str, library: str, thumb_page: int, p
     thumb_url = str(item.get("thumb_url") or "")
     local_dims = _dims_label(item.get("local_width"), item.get("local_height"))
     remote_dims = _dims_label(item.get("remote_width"), item.get("remote_height"))
+    local_bytes = int(item.get("local_bytes") or 0)
+    delta_saved = int(item.get("delta_saved_bytes") or 0)
+    feedback = item.get("action_feedback") or {}
+    feedback_label = str(feedback.get("label") or "")
+    feedback_tone = str(feedback.get("tone") or "info")
+    feedback_cls = {
+        "success": "app-chip app-chip-success text-[10px]",
+        "danger": "app-chip app-chip-danger text-[10px]",
+        "warning": "app-chip app-chip-warning text-[10px]",
+        "info": "app-chip app-chip-neutral text-[10px]",
+    }.get(feedback_tone, "app-chip app-chip-neutral text-[10px]")
     encoded_doc = quote(doc_id, safe="")
     encoded_lib = quote(library, safe="")
     image = (
@@ -156,6 +167,11 @@ def _thumbnail_card(*, item: dict, doc_id: str, library: str, thumb_page: int, p
     return Div(
         select_btn,
         Div(
+            (
+                Span(feedback_label, cls=feedback_cls)
+                if feedback_label
+                else Span("Nessuna azione recente", cls="text-[10px] text-slate-400 dark:text-slate-500")
+            ),
             Div(
                 Div(
                     Span("Locale", cls="studio-thumb-dims-label"),
@@ -163,8 +179,21 @@ def _thumbnail_card(*, item: dict, doc_id: str, library: str, thumb_page: int, p
                     cls="studio-thumb-dims-row",
                 ),
                 Div(
+                    Span("File locale", cls="studio-thumb-dims-label"),
+                    Span(_bytes_label(local_bytes), cls="studio-thumb-dims-value"),
+                    cls="studio-thumb-dims-row",
+                ),
+                Div(
                     Span("Online max", cls="studio-thumb-dims-label"),
                     Span(remote_dims, cls="studio-thumb-dims-value"),
+                    cls="studio-thumb-dims-row",
+                ),
+                Div(
+                    Span("Delta ultimo run", cls="studio-thumb-dims-label"),
+                    Span(
+                        f"-{_bytes_label(delta_saved)}" if delta_saved > 0 else "n/a",
+                        cls="studio-thumb-dims-value",
+                    ),
                     cls="studio-thumb-dims-row",
                 ),
                 cls="studio-thumb-dims",
@@ -174,9 +203,17 @@ def _thumbnail_card(*, item: dict, doc_id: str, library: str, thumb_page: int, p
                     "High-Res",
                     type="button",
                     hx_post=highres_url,
+                    hx_include="#studio-export-selected-pages,#studio-export-thumb-page,#studio-export-page-size",
+                    hx_indicator=f"#studio-thumb-highres-indicator-{page}",
                     hx_target="#studio-export-panel",
                     hx_swap="outerHTML",
                     cls="app-btn app-btn-neutral studio-thumb-highres-btn",
+                    data_page=str(page),
+                ),
+                Span(
+                    "In coda...",
+                    id=f"studio-thumb-highres-indicator-{page}",
+                    cls="htmx-indicator text-[10px] text-slate-500 dark:text-slate-400",
                 ),
                 cls="studio-thumb-action",
             ),
@@ -297,6 +334,197 @@ def render_export_thumbnails_panel(
     )
 
 
+def _render_export_pages_subtab(
+    *,
+    doc_id: str,
+    library: str,
+    scan_summary: dict,
+    optimization_meta: dict,
+    optimize_feedback: dict,
+    thumbnails: list[dict],
+    thumb_page: int,
+    thumb_page_count: int,
+    thumb_total_pages: int,
+    thumb_page_size: int,
+    thumb_page_size_options: list[int],
+):
+    encoded_doc = quote(doc_id, safe="")
+    encoded_lib = quote(library, safe="")
+    feedback = optimize_feedback or optimization_meta or {}
+    optimized_pages = int(feedback.get("optimized_pages") or 0)
+    saved_bytes = int(feedback.get("bytes_saved") or 0)
+    errors = int(feedback.get("errors") or 0)
+    before_bytes = int(feedback.get("bytes_before") or 0)
+    after_bytes = int(feedback.get("bytes_after") or 0)
+    savings_percent = float(feedback.get("savings_percent") or 0.0)
+    optimized_at = str(feedback.get("optimized_at") or "")
+    optimize_url = (
+        f"/api/studio/export/optimize_scans?doc_id={encoded_doc}&library={encoded_lib}"
+        f"&thumb_page={thumb_page}&page_size={thumb_page_size}"
+    )
+
+    return Div(
+        Div(
+            Div(
+                H3("Scans locali", cls="text-sm font-semibold text-slate-900 dark:text-slate-100"),
+                P(
+                    "Ottimizza scans e confronta subito spazio occupato e delta per pagina.",
+                    cls="text-xs text-slate-500 dark:text-slate-400",
+                ),
+                cls="space-y-1",
+            ),
+            Div(
+                Span(f"File: {int(scan_summary.get('files_count') or 0)}", cls="app-chip app-chip-neutral text-[10px]"),
+                Span(
+                    f"Totale: {_bytes_label(int(scan_summary.get('bytes_total') or 0))}",
+                    cls="app-chip app-chip-neutral text-[10px]",
+                ),
+                Span(
+                    f"Media: {_bytes_label(int(scan_summary.get('bytes_avg') or 0))}",
+                    cls="app-chip app-chip-neutral text-[10px]",
+                ),
+                Span(
+                    f"Max: {_bytes_label(int(scan_summary.get('bytes_max') or 0))}",
+                    cls="app-chip app-chip-neutral text-[10px]",
+                ),
+                cls="flex flex-wrap items-center gap-2",
+            ),
+            cls="flex flex-col md:flex-row md:items-end md:justify-between gap-3",
+        ),
+        Div(
+            Button(
+                "🗜️ Ottimizza scans locali",
+                type="button",
+                id="studio-export-optimize-btn",
+                hx_post=optimize_url,
+                hx_include="#studio-export-selected-pages,#studio-export-thumb-page,#studio-export-page-size",
+                hx_indicator="#studio-export-optimize-indicator",
+                hx_target="#studio-export-panel",
+                hx_swap="outerHTML",
+                cls="app-btn app-btn-accent",
+            ),
+            Span(
+                "Ottimizzazione in corso...",
+                id="studio-export-optimize-indicator",
+                cls="htmx-indicator text-xs text-slate-500 dark:text-slate-400",
+            ),
+            cls="flex items-center gap-2",
+        ),
+        (
+            Div(
+                Span(
+                    (
+                        f"Ultimo run: {optimized_pages} pagine, "
+                        f"risparmio {_bytes_label(saved_bytes)} ({savings_percent:.2f}%), errori {errors}."
+                    ),
+                    cls="text-xs text-slate-700 dark:text-slate-200",
+                ),
+                Span(
+                    f"Prima {_bytes_label(before_bytes)} · Dopo {_bytes_label(after_bytes)}"
+                    + (f" · {optimized_at}" if optimized_at else ""),
+                    cls="text-[11px] text-slate-500 dark:text-slate-400",
+                ),
+                cls=(
+                    "flex flex-col gap-1 p-2.5 rounded-lg border border-slate-200 dark:border-slate-700 "
+                    "bg-white dark:bg-slate-900"
+                ),
+            )
+            if optimized_pages > 0 or saved_bytes > 0 or errors > 0
+            else Div(
+                "Nessuna ottimizzazione registrata per questo item.",
+                cls="text-xs text-slate-500 dark:text-slate-400",
+            )
+        ),
+        Div(
+            Label("Range rapido", for_="studio-export-range", cls=_LABEL_CLASS),
+            Div(
+                Input(
+                    type="text",
+                    id="studio-export-range",
+                    placeholder="es. 1-10,12,20-25",
+                    cls=f"flex-1 {_FIELD_CLASS}",
+                ),
+                Button(
+                    "Applica",
+                    type="button",
+                    id="studio-export-apply-range",
+                    cls="app-btn app-btn-accent",
+                ),
+                cls="flex items-center gap-2",
+            ),
+            Div(
+                Button(
+                    "Seleziona tutte",
+                    type="button",
+                    id="studio-export-select-all",
+                    cls="app-btn app-btn-neutral",
+                ),
+                Button(
+                    "Deseleziona",
+                    type="button",
+                    id="studio-export-clear",
+                    cls="app-btn app-btn-neutral",
+                ),
+                cls="flex items-center gap-2 mt-2",
+            ),
+            cls="space-y-2",
+        ),
+        Div(
+            Div(
+                Span("Ambito export", cls="app-label"),
+                Div(
+                    Button(
+                        "Tutte le pagine",
+                        type="button",
+                        id="studio-export-scope-all",
+                        cls="studio-export-scope-btn studio-export-scope-btn-active",
+                        aria_pressed="true",
+                    ),
+                    Button(
+                        "Solo selezione",
+                        type="button",
+                        id="studio-export-scope-custom",
+                        cls="studio-export-scope-btn",
+                        aria_pressed="false",
+                    ),
+                    cls="studio-export-scope-group",
+                ),
+                cls="space-y-1",
+            ),
+            Div(
+                Span(
+                    "0 pagine selezionate",
+                    id="studio-export-selected-count",
+                    cls="text-xs text-slate-500 dark:text-slate-400",
+                ),
+                Button(
+                    "Crea PDF",
+                    type="submit",
+                    form="studio-export-form",
+                    data_export_submit="1",
+                    cls="app-btn app-btn-accent",
+                ),
+                cls="flex items-center gap-3",
+            ),
+            cls=(
+                "studio-export-actionbar p-3 rounded-xl border border-slate-200 dark:border-slate-700 "
+                "bg-white/70 dark:bg-slate-900/60 flex flex-col md:flex-row md:items-end md:justify-between gap-3"
+            ),
+        ),
+        render_export_thumbnails_panel(
+            doc_id=doc_id,
+            library=library,
+            thumbnails=thumbnails,
+            thumb_page=thumb_page,
+            thumb_page_count=thumb_page_count,
+            total_pages=thumb_total_pages,
+            page_size=thumb_page_size,
+            page_size_options=thumb_page_size_options,
+        ),
+        cls="space-y-3",
+    )
+
+
 def render_studio_export_tab(
     *,
     doc_id: str,
@@ -313,6 +541,10 @@ def render_studio_export_tab(
     jobs: list[dict],
     has_active_jobs: bool,
     export_defaults: dict,
+    selected_subtab: str = "build",
+    scan_summary: dict | None = None,
+    optimization_meta: dict | None = None,
+    optimize_feedback: dict | None = None,
 ) -> Div:
     """Render the Studio Export tab content."""
     encoded_doc = quote(doc_id, safe="")
@@ -365,6 +597,10 @@ def render_studio_export_tab(
     description_rows = max(2, min(description_rows, 8))
 
     jobs_count = len(jobs)
+    active_subtab = selected_subtab if selected_subtab in {"build", "pages", "jobs"} else "build"
+    scan_summary = scan_summary or {}
+    optimization_meta = optimization_meta or {}
+    optimize_feedback = optimize_feedback or {}
 
     return Div(
         Div(
@@ -391,16 +627,36 @@ def render_studio_export_tab(
                     type="button",
                     id="studio-export-subtab-btn-build",
                     data_subtab="build",
-                    cls="studio-export-subtab studio-export-subtab-active",
-                    aria_selected="true",
+                    cls=(
+                        "studio-export-subtab studio-export-subtab-active"
+                        if active_subtab == "build"
+                        else "studio-export-subtab"
+                    ),
+                    aria_selected="true" if active_subtab == "build" else "false",
+                ),
+                Button(
+                    "Pagine",
+                    type="button",
+                    id="studio-export-subtab-btn-pages",
+                    data_subtab="pages",
+                    cls=(
+                        "studio-export-subtab studio-export-subtab-active"
+                        if active_subtab == "pages"
+                        else "studio-export-subtab"
+                    ),
+                    aria_selected="true" if active_subtab == "pages" else "false",
                 ),
                 Button(
                     f"Job ({jobs_count})",
                     type="button",
                     id="studio-export-subtab-btn-jobs",
                     data_subtab="jobs",
-                    cls="studio-export-subtab",
-                    aria_selected="false",
+                    cls=(
+                        "studio-export-subtab studio-export-subtab-active"
+                        if active_subtab == "jobs"
+                        else "studio-export-subtab"
+                    ),
+                    aria_selected="true" if active_subtab == "jobs" else "false",
                 ),
                 cls="studio-export-subtabs mb-3",
             ),
@@ -695,99 +951,53 @@ def render_studio_export_tab(
                     cls="space-y-3",
                 ),
                 Div(
-                    Label("Range rapido", for_="studio-export-range", cls=_LABEL_CLASS),
                     Div(
-                        Input(
-                            type="text",
-                            id="studio-export-range",
-                            placeholder="es. 1-10,12,20-25",
-                            cls=f"flex-1 {_FIELD_CLASS}",
+                        Span(
+                            "La selezione pagine si gestisce nel sub-tab Pagine.",
+                            cls="text-xs text-slate-500 dark:text-slate-400",
                         ),
-                        Button(
-                            "Applica",
-                            type="button",
-                            id="studio-export-apply-range",
-                            cls="app-btn app-btn-accent",
-                        ),
-                        cls="flex items-center gap-2",
-                    ),
-                    Div(
-                        Button(
-                            "Seleziona tutte",
-                            type="button",
-                            id="studio-export-select-all",
-                            cls="app-btn app-btn-neutral",
-                        ),
-                        Button(
-                            "Deseleziona",
-                            type="button",
-                            id="studio-export-clear",
-                            cls="app-btn app-btn-neutral",
-                        ),
-                        cls="flex items-center gap-2 mt-2",
-                    ),
-                    cls="mt-4 space-y-2",
-                ),
-                Div(
-                    Div(
-                        Span("Ambito export", cls="app-label"),
-                        Div(
-                            Button(
-                                "Tutte le pagine",
-                                type="button",
-                                id="studio-export-scope-all",
-                                cls="studio-export-scope-btn studio-export-scope-btn-active",
-                                aria_pressed="true",
-                            ),
-                            Button(
-                                "Solo selezione",
-                                type="button",
-                                id="studio-export-scope-custom",
-                                cls="studio-export-scope-btn",
-                                aria_pressed="false",
-                            ),
-                            cls="studio-export-scope-group",
+                        Span(
+                            "0 pagine selezionate",
+                            cls="text-xs text-slate-500 dark:text-slate-400",
                         ),
                         cls="space-y-1",
                     ),
-                    Div(
-                        Span(
-                            "0 pagine selezionate",
-                            id="studio-export-selected-count",
-                            cls="text-xs text-slate-500 dark:text-slate-400",
-                        ),
-                        Button(
-                            "Crea PDF",
-                            type="submit",
-                            form="studio-export-form",
-                            data_export_submit="1",
-                            cls="app-btn app-btn-accent",
-                        ),
-                        cls="flex items-center gap-3",
+                    Button(
+                        "Crea PDF",
+                        type="submit",
+                        form="studio-export-form",
+                        data_export_submit="1",
+                        cls="app-btn app-btn-accent",
                     ),
                     cls=(
-                        "studio-export-actionbar mt-4 p-3 rounded-xl border border-slate-200 dark:border-slate-700 "
-                        "bg-white/70 dark:bg-slate-900/60 flex flex-col md:flex-row md:items-end "
-                        "md:justify-between gap-3"
+                        "studio-export-actionbar mt-3 p-3 rounded-xl border border-slate-200 dark:border-slate-700 "
+                        "bg-white/70 dark:bg-slate-900/60 flex items-center justify-between gap-3"
                     ),
                 ),
-                render_export_thumbnails_panel(
+                id="studio-export-subtab-build",
+                cls="space-y-2" if active_subtab == "build" else "hidden space-y-2",
+            ),
+            Div(
+                _render_export_pages_subtab(
                     doc_id=doc_id,
                     library=library,
+                    scan_summary=scan_summary,
+                    optimization_meta=optimization_meta,
+                    optimize_feedback=optimize_feedback,
                     thumbnails=thumbnails,
                     thumb_page=thumb_page,
                     thumb_page_count=thumb_page_count,
-                    total_pages=thumb_total_pages,
-                    page_size=thumb_page_size,
-                    page_size_options=thumb_page_size_options,
+                    thumb_total_pages=thumb_total_pages,
+                    thumb_page_size=thumb_page_size,
+                    thumb_page_size_options=thumb_page_size_options,
                 ),
-                id="studio-export-subtab-build",
-                cls="space-y-2",
+                id="studio-export-subtab-pages",
+                cls="space-y-2 mt-3" if active_subtab == "pages" else "hidden space-y-2 mt-3",
             ),
             Div(
                 jobs_panel,
                 id="studio-export-subtab-jobs",
-                cls="hidden mt-3",
+                cls="mt-3" if active_subtab == "jobs" else "hidden mt-3",
             ),
             cls="bg-slate-50 dark:bg-slate-900/70 border border-slate-200 dark:border-slate-700 rounded-2xl p-4",
         ),
@@ -914,9 +1124,12 @@ def render_studio_export_tab(
                     const scopeAllBtn = panel.querySelector('#studio-export-scope-all');
                     const scopeCustomBtn = panel.querySelector('#studio-export-scope-custom');
                     const subtabBuildBtn = panel.querySelector('#studio-export-subtab-btn-build');
+                    const subtabPagesBtn = panel.querySelector('#studio-export-subtab-btn-pages');
                     const subtabJobsBtn = panel.querySelector('#studio-export-subtab-btn-jobs');
                     const subtabBuild = panel.querySelector('#studio-export-subtab-build');
+                    const subtabPages = panel.querySelector('#studio-export-subtab-pages');
                     const subtabJobs = panel.querySelector('#studio-export-subtab-jobs');
+                    const optimizeBtn = panel.querySelector('#studio-export-optimize-btn');
 
                     if (thumbPageHidden && thumbsSlot && thumbsSlot.dataset.thumbPage) {
                         thumbPageHidden.value = thumbsSlot.dataset.thumbPage;
@@ -955,13 +1168,18 @@ def render_studio_export_tab(
                     }
 
                     function activateSubtab(name) {
-                        const selected = (name === 'jobs') ? 'jobs' : 'build';
+                        const selected = (name === 'pages' || name === 'jobs') ? name : 'build';
                         panel.dataset.exportSubtab = selected;
                         if (subtabBuild) subtabBuild.classList.toggle('hidden', selected !== 'build');
+                        if (subtabPages) subtabPages.classList.toggle('hidden', selected !== 'pages');
                         if (subtabJobs) subtabJobs.classList.toggle('hidden', selected !== 'jobs');
                         if (subtabBuildBtn) {
                             subtabBuildBtn.classList.toggle('studio-export-subtab-active', selected === 'build');
                             subtabBuildBtn.setAttribute('aria-selected', selected === 'build' ? 'true' : 'false');
+                        }
+                        if (subtabPagesBtn) {
+                            subtabPagesBtn.classList.toggle('studio-export-subtab-active', selected === 'pages');
+                            subtabPagesBtn.setAttribute('aria-selected', selected === 'pages' ? 'true' : 'false');
                         }
                         if (subtabJobsBtn) {
                             subtabJobsBtn.classList.toggle('studio-export-subtab-active', selected === 'jobs');
@@ -971,6 +1189,10 @@ def render_studio_export_tab(
                     if (subtabBuildBtn && subtabBuildBtn.dataset.bound !== '1') {
                         subtabBuildBtn.dataset.bound = '1';
                         subtabBuildBtn.addEventListener('click', () => activateSubtab('build'));
+                    }
+                    if (subtabPagesBtn && subtabPagesBtn.dataset.bound !== '1') {
+                        subtabPagesBtn.dataset.bound = '1';
+                        subtabPagesBtn.addEventListener('click', () => activateSubtab('pages'));
                     }
                     if (subtabJobsBtn && subtabJobsBtn.dataset.bound !== '1') {
                         subtabJobsBtn.dataset.bound = '1';
@@ -1001,6 +1223,23 @@ def render_studio_export_tab(
                     bindThumbCards(panel, () => setSelectionScope('custom'));
                     applySelectionToVisible(panel);
                     updateSelectedCount(panel);
+
+                    const highresButtons = panel.querySelectorAll('.studio-thumb-highres-btn');
+                    highresButtons.forEach((btn) => {
+                        if (btn.dataset.boundClick === '1') return;
+                        btn.dataset.boundClick = '1';
+                        btn.addEventListener('click', () => {
+                            btn.disabled = true;
+                            btn.classList.add('opacity-60', 'cursor-not-allowed');
+                        });
+                    });
+                    if (optimizeBtn && optimizeBtn.dataset.boundClick !== '1') {
+                        optimizeBtn.dataset.boundClick = '1';
+                        optimizeBtn.addEventListener('click', () => {
+                            optimizeBtn.disabled = true;
+                            optimizeBtn.classList.add('opacity-60', 'cursor-not-allowed');
+                        });
+                    }
 
                     let profileCatalog = {};
                     if (profileCatalogRaw && profileCatalogRaw.value) {
@@ -1148,4 +1387,5 @@ def render_studio_export_tab(
         ),
         id="studio-export-panel",
         cls="space-y-4",
+        **{"data-export-subtab": active_subtab},
     )
