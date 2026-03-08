@@ -40,6 +40,7 @@ def render_export_jobs_panel(
     hx_url: str = "/api/export/jobs",
     panel_id: str = "export-jobs-panel",
     has_active_jobs: bool | None = None,
+    poll_interval_seconds: int = 4,
 ) -> Div:
     """Render export jobs list and controls."""
     if has_active_jobs is None:
@@ -47,9 +48,10 @@ def render_export_jobs_panel(
 
     attrs = {}
     if polling and has_active_jobs:
+        poll_every = max(4, int(poll_interval_seconds or 4))
         attrs = {
             "hx_get": hx_url,
-            "hx_trigger": "load, every 4s",
+            "hx_trigger": f"load, every {poll_every}s",
             "hx_swap": "outerHTML",
         }
 
