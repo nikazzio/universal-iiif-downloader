@@ -653,13 +653,13 @@ def _style_tag():
         "'Liberation Mono', 'Courier New', monospace; }\n",
         ".dark .app-tech-key { color: #94a3b8; }\n",
         ".dark .app-tech-val { color: #e2e8f0; }\n",
-        ".studio-tablist { display: flex; gap: 0.35rem; flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; "
+        ".studio-tablist-shell { display: flex; align-items: center; gap: 0.35rem; "
         "border: 1px solid rgba(148, 163, 184, 0.34); border-bottom: 0; border-radius: 0.9rem 0.9rem 0 0; "
-        "padding: 0.45rem 0.65rem; background: rgba(var(--app-primary-rgb), 0.08); scrollbar-width: thin; }\n",
-        ".studio-tablist::-webkit-scrollbar { height: 6px; }\n",
-        ".studio-tablist::-webkit-scrollbar-thumb { background: rgba(var(--app-primary-rgb), 0.34); "
-        "border-radius: 999px; }\n",
-        ".dark .studio-tablist { border-color: rgba(71, 85, 105, 0.64); background: rgba(15, 23, 42, 0.62); }\n",
+        "padding: 0.45rem 0.65rem; background: rgba(var(--app-primary-rgb), 0.08); }\n",
+        ".studio-tablist { display: flex; gap: 0.35rem; flex-wrap: nowrap; min-width: max-content; }\n",
+        ".studio-tablist-shell .app-btn { flex: 0 0 auto; }\n",
+        ".dark .studio-tablist-shell { border-color: rgba(71, 85, 105, 0.64); "
+        "background: rgba(15, 23, 42, 0.62); }\n",
         ".studio-tabpanes { border: 1px solid rgba(148, 163, 184, 0.34); border-top: 0; "
         "border-radius: 0 0 0.9rem 0.9rem; background: rgba(255, 255, 255, 0.88); }\n",
         ".dark .studio-tabpanes { border-color: rgba(71, 85, 105, 0.64); background: rgba(2, 6, 23, 0.72); }\n",

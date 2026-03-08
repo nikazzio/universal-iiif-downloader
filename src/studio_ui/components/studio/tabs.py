@@ -48,7 +48,7 @@ def render_studio_tabs(
         ),
     }
     # Header buttons
-    buttons = Div(
+    tab_buttons = Div(
         Button(
             "📝 Trascrizione",
             onclick="switchTab('transcription')",
@@ -97,7 +97,33 @@ def render_studio_tabs(
             id="tab-button-jobs",
             cls=f"tab-button studio-tab{' studio-tab-active' if safe_active_tab == 'jobs' else ''}",
         ),
-        cls="studio-tablist",
+        id="studio-tablist",
+        cls="studio-tablist whitespace-nowrap",
+    )
+    buttons = Div(
+        Button(
+            "‹",
+            type="button",
+            id="studio-tab-scroll-left",
+            cls="app-btn app-btn-neutral px-2 py-1 text-sm",
+            aria_label="Scorri tab a sinistra",
+            title="Scorri tab a sinistra",
+        ),
+        Div(
+            tab_buttons,
+            id="studio-tablist-scroll",
+            cls="flex-1 overflow-x-auto overflow-y-hidden",
+            style="scrollbar-width:none;-ms-overflow-style:none;",
+        ),
+        Button(
+            "›",
+            type="button",
+            id="studio-tab-scroll-right",
+            cls="app-btn app-btn-neutral px-2 py-1 text-sm",
+            aria_label="Scorri tab a destra",
+            title="Scorri tab a destra",
+        ),
+        cls="studio-tablist-shell flex items-center gap-2",
     )
 
     tab_contents = Div(
@@ -260,6 +286,67 @@ def render_studio_tabs(
                 }});
             }}
 
+            function updateTabScrollControls() {{
+                const strip = document.getElementById('studio-tablist-scroll');
+                const leftBtn = document.getElementById('studio-tab-scroll-left');
+                const rightBtn = document.getElementById('studio-tab-scroll-right');
+                if (!strip || !leftBtn || !rightBtn) return;
+                const maxScroll = Math.max(0, strip.scrollWidth - strip.clientWidth);
+                const hasOverflow = maxScroll > 2;
+                if (!hasOverflow) {{
+                    leftBtn.classList.add('hidden');
+                    rightBtn.classList.add('hidden');
+                    return;
+                }}
+                leftBtn.classList.remove('hidden');
+                rightBtn.classList.remove('hidden');
+                const left = strip.scrollLeft;
+                leftBtn.disabled = left <= 1;
+                rightBtn.disabled = left >= maxScroll - 1;
+                leftBtn.classList.toggle('opacity-40', leftBtn.disabled);
+                leftBtn.classList.toggle('cursor-not-allowed', leftBtn.disabled);
+                rightBtn.classList.toggle('opacity-40', rightBtn.disabled);
+                rightBtn.classList.toggle('cursor-not-allowed', rightBtn.disabled);
+            }}
+
+            function setupTabScroller() {{
+                const strip = document.getElementById('studio-tablist-scroll');
+                const leftBtn = document.getElementById('studio-tab-scroll-left');
+                const rightBtn = document.getElementById('studio-tab-scroll-right');
+                if (!strip || !leftBtn || !rightBtn) return;
+
+                if (!document.getElementById('studio-tablist-scroll-style')) {{
+                    const style = document.createElement('style');
+                    style.id = 'studio-tablist-scroll-style';
+                    style.textContent = '#studio-tablist-scroll::-webkit-scrollbar{{display:none;}}';
+                    document.head.appendChild(style);
+                }}
+
+                if (strip.dataset.bound !== '1') {{
+                    strip.dataset.bound = '1';
+                    strip.addEventListener('scroll', updateTabScrollControls, {{ passive: true }});
+                }}
+                if (leftBtn.dataset.bound !== '1') {{
+                    leftBtn.dataset.bound = '1';
+                    leftBtn.addEventListener('click', () => {{
+                        strip.scrollBy({{ left: -220, behavior: 'smooth' }});
+                        window.setTimeout(updateTabScrollControls, 180);
+                    }});
+                }}
+                if (rightBtn.dataset.bound !== '1') {{
+                    rightBtn.dataset.bound = '1';
+                    rightBtn.addEventListener('click', () => {{
+                        strip.scrollBy({{ left: 220, behavior: 'smooth' }});
+                        window.setTimeout(updateTabScrollControls, 180);
+                    }});
+                }}
+                if (!window.__studioTabScrollerResizeBound) {{
+                    window.__studioTabScrollerResizeBound = true;
+                    window.addEventListener('resize', updateTabScrollControls, {{ passive: true }});
+                }}
+                updateTabScrollControls();
+            }}
+
             function switchTab(t, opts) {{
                 const options = opts || {{}};
                 const tab = ALLOWED_TABS.has(String(t || '').trim()) ? String(t).trim() : 'transcription';
@@ -273,12 +360,18 @@ def render_studio_tabs(
                 target.classList.remove('hidden');
 
                 const btn = document.getElementById('tab-button-' + tab);
-                if (btn) btn.classList.add('studio-tab-active');
+                if (btn) {{
+                    btn.classList.add('studio-tab-active');
+                    if (typeof btn.scrollIntoView === 'function') {{
+                        btn.scrollIntoView({{ behavior: 'smooth', inline: 'nearest', block: 'nearest' }});
+                    }}
+                }}
 
                 if (options.updateUrl !== false) updateUrlTab(tab);
                 if (options.persist !== false) saveContext(tab);
                 document.body.dataset.studioActiveTab = tab;
                 unloadInactiveExportPanes(tab);
+                updateTabScrollControls();
 
                 if (tab === 'images' || tab === 'output' || tab === 'jobs') {{
                     const loaded = target.dataset.exportLoaded === '1';
@@ -298,6 +391,7 @@ def render_studio_tabs(
             }}
 
             window.switchTab = switchTab;
+            setupTabScroller();
             switchTab(defaultTab, {{ persist: false, updateUrl: true }});
         }})();"""
     )
