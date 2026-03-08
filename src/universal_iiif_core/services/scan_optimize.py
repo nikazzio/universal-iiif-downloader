@@ -54,6 +54,29 @@ def summarize_scan_folder(scans_dir: Path) -> dict[str, int]:
     }
 
 
+def _is_path_within_downloads(path: Path, downloads_root: Path) -> bool:
+    """Check if resolved path stays within downloads directory (security check)."""
+    try:
+        path.resolve().relative_to(downloads_root.resolve())
+        return True
+    except (ValueError, RuntimeError):
+        return False
+
+
+def _cleanup_thumbnails(thumb_dir: Path, downloads_root: Path) -> None:
+    """Clean up thumbnail directory with security validation."""
+    if not thumb_dir.exists():
+        return
+    if not _is_path_within_downloads(thumb_dir, downloads_root):
+        logger.error("Thumbnail directory outside downloads, skipping cleanup: %s", thumb_dir)
+        return
+    for thumb in thumb_dir.glob("*.jpg"):
+        if _is_path_within_downloads(thumb, downloads_root):
+            thumb.unlink(missing_ok=True)
+        else:
+            logger.warning("Skipping thumbnail outside downloads directory: %s", thumb)
+
+
 def _optimize_scan_file(
     scan_path: Path,
     *,
@@ -135,6 +158,10 @@ def optimize_local_scans(
     for scan_path in sorted(scans_dir.glob("pag_*.jpg")):
         if not scan_path.is_file():
             continue
+        if not _is_path_within_downloads(scan_path, downloads_root):
+            logger.warning("Skipping scan outside downloads directory: %s", scan_path)
+            errors += 1
+            continue
         page_num = _page_num_from_scan_name(scan_path.name)
         if requested_pages and (not page_num or int(page_num) not in requested_pages):
             skipped_pages += 1
@@ -170,10 +197,7 @@ def optimize_local_scans(
             )
             logger.debug("Failed optimizing scan %s", scan_path, exc_info=True)
 
-    thumb_dir = Path(paths["thumbnails"])
-    if thumb_dir.exists():
-        for thumb in thumb_dir.glob("*.jpg"):
-            thumb.unlink(missing_ok=True)
+    _cleanup_thumbnails(Path(paths["thumbnails"]), downloads_root)
 
     saved_bytes = max(total_before - total_after, 0)
     savings_percent = (float(saved_bytes) / float(total_before) * 100.0) if total_before > 0 else 0.0
