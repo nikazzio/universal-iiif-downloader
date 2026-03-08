@@ -1458,6 +1458,20 @@ def render_studio_export_tab(
                         if (!key) return;
                         const cfg = profileCatalog[key];
                         if (!cfg || typeof cfg !== 'object') return;
+                        const parseProfileBool = (value, fallback) => {
+                            if (value === undefined || value === null) return fallback;
+                            if (typeof value === 'boolean') return value;
+                            if (typeof value === 'number') return value !== 0;
+                            const raw = String(value).trim().toLowerCase();
+                            if (['1', 'true', 'on', 'yes'].includes(raw)) return true;
+                            if (['0', 'false', 'off', 'no'].includes(raw)) return false;
+                            return fallback;
+                        };
+                        const syncToggle = (checkbox, hiddenInput, nextVal) => {
+                            if (!checkbox || !hiddenInput) return;
+                            checkbox.checked = !!nextVal;
+                            hiddenInput.value = nextVal ? '1' : '0';
+                        };
                         if (compressionField && typeof cfg.compression === 'string' && cfg.compression) {
                             compressionField.value = cfg.compression;
                         }
@@ -1484,6 +1498,38 @@ def render_studio_export_tab(
                             const val = parseInt(String(cfg.max_parallel_page_fetch), 10);
                             if (!Number.isNaN(val)) parallelField.value = String(val);
                         }
+                        syncToggle(
+                            includeCoverCheckbox,
+                            includeCoverHidden,
+                            parseProfileBool(
+                                cfg.include_cover,
+                                includeCoverCheckbox ? includeCoverCheckbox.checked : true
+                            )
+                        );
+                        syncToggle(
+                            includeColophonCheckbox,
+                            includeColophonHidden,
+                            parseProfileBool(
+                                cfg.include_colophon,
+                                includeColophonCheckbox ? includeColophonCheckbox.checked : true
+                            )
+                        );
+                        syncToggle(
+                            forceRemoteCheckbox,
+                            forceRemoteHidden,
+                            parseProfileBool(
+                                cfg.force_remote_refetch,
+                                forceRemoteCheckbox ? forceRemoteCheckbox.checked : false
+                            )
+                        );
+                        syncToggle(
+                            cleanupTempCheckbox,
+                            cleanupTempHidden,
+                            parseProfileBool(
+                                cfg.cleanup_temp_after_export,
+                                cleanupTempCheckbox ? cleanupTempCheckbox.checked : true
+                            )
+                        );
                     }
 
                     if (profileSelect && profileSelect.dataset.bound !== '1') {

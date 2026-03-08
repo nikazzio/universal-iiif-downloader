@@ -493,6 +493,10 @@ def test_export_panel_uses_submit_trigger_and_card_based_thumbnail_selection():
     assert "studio-export-profile-form" not in rendered_output
     assert "window.__studioExportListenersBound" in rendered_output
     assert "initStudioExport();" in rendered_output
+    assert "cfg.include_cover" in rendered_output
+    assert "cfg.include_colophon" in rendered_output
+    assert "cfg.force_remote_refetch" in rendered_output
+    assert "cfg.cleanup_temp_after_export" in rendered_output
 
 
 def test_studio_optimize_scans_updates_metadata_and_feedback(tmp_path):
@@ -1060,6 +1064,59 @@ def test_export_thumbs_switches_green_from_opt_to_hi_after_new_highres_done(tmp_
         assert re.search(r'id="studio-thumb-progress-opt-1"[^>]*studio-thumb-progress-idle', rendered)
         source_pref = vm.get_manuscript_ui_pref(doc_id, "studio_export_page_sources", {})
         assert str((source_pref.get("1") or {}).get("source") or "") == "highres"
+    finally:
+        cm.set_downloads_dir(str(old_downloads))
+
+
+def test_export_thumbs_preserves_running_highres_when_preferred_source_is_highres(tmp_path):
+    """Preferred source must not mask an actively running high-res job."""
+    cm = get_config_manager()
+    old_downloads = cm.get_downloads_dir()
+    try:
+        tmp_downloads = tmp_path / "downloads"
+        cm.set_downloads_dir(str(tmp_downloads))
+
+        vm = VaultManager()
+        doc_id = "DOC_THUMBS_PREF_HI_RUNNING"
+        library = "Vaticana"
+        doc_root = Path(tmp_downloads) / library / doc_id
+        scans_dir = doc_root / "scans"
+        data_dir = doc_root / "data"
+        scans_dir.mkdir(parents=True, exist_ok=True)
+        data_dir.mkdir(parents=True, exist_ok=True)
+        Image.new("RGB", (1600, 1200), (220, 220, 220)).save(scans_dir / "pag_0000.jpg", format="JPEG")
+        (data_dir / "manifest.json").write_text(
+            json.dumps({"items": [{"id": "https://example.org/canvas/1"}]}),
+            encoding="utf-8",
+        )
+
+        vm.upsert_manuscript(
+            doc_id,
+            library=library,
+            local_path=str(doc_root),
+            status="saved",
+            asset_state="saved",
+        )
+        vm.set_manuscript_ui_pref(
+            doc_id,
+            "studio_export_page_sources",
+            {"1": {"source": "highres", "source_ts": "2026-03-08 11:00:00"}},
+        )
+        vm.create_download_job("job_hi_pref_running", doc_id, library, "https://example.org/manifest.json")
+        vm.update_download_job("job_hi_pref_running", current=1, total=4, status="running")
+        vm.set_manuscript_ui_pref(
+            doc_id,
+            "studio_export_highres_jobs",
+            {"1": {"job_id": "job_hi_pref_running", "state": "queued", "source_ts": "2026-03-08 11:00:00"}},
+        )
+
+        panel = studio_handlers.get_studio_export_thumbs(doc_id=doc_id, library=library, thumb_page=1, page_size=24)
+        rendered = repr(panel)
+        assert re.search(r'id="studio-thumb-progress-hi-1"[^>]*studio-thumb-progress-active', rendered)
+        assert re.search(
+            r"<button[^>]*(?:studio-thumb-highres-btn[^>]*disabled|disabled[^>]*studio-thumb-highres-btn)",
+            rendered,
+        )
     finally:
         cm.set_downloads_dir(str(old_downloads))
 

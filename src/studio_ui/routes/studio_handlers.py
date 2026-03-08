@@ -589,8 +589,10 @@ def _apply_preferred_source_to_feedback(
     preferred_source: str,
 ) -> tuple[dict[str, str], dict[str, str], bool]:
     if preferred_source == "highres":
-        highres_feedback["state"] = "done"
-        highres_feedback["progress_percent"] = "100"
+        highres_state = str(highres_feedback.get("state") or "").strip().lower()
+        if highres_state not in {"queued", "running"}:
+            highres_feedback["state"] = "done"
+            highres_feedback["progress_percent"] = "100"
         if str(optimize_feedback.get("state") or "").strip().lower() == "done":
             optimize_feedback = _set_idle_feedback(optimize_feedback, label="Ottimizza")
         return highres_feedback, optimize_feedback, True
