@@ -28,10 +28,25 @@ def render_studio_tabs(
 ):
     """Render the studio tabs."""
     page_idx = int(page)
-    allowed_tabs = {"transcription", "snippets", "history", "visual", "info", "export"}
+    allowed_tabs = {"transcription", "snippets", "history", "visual", "info", "images", "output", "jobs"}
     safe_active_tab = str(active_tab or "transcription").strip().lower()
+    if safe_active_tab == "export":
+        safe_active_tab = "images"
     if safe_active_tab not in allowed_tabs:
         safe_active_tab = "transcription"
+    encoded_doc = quote(str(doc_id), safe="")
+    encoded_lib = quote(str(library), safe="")
+    export_urls = {
+        "images": (
+            f"/studio/partial/export?doc_id={encoded_doc}&library={encoded_lib}&page={page_idx}&tab=images&subtab=pages"
+        ),
+        "output": (
+            f"/studio/partial/export?doc_id={encoded_doc}&library={encoded_lib}&page={page_idx}&tab=output&subtab=build"
+        ),
+        "jobs": (
+            f"/studio/partial/export?doc_id={encoded_doc}&library={encoded_lib}&page={page_idx}&tab=jobs&subtab=jobs"
+        ),
+    }
     # Header buttons
     buttons = Div(
         Button(
@@ -65,10 +80,22 @@ def render_studio_tabs(
             cls=f"tab-button studio-tab{' studio-tab-active' if safe_active_tab == 'info' else ''}",
         ),
         Button(
+            "🖼️ Immagini",
+            onclick="switchTab('images')",
+            id="tab-button-images",
+            cls=f"tab-button studio-tab{' studio-tab-active' if safe_active_tab == 'images' else ''}",
+        ),
+        Button(
             "📄 Output",
-            onclick="switchTab('export')",
-            id="tab-button-export",
-            cls=f"tab-button studio-tab{' studio-tab-active' if safe_active_tab == 'export' else ''}",
+            onclick="switchTab('output')",
+            id="tab-button-output",
+            cls=f"tab-button studio-tab{' studio-tab-active' if safe_active_tab == 'output' else ''}",
+        ),
+        Button(
+            "🧰 Job",
+            onclick="switchTab('jobs')",
+            id="tab-button-jobs",
+            cls=f"tab-button studio-tab{' studio-tab-active' if safe_active_tab == 'jobs' else ''}",
         ),
         cls="studio-tablist",
     )
@@ -106,16 +133,47 @@ def render_studio_tabs(
         Div(
             (
                 export_fragment
-                if export_fragment is not None
+                if export_fragment is not None and safe_active_tab == "images"
                 else Div(
-                    "Apri il tab Output per caricare miniature e strumenti di esportazione.",
+                    "Apri il tab Immagini per gestire miniature e ottimizzazione.",
                     cls="text-sm text-slate-500 dark:text-slate-400 p-2",
                 )
             ),
-            id="tab-content-export",
-            cls=f"tab-content h-full{' hidden' if safe_active_tab != 'export' else ''}",
-            data_export_loaded="1" if export_fragment is not None else "0",
-            data_export_url=export_url or "",
+            id="tab-content-images",
+            cls=f"tab-content h-full{' hidden' if safe_active_tab != 'images' else ''}",
+            data_export_loaded="1" if (export_fragment is not None and safe_active_tab == "images") else "0",
+            data_export_url=export_urls["images"],
+            data_export_placeholder="Apri il tab Immagini per gestire miniature e ottimizzazione.",
+        ),
+        Div(
+            (
+                export_fragment
+                if export_fragment is not None and safe_active_tab == "output"
+                else Div(
+                    "Apri il tab Output per configurare e creare PDF.",
+                    cls="text-sm text-slate-500 dark:text-slate-400 p-2",
+                )
+            ),
+            id="tab-content-output",
+            cls=f"tab-content h-full{' hidden' if safe_active_tab != 'output' else ''}",
+            data_export_loaded="1" if (export_fragment is not None and safe_active_tab == "output") else "0",
+            data_export_url=export_urls["output"],
+            data_export_placeholder="Apri il tab Output per configurare e creare PDF.",
+        ),
+        Div(
+            (
+                export_fragment
+                if export_fragment is not None and safe_active_tab == "jobs"
+                else Div(
+                    "Apri il tab Job per monitorare la coda processi.",
+                    cls="text-sm text-slate-500 dark:text-slate-400 p-2",
+                )
+            ),
+            id="tab-content-jobs",
+            cls=f"tab-content h-full{' hidden' if safe_active_tab != 'jobs' else ''}",
+            data_export_loaded="1" if (export_fragment is not None and safe_active_tab == "jobs") else "0",
+            data_export_url=export_urls["jobs"],
+            data_export_placeholder="Apri il tab Job per monitorare la coda processi.",
         ),
         cls="studio-tabpanes flex-1 overflow-y-auto p-4",
     )
@@ -125,7 +183,9 @@ def render_studio_tabs(
     default_tab_js = json.dumps(safe_active_tab)
     switch_script = Script(
         f"""(function() {{
-            const ALLOWED_TABS = new Set(['transcription', 'snippets', 'history', 'visual', 'info', 'export']);
+            const ALLOWED_TABS = new Set([
+                'transcription', 'snippets', 'history', 'visual', 'info', 'images', 'output', 'jobs'
+            ]);
             const docId = {doc_js};
             const library = {lib_js};
             const defaultTab = {default_tab_js};
@@ -165,6 +225,41 @@ def render_studio_tabs(
                 }}).catch(() => null);
             }}
 
+            function buildExportUrl(baseUrl, params) {{
+                if (!baseUrl) return '';
+                const extra = params || {{}};
+                try {{
+                    const url = new URL(baseUrl, window.location.origin);
+                    Object.entries(extra).forEach(([key, value]) => {{
+                        if (value === undefined || value === null || String(value) === '') return;
+                        url.searchParams.set(String(key), String(value));
+                    }});
+                    return url.pathname + url.search;
+                }} catch (_e) {{
+                    return baseUrl;
+                }}
+            }}
+
+            function unloadInactiveExportPanes(activeTab) {{
+                const exportTabs = ['images', 'output', 'jobs'];
+                exportTabs.forEach((name) => {{
+                    if (name === activeTab) return;
+                    const pane = document.getElementById('tab-content-' + name);
+                    if (!pane || pane.dataset.exportLoaded !== '1') return;
+                    const panel = pane.querySelector('#studio-export-panel');
+                    if (panel && window.htmx) {{
+                        try {{ htmx.trigger(panel, 'htmx:abort'); }} catch (_e) {{ /* no-op */ }}
+                    }}
+                    const placeholder = pane.dataset.exportPlaceholder || '';
+                    pane.innerHTML = (
+                        '<div class="text-sm text-slate-500 dark:text-slate-400 p-2">'
+                        + placeholder
+                        + '</div>'
+                    );
+                    pane.dataset.exportLoaded = '0';
+                }});
+            }}
+
             function switchTab(t, opts) {{
                 const options = opts || {{}};
                 const tab = ALLOWED_TABS.has(String(t || '').trim()) ? String(t).trim() : 'transcription';
@@ -182,14 +277,18 @@ def render_studio_tabs(
 
                 if (options.updateUrl !== false) updateUrlTab(tab);
                 if (options.persist !== false) saveContext(tab);
+                document.body.dataset.studioActiveTab = tab;
+                unloadInactiveExportPanes(tab);
 
-                if (tab === 'export') {{
+                if (tab === 'images' || tab === 'output' || tab === 'jobs') {{
                     const loaded = target.dataset.exportLoaded === '1';
+                    const shouldReload = options.reloadExport === true;
                     const exportUrl = target.dataset.exportUrl || '';
-                    if (!loaded && exportUrl) {{
+                    if ((!loaded || shouldReload) && exportUrl) {{
                         target.dataset.exportLoaded = '1';
                         try {{
-                            htmx.ajax('GET', exportUrl, {{ target: '#tab-content-export', swap: 'innerHTML' }});
+                            const finalUrl = buildExportUrl(exportUrl, options.exportParams);
+                            htmx.ajax('GET', finalUrl, {{ target: '#tab-content-' + tab, swap: 'innerHTML' }});
                         }} catch (e) {{
                             console.error('export-load-err', e);
                             target.dataset.exportLoaded = '0';

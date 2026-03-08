@@ -52,7 +52,7 @@ from universal_iiif_core.thumbnail_utils import ensure_thumbnail, guess_availabl
 from universal_iiif_core.utils import get_json, load_json, save_json
 
 logger = get_logger(__name__)
-_STUDIO_ALLOWED_TABS = ("transcription", "snippets", "history", "visual", "info", "export")
+_STUDIO_ALLOWED_TABS = ("transcription", "snippets", "history", "visual", "info", "images", "output", "jobs")
 
 
 def _with_toast(fragment, message: str, tone: str = "info"):
@@ -109,6 +109,8 @@ def _normalized_studio_context(doc_id: str, library: str) -> tuple[str, str]:
 
 def _normalize_studio_tab(raw_tab: str | None) -> str:
     value = str(raw_tab or "").strip().lower()
+    if value == "export":
+        return "images"
     return value if value in _STUDIO_ALLOWED_TABS else "transcription"
 
 
@@ -306,6 +308,8 @@ def _export_tab_defaults(doc_id: str, library: str) -> dict[str, Any]:
 def _thumb_page_size(raw_page_size: int | None = None, *, doc_id: str = "") -> int:
     cm = get_config_manager()
     default_size = int(cm.get_setting("thumbnails.page_size", 48) or 48)
+    max_size = int(cm.get_setting("thumbnails.studio_page_size_max", 72) or 72)
+    max_size = max(12, min(max_size, 120))
     candidate = default_size
     if raw_page_size not in {None, 0}:
         candidate = int(raw_page_size)
@@ -315,7 +319,7 @@ def _thumb_page_size(raw_page_size: int | None = None, *, doc_id: str = "") -> i
             candidate = int(saved or default_size)
         except Exception:
             candidate = default_size
-    return max(1, min(candidate, 120))
+    return max(1, min(candidate, max_size))
 
 
 def _is_export_job_active(job: dict) -> bool:
@@ -325,6 +329,8 @@ def _is_export_job_active(job: dict) -> bool:
 def _thumb_page_size_options() -> list[int]:
     cm = get_config_manager()
     raw_options = cm.get_setting("thumbnails.page_size_options", [24, 48, 72, 96])
+    max_size = int(cm.get_setting("thumbnails.studio_page_size_max", 72) or 72)
+    max_size = max(12, min(max_size, 120))
     options: list[int] = []
     if isinstance(raw_options, list):
         for raw in raw_options:
@@ -332,7 +338,7 @@ def _thumb_page_size_options() -> list[int]:
                 value = int(raw)
             except (TypeError, ValueError):
                 continue
-            if 1 <= value <= 120 and value not in options:
+            if 1 <= value <= max_size and value not in options:
                 options.append(value)
     default_size = _thumb_page_size()
     if default_size not in options:
@@ -1064,6 +1070,7 @@ def _build_studio_export_fragment(
     page_size: int | None = None,
     selected_pages_raw: str = "",
     selected_subtab: str = "pages",
+    selected_build_subtab: str = "generate",
     page_feedback_by_num: dict[int, dict[str, str]] | None = None,
     optimize_feedback: dict[str, Any] | None = None,
 ):
@@ -1111,6 +1118,7 @@ def _build_studio_export_fragment(
         has_active_jobs=has_active_jobs,
         export_defaults=_export_tab_defaults(doc_id, library),
         selected_subtab=selected_subtab,
+        selected_build_subtab=selected_build_subtab,
         scan_summary=dict(thumb_state.get("scan_summary") or {}),
         optimization_meta=optimization_meta,
         optimize_feedback=optimize_feedback or {},
@@ -1509,13 +1517,25 @@ def get_export_tab(
     library: str,
     page: int,
     tab: str = "transcription",
+    subtab: str = "",
     thumb_page: int = 1,
     page_size: int = 0,
     selected_pages: str = "",
+    build_subtab: str = "generate",
 ):
     """Get Studio Export tab content."""
     _ = _safe_positive_int(page, 1)
-    _ = _normalize_studio_tab(tab)
+    safe_tab = _normalize_studio_tab(tab)
+    safe_subtab = str(subtab or "").strip().lower()
+    if safe_subtab not in {"pages", "build", "jobs"}:
+        safe_subtab = {
+            "images": "pages",
+            "output": "build",
+            "jobs": "jobs",
+        }.get(safe_tab, "pages")
+    safe_build_subtab = str(build_subtab or "generate").strip().lower()
+    if safe_build_subtab not in {"generate", "files"}:
+        safe_build_subtab = "generate"
     doc_id, library = unquote(doc_id), unquote(library)
     return _build_studio_export_fragment(
         doc_id,
@@ -1523,6 +1543,8 @@ def get_export_tab(
         thumb_page=int(thumb_page or 1),
         page_size=int(page_size or 0),
         selected_pages_raw=selected_pages,
+        selected_subtab=safe_subtab,
+        selected_build_subtab=safe_build_subtab,
     )
 
 
@@ -1598,12 +1620,16 @@ def get_studio_export_live_state(
     page_size: int = 0,
     selected_pages: str = "",
     subtab: str = "pages",
+    build_subtab: str = "generate",
 ):
     """Polling endpoint for in-place Studio Export state refresh."""
     doc_id, library = unquote(doc_id), unquote(library)
     safe_subtab = str(subtab or "pages").strip().lower()
     if safe_subtab not in {"pages", "build", "jobs"}:
         safe_subtab = "pages"
+    safe_build_subtab = str(build_subtab or "generate").strip().lower()
+    if safe_build_subtab not in {"generate", "files"}:
+        safe_build_subtab = "generate"
     return _build_studio_export_fragment(
         doc_id,
         library,
@@ -1611,6 +1637,7 @@ def get_studio_export_live_state(
         page_size=int(page_size or 0),
         selected_pages_raw=selected_pages,
         selected_subtab=safe_subtab,
+        selected_build_subtab=safe_build_subtab,
     )
 
 
@@ -1676,6 +1703,7 @@ def start_studio_export(
     cleanup_temp_after_export: str = "",
     max_parallel_page_fetch: int = 0,
     subtab: str = "pages",
+    build_subtab: str = "generate",
 ):
     """Start one export job from Studio for the current item."""
     doc_id, library = unquote(doc_id), unquote(library)
@@ -1684,6 +1712,9 @@ def start_studio_export(
     selected_subtab = str(subtab or "pages").strip().lower()
     if selected_subtab not in {"pages", "build", "jobs"}:
         selected_subtab = "pages"
+    selected_build_subtab = str(build_subtab or "generate").strip().lower()
+    if selected_build_subtab not in {"generate", "files"}:
+        selected_build_subtab = "generate"
     if include_cover == "":
         include_cover_bool = True
     if include_colophon == "":
@@ -1720,6 +1751,7 @@ def start_studio_export(
                 page_size=int(page_size or 0),
                 selected_pages_raw=selected_pages,
                 selected_subtab=selected_subtab,
+                selected_build_subtab=selected_build_subtab,
             ),
             f"Errore avvio export: {exc}",
             tone="danger",
@@ -1733,6 +1765,7 @@ def start_studio_export(
             page_size=int(page_size or 0),
             selected_pages_raw=selected_pages,
             selected_subtab=selected_subtab,
+            selected_build_subtab=selected_build_subtab,
         ),
         "Export PDF avviato per l'item corrente.",
         tone="success",

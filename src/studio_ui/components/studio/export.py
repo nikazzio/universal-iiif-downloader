@@ -13,11 +13,6 @@ _FIELD_CLASS = "app-field"
 _LABEL_CLASS = "app-label"
 
 
-def _kind_chip(kind: str):
-    value = (kind or "other").strip().lower()
-    return Span(value, cls="text-[11px] text-slate-500 dark:text-slate-400")
-
-
 def _bytes_label(size_bytes: int) -> str:
     size = int(size_bytes or 0)
     if size <= 0:
@@ -41,7 +36,7 @@ def render_pdf_inventory_panel(pdf_files: list[dict], *, doc_id: str, library: s
     if polling:
         attrs = {
             "hx_get": f"/api/studio/export/pdf_list?doc_id={encoded_doc}&library={encoded_lib}",
-            "hx_trigger": "load, every 5s",
+            "hx_trigger": "load, every 12s",
             "hx_swap": "outerHTML",
         }
 
@@ -56,8 +51,8 @@ def render_pdf_inventory_panel(pdf_files: list[dict], *, doc_id: str, library: s
             Div(
                 Div(
                     Span(name, cls="text-xs font-mono text-slate-700 dark:text-slate-200"),
-                    _kind_chip(kind),
-                    cls="flex items-center gap-2 min-w-0",
+                    Span(kind, cls="text-[11px] text-slate-500 dark:text-slate-400"),
+                    cls="grid gap-0.5 min-w-0",
                 ),
                 Div(
                     Span(size_text, cls="text-xs text-slate-500 dark:text-slate-400"),
@@ -88,7 +83,6 @@ def render_pdf_inventory_panel(pdf_files: list[dict], *, doc_id: str, library: s
         ]
 
     return Div(
-        H3("PDF dell'item", cls="text-sm font-semibold text-slate-900 dark:text-slate-100 mb-2"),
         Div(*rows, cls="space-y-2"),
         id="studio-export-pdf-list",
         **attrs,
@@ -134,6 +128,9 @@ def _thumbnail_card(*, item: dict, doc_id: str, library: str, thumb_page: int, p
     image = (
         Img(
             src=thumb_url,
+            loading="lazy",
+            decoding="async",
+            fetchpriority="low",
             cls=(
                 "w-full h-44 object-contain rounded-lg border border-slate-200 dark:border-slate-700 "
                 "bg-slate-100 dark:bg-slate-800 p-1"
@@ -303,7 +300,7 @@ def render_export_thumbnails_panel(
             "",
             id="studio-export-live-state-poller",
             hx_get=_thumb_page_url(doc_id=doc_id, library=library, thumb_page=thumb_page, page_size=page_size),
-            hx_trigger="load, every 4s",
+            hx_trigger="load, every 12s",
             hx_include="#studio-export-thumb-page,#studio-export-page-size",
             hx_target="#studio-export-thumbs-slot",
             hx_swap="outerHTML",
@@ -398,16 +395,19 @@ def _render_export_pages_subtab(
         f"/api/studio/export/optimize_scans?doc_id={encoded_doc}&library={encoded_lib}"
         f"&thumb_page={thumb_page}&page_size={thumb_page_size}"
     )
+    open_output_btn = Button(
+        "Crea PDF con selezione",
+        type="button",
+        id="studio-export-open-build",
+        cls="app-btn app-btn-accent",
+    )
 
     return Div(
         Div(
-            Div(
-                H3("Workspace Immagini", cls="text-sm font-semibold text-slate-900 dark:text-slate-100"),
-                P(
-                    "Gestisci miniature, high-res e ottimizzazione locale. Il PDF resta secondario.",
-                    cls="text-xs text-slate-500 dark:text-slate-400",
-                ),
-                cls="space-y-1",
+            H3("Workspace Immagini", cls="text-sm font-semibold text-slate-900 dark:text-slate-100"),
+            P(
+                "Gestisci miniature, high-res e ottimizzazione locale. Il PDF resta secondario.",
+                cls="text-xs text-slate-500 dark:text-slate-400",
             ),
             Div(
                 Span(
@@ -417,42 +417,68 @@ def _render_export_pages_subtab(
                         f"Media {_bytes_label(int(scan_summary.get('bytes_avg') or 0))} · "
                         f"Max {_bytes_label(int(scan_summary.get('bytes_max') or 0))}"
                     ),
-                    cls="text-xs text-slate-600 dark:text-slate-300",
+                    cls="text-xs font-mono text-slate-700 dark:text-slate-200",
                 ),
-                cls="flex flex-wrap items-center gap-2",
+                Span(
+                    f"Thumb page {thumb_page}/{thumb_page_count} · {thumb_page_size} per pagina",
+                    cls="text-[11px] text-slate-500 dark:text-slate-400",
+                ),
+                cls=(
+                    "flex flex-col gap-1 p-2.5 rounded-lg border border-slate-200 dark:border-slate-700 "
+                    "bg-white/80 dark:bg-slate-900/80"
+                ),
             ),
-            cls="flex flex-col xl:flex-row xl:items-end xl:justify-between gap-3",
+            cls="space-y-2",
         ),
         Div(
             Div(
+                H3("Ottimizzazione Scans Locali", cls="text-sm font-semibold text-slate-900 dark:text-slate-100"),
+                P(
+                    "Riduci il peso dei file locali. Usa selezione o tutto l'item.",
+                    cls="text-xs text-slate-500 dark:text-slate-400",
+                ),
+                cls="space-y-1",
+            ),
+            Div(
                 Button(
-                    "Ottimizza selezione",
+                    Div(
+                        Span("Ottimizza selezione"),
+                        Span(
+                            "…",
+                            id="studio-export-optimize-selected-indicator",
+                            cls="htmx-indicator text-xs",
+                        ),
+                        cls="flex items-center gap-1",
+                    ),
                     type="button",
                     id="studio-export-optimize-selected-btn",
                     hx_post=optimize_url,
                     hx_vals='{"optimize_scope":"selected"}',
                     hx_include="#studio-export-selected-pages,#studio-export-thumb-page,#studio-export-page-size",
-                    hx_indicator="#studio-export-optimize-indicator",
+                    hx_indicator="#studio-export-optimize-selected-indicator",
                     hx_target="#studio-export-panel",
                     hx_swap="outerHTML",
-                    cls="app-btn app-btn-accent",
+                    cls="app-btn app-btn-neutral",
                 ),
                 Button(
-                    "Ottimizza tutte",
+                    Div(
+                        Span("Ottimizza tutte"),
+                        Span(
+                            "…",
+                            id="studio-export-optimize-all-indicator",
+                            cls="htmx-indicator text-xs",
+                        ),
+                        cls="flex items-center gap-1",
+                    ),
                     type="button",
                     id="studio-export-optimize-btn",
                     hx_post=optimize_url,
                     hx_vals='{"optimize_scope":"all"}',
                     hx_include="#studio-export-selected-pages,#studio-export-thumb-page,#studio-export-page-size",
-                    hx_indicator="#studio-export-optimize-indicator",
+                    hx_indicator="#studio-export-optimize-all-indicator",
                     hx_target="#studio-export-panel",
                     hx_swap="outerHTML",
                     cls="app-btn app-btn-neutral",
-                ),
-                Span(
-                    "Ottimizzazione in corso...",
-                    id="studio-export-optimize-indicator",
-                    cls="htmx-indicator text-xs text-slate-500 dark:text-slate-400",
                 ),
                 cls="flex flex-wrap items-center gap-2",
             ),
@@ -483,92 +509,10 @@ def _render_export_pages_subtab(
                     cls="text-xs text-slate-500 dark:text-slate-400",
                 ),
             ),
-            cls="space-y-2",
-        ),
-        Div(
-            Div(
-                Label("Range rapido", for_="studio-export-range", cls=_LABEL_CLASS),
-                Div(
-                    Input(
-                        type="text",
-                        id="studio-export-range",
-                        placeholder="es. 1-10,12,20-25",
-                        cls=f"flex-1 {_FIELD_CLASS}",
-                    ),
-                    Button(
-                        "Applica",
-                        type="button",
-                        id="studio-export-apply-range",
-                        cls="app-btn app-btn-accent",
-                    ),
-                    cls="flex items-center gap-2",
-                ),
-                Div(
-                    Button(
-                        "Seleziona tutte",
-                        type="button",
-                        id="studio-export-select-all",
-                        cls="app-btn app-btn-neutral",
-                    ),
-                    Button(
-                        "Deseleziona",
-                        type="button",
-                        id="studio-export-clear",
-                        cls="app-btn app-btn-neutral",
-                    ),
-                    cls="flex items-center gap-2 mt-2",
-                ),
-                cls="space-y-2",
+            cls=(
+                "space-y-2 p-3 rounded-xl border border-slate-200 dark:border-slate-700 "
+                "bg-white dark:bg-slate-900"
             ),
-            Div(
-                Div(
-                    Div(
-                        Span("Ambito export", cls="app-label"),
-                        Div(
-                            Button(
-                                "Tutte le pagine",
-                                type="button",
-                                id="studio-export-scope-all",
-                                cls="studio-export-scope-btn studio-export-scope-btn-active",
-                                aria_pressed="true",
-                            ),
-                            Button(
-                                "Solo selezione",
-                                type="button",
-                                id="studio-export-scope-custom",
-                                cls="studio-export-scope-btn",
-                                aria_pressed="false",
-                            ),
-                            cls="studio-export-scope-group",
-                        ),
-                        cls="space-y-1",
-                    ),
-                    Span(
-                        "0 pagine selezionate",
-                        id="studio-export-selected-count",
-                        cls="studio-export-selected-count text-xs text-slate-500 dark:text-slate-400",
-                    ),
-                    Button(
-                        "Crea PDF",
-                        type="submit",
-                        form="studio-export-form",
-                        data_export_submit="1",
-                        cls="app-btn app-btn-accent",
-                    ),
-                    Button(
-                        "Apri configurazione PDF",
-                        type="button",
-                        id="studio-export-open-build",
-                        cls="app-btn app-btn-neutral",
-                    ),
-                    cls=(
-                        "studio-export-sidepanel p-3 rounded-xl border border-slate-200 dark:border-slate-700 "
-                        "bg-white/70 dark:bg-slate-900/60 space-y-3"
-                    ),
-                ),
-                cls="xl:sticky xl:top-3 self-start",
-            ),
-            cls="grid gap-3 xl:grid-cols-[minmax(0,1fr)_300px]",
         ),
         Div(
             render_export_thumbnails_panel(
@@ -581,6 +525,18 @@ def _render_export_pages_subtab(
                 page_size=thumb_page_size,
                 page_size_options=thumb_page_size_options,
                 has_active_page_actions=has_active_page_actions,
+            ),
+        ),
+        Div(
+            Span(
+                "0 pagine selezionate",
+                id="studio-export-selected-count",
+                cls="studio-export-selected-count text-xs text-slate-500 dark:text-slate-400",
+            ),
+            open_output_btn,
+            cls=(
+                "flex flex-wrap items-center justify-between gap-2 p-2.5 rounded-xl "
+                "border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-900/80"
             ),
         ),
         cls="space-y-3",
@@ -605,6 +561,7 @@ def render_studio_export_tab(
     has_active_page_actions: bool,
     export_defaults: dict,
     selected_subtab: str = "pages",
+    selected_build_subtab: str = "generate",
     scan_summary: dict | None = None,
     optimization_meta: dict | None = None,
     optimize_feedback: dict | None = None,
@@ -619,6 +576,7 @@ def render_studio_export_tab(
         hx_url=f"/api/studio/export/jobs?doc_id={encoded_doc}&library={encoded_lib}",
         panel_id="studio-export-jobs",
         has_active_jobs=has_active_jobs,
+        poll_interval_seconds=12,
     )
 
     default_format = str(export_defaults.get("format") or "pdf_images")
@@ -659,412 +617,530 @@ def render_studio_export_tab(
         description_rows = 3
     description_rows = max(2, min(description_rows, 8))
 
-    jobs_count = len(jobs)
     active_subtab = selected_subtab if selected_subtab in {"build", "pages", "jobs"} else "pages"
+    active_build_subtab = selected_build_subtab if selected_build_subtab in {"generate", "files"} else "generate"
     scan_summary = scan_summary or {}
     optimization_meta = optimization_meta or {}
     optimize_feedback = optimize_feedback or {}
+    available_total = len(available_pages)
 
     return Div(
         Div(
-            render_pdf_inventory_panel(
-                pdf_files,
-                doc_id=doc_id,
-                library=library,
-                polling=has_active_jobs,
+            Input(type="hidden", name="thumb_page", id="studio-export-thumb-page", value=str(thumb_page)),
+            Input(type="hidden", name="page_size", id="studio-export-page-size", value=str(thumb_page_size)),
+            Input(type="hidden", name="subtab", id="studio-export-subtab-state", value=active_subtab),
+            Input(type="hidden", name="build_subtab", id="studio-export-build-subtab-state", value=active_build_subtab),
+            Input(type="hidden", name="selection_mode", id="studio-export-selection-mode", value="all"),
+            Input(
+                type="hidden",
+                name="selected_pages",
+                id="studio-export-selected-pages",
+                value=selected_pages_raw,
             ),
-            cls="mb-4",
+            Input(
+                type="hidden",
+                id="studio-export-available-pages",
+                value=",".join(str(page) for page in available_pages),
+            ),
+            cls="hidden",
         ),
         Div(
             Div(
-                H3("Output Studio", cls="text-base font-semibold text-slate-900 dark:text-slate-100"),
-                P(
-                    "Gestione immagini prioritaria con pannello PDF secondario.",
-                    cls="text-xs text-slate-500 dark:text-slate-400",
+                (
+                    _render_export_pages_subtab(
+                        doc_id=doc_id,
+                        library=library,
+                        scan_summary=scan_summary,
+                        optimization_meta=optimization_meta,
+                        optimize_feedback=optimize_feedback,
+                        thumbnails=thumbnails,
+                        thumb_page=thumb_page,
+                        thumb_page_count=thumb_page_count,
+                        thumb_total_pages=thumb_total_pages,
+                        thumb_page_size=thumb_page_size,
+                        thumb_page_size_options=thumb_page_size_options,
+                        has_active_page_actions=has_active_page_actions,
+                    )
+                    if active_subtab == "pages"
+                    else ""
                 ),
-                cls="mb-2",
+                id="studio-export-subtab-pages",
+                cls="space-y-2" if active_subtab == "pages" else "hidden space-y-2",
             ),
-            Div(
-                Button(
-                    "Immagini",
-                    type="button",
-                    id="studio-export-subtab-btn-pages",
-                    data_subtab="pages",
-                    cls=(
-                        "studio-export-subtab studio-export-subtab-active"
-                        if active_subtab == "pages"
-                        else "studio-export-subtab"
-                    ),
-                    aria_selected="true" if active_subtab == "pages" else "false",
-                ),
-                Button(
-                    "Crea PDF",
-                    type="button",
-                    id="studio-export-subtab-btn-build",
-                    data_subtab="build",
-                    cls=(
-                        "studio-export-subtab studio-export-subtab-active"
-                        if active_subtab == "build"
-                        else "studio-export-subtab"
-                    ),
-                    aria_selected="true" if active_subtab == "build" else "false",
-                ),
-                Button(
-                    f"Job ({jobs_count})",
-                    type="button",
-                    id="studio-export-subtab-btn-jobs",
-                    data_subtab="jobs",
-                    cls=(
-                        "studio-export-subtab studio-export-subtab-active"
-                        if active_subtab == "jobs"
-                        else "studio-export-subtab"
-                    ),
-                    aria_selected="true" if active_subtab == "jobs" else "false",
-                ),
-                cls="studio-export-subtabs mb-3",
-            ),
-            Div(
-                Form(
-                    Input(type="hidden", name="doc_id", value=doc_id),
-                    Input(type="hidden", name="library", value=library),
-                    Input(
-                        type="hidden",
-                        id="studio-export-profiles-json",
-                        value=json.dumps(profile_catalog, separators=(",", ":")),
-                    ),
-                    Input(type="hidden", name="thumb_page", id="studio-export-thumb-page", value=str(thumb_page)),
-                    Input(type="hidden", name="page_size", id="studio-export-page-size", value=str(thumb_page_size)),
-                    Input(type="hidden", name="subtab", id="studio-export-subtab-state", value=active_subtab),
-                    Input(type="hidden", name="selection_mode", id="studio-export-selection-mode", value="all"),
-                    Input(
-                        type="hidden",
-                        name="selected_pages",
-                        id="studio-export-selected-pages",
-                        value=selected_pages_raw,
-                    ),
-                    Input(
-                        type="hidden",
-                        id="studio-export-available-pages",
-                        value=",".join(str(page) for page in available_pages),
-                    ),
-                    Input(
-                        type="hidden",
-                        name="include_cover",
-                        id="studio-export-include-cover-hidden",
-                        value="1" if default_include_cover else "0",
-                    ),
-                    Input(
-                        type="hidden",
-                        name="include_colophon",
-                        id="studio-export-include-colophon-hidden",
-                        value="1" if default_include_colophon else "0",
-                    ),
-                    Input(
-                        type="hidden",
-                        name="force_remote_refetch",
-                        id="studio-export-force-remote-hidden",
-                        value="1" if default_force_remote_refetch else "0",
-                    ),
-                    Input(
-                        type="hidden",
-                        name="cleanup_temp_after_export",
-                        id="studio-export-cleanup-temp-hidden",
-                        value="1" if default_cleanup_temp else "0",
-                    ),
+            (
+                Div(
                     Div(
-                        Span("Profilo PDF", cls=f"{_LABEL_CLASS} shrink-0"),
-                        Select(
-                            *[
-                                Option(label, value=key, selected=key == default_profile_name)
-                                for key, label in profile_options
-                            ],
-                            id="studio-export-profile",
-                            name="pdf_profile",
-                            cls=f"{_FIELD_CLASS} flex-1 min-w-0",
+                        H3("Output PDF", cls="text-sm font-semibold text-slate-900 dark:text-slate-100"),
+                        P(
+                            "Generazione PDF con selezione pagine, template e parametri.",
+                            cls="text-xs text-slate-500 dark:text-slate-400",
                         ),
-                        A(
-                            "Gestisci profili",
-                            href="/settings?tab=pdf",
-                            cls="app-btn app-btn-neutral whitespace-nowrap",
-                        ),
-                        cls="flex flex-col md:flex-row md:items-center gap-2",
-                    ),
-                    P(
-                        "Il profilo e la configurazione principale. "
-                        "Apri gli override solo se devi fare eccezioni per questo job.",
-                        cls="text-xs text-slate-500 dark:text-slate-400",
+                        cls="space-y-1",
                     ),
                     Div(
                         Button(
-                            "Personalizza override per questo job",
+                            "Generazione",
                             type="button",
-                            id="studio-export-overrides-toggle",
-                            cls="app-btn app-btn-neutral",
-                            aria_expanded="false",
+                            id="studio-export-build-tab-generate",
+                            cls="app-btn app-btn-accent"
+                            if active_build_subtab == "generate"
+                            else "app-btn app-btn-neutral",
+                            aria_pressed="true" if active_build_subtab == "generate" else "false",
                         ),
-                        P(
-                            "Formato, compressione, sorgente immagini, cover e metadati sono opzionali.",
-                            cls="text-xs text-slate-500 dark:text-slate-400",
+                        Button(
+                            "PDF generati",
+                            type="button",
+                            id="studio-export-build-tab-files",
+                            cls="app-btn app-btn-accent"
+                            if active_build_subtab == "files"
+                            else "app-btn app-btn-neutral",
+                            aria_pressed="true" if active_build_subtab == "files" else "false",
                         ),
-                        cls="space-y-1",
+                        cls="flex flex-wrap items-center gap-2",
+                    ),
+                    Form(
+                        Input(type="hidden", name="doc_id", value=doc_id),
+                        Input(type="hidden", name="library", value=library),
+                        Input(
+                            type="hidden",
+                            id="studio-export-profiles-json",
+                            value=json.dumps(profile_catalog, separators=(",", ":")),
+                        ),
+                        Input(
+                            type="hidden",
+                            name="include_cover",
+                            id="studio-export-include-cover-hidden",
+                            value="1" if default_include_cover else "0",
+                        ),
+                        Input(
+                            type="hidden",
+                            name="include_colophon",
+                            id="studio-export-include-colophon-hidden",
+                            value="1" if default_include_colophon else "0",
+                        ),
+                        Input(
+                            type="hidden",
+                            name="force_remote_refetch",
+                            id="studio-export-force-remote-hidden",
+                            value="1" if default_force_remote_refetch else "0",
+                        ),
+                        Input(
+                            type="hidden",
+                            name="cleanup_temp_after_export",
+                            id="studio-export-cleanup-temp-hidden",
+                            value="1" if default_cleanup_temp else "0",
+                        ),
+                            Div(
+                                Div(
+                                    H3(
+                                        "Selezione Pagine",
+                                        cls="text-sm font-semibold text-slate-900 dark:text-slate-100",
+                                    ),
+                                    P(
+                                        "Seleziona le pagine da includere nel PDF.",
+                                        cls="text-xs text-slate-500 dark:text-slate-400",
+                                    ),
+                                cls="space-y-1",
+                            ),
+                            Div(
+                                Button(
+                                    "Seleziona pagine singolarmente",
+                                    type="button",
+                                    id="studio-export-open-pages-custom",
+                                    cls="app-btn app-btn-neutral",
+                                ),
+                                Div(
+                                    Button(
+                                        "Tutte",
+                                        type="button",
+                                        id="studio-export-scope-all",
+                                        cls="app-btn app-btn-neutral",
+                                        aria_pressed="true",
+                                    ),
+                                    Button(
+                                        "Custom",
+                                        type="button",
+                                        id="studio-export-scope-custom",
+                                        cls="app-btn app-btn-neutral",
+                                        aria_pressed="false",
+                                    ),
+                                    cls="flex items-center gap-2",
+                                ),
+                                cls="flex flex-wrap items-center justify-between gap-2",
+                            ),
+                            Div(
+                                Label("Range manuale pagine", for_="studio-export-range", cls=_LABEL_CLASS),
+                                Div(
+                                    Input(
+                                        type="text",
+                                        id="studio-export-range",
+                                        placeholder="es. 1-10,12,20-25",
+                                        cls=f"flex-1 {_FIELD_CLASS}",
+                                    ),
+                                    Button(
+                                        "Applica",
+                                        type="button",
+                                        id="studio-export-apply-range",
+                                        cls="app-btn app-btn-accent",
+                                    ),
+                                    cls="flex flex-wrap items-center gap-2",
+                                ),
+                                Div(
+                                    Button(
+                                        "Seleziona tutte",
+                                        type="button",
+                                        id="studio-export-select-all",
+                                        cls="app-btn app-btn-neutral",
+                                    ),
+                                    Button(
+                                        "Deseleziona",
+                                        type="button",
+                                        id="studio-export-clear",
+                                        cls="app-btn app-btn-neutral",
+                                    ),
+                                    Span(
+                                        "0 pagine selezionate",
+                                        cls="studio-export-selected-count text-xs text-slate-600 dark:text-slate-300",
+                                    ),
+                                    Span(
+                                        f"{available_total} pagine disponibili",
+                                        cls="text-[11px] text-slate-500 dark:text-slate-400",
+                                    ),
+                                    cls="flex flex-wrap items-center gap-2 mt-2",
+                                ),
+                                cls="space-y-2",
+                                ),
+                                cls=(
+                                    "space-y-2 pb-3 border-b border-slate-200 dark:border-slate-700"
+                                ),
+                            ),
+                        Div(
+                            H3(
+                                "Template e Parametri Export",
+                                cls="text-sm font-semibold text-slate-900 dark:text-slate-100",
+                            ),
+                            P(
+                                "Profilo, formato PDF, sorgente immagini e metadati copertina.",
+                                cls="text-xs text-slate-500 dark:text-slate-400",
+                            ),
+                            cls="space-y-1",
+                        ),
+                        Div(
+                            Span("Profilo PDF", cls=f"{_LABEL_CLASS} shrink-0"),
+                            Select(
+                                *[
+                                    Option(label, value=key, selected=key == default_profile_name)
+                                    for key, label in profile_options
+                                ],
+                                id="studio-export-profile",
+                                name="pdf_profile",
+                                cls=f"{_FIELD_CLASS} flex-1 min-w-0",
+                            ),
+                            A(
+                                "Gestisci profili",
+                                href="/settings?tab=pdf",
+                                cls="app-btn app-btn-neutral whitespace-nowrap",
+                            ),
+                            cls="flex flex-col md:flex-row md:items-center gap-2",
+                        ),
+                        Div(
+                            Button(
+                                "Personalizza override per questo job",
+                                type="button",
+                                id="studio-export-overrides-toggle",
+                                cls="app-btn app-btn-neutral",
+                                aria_expanded="false",
+                            ),
+                            P(
+                                "Apri override solo quando devi uscire dal template standard.",
+                                cls="text-xs text-slate-500 dark:text-slate-400",
+                            ),
+                            cls="space-y-1",
+                        ),
+                        Div(
+                            Div(
+                                Div(
+                                    Label("Formato", for_="studio-export-format", cls=_LABEL_CLASS),
+                                    Select(
+                                        Option(
+                                            "PDF (solo immagini)",
+                                            value="pdf_images",
+                                            selected=default_format == "pdf_images",
+                                        ),
+                                        Option(
+                                            "PDF ricercabile",
+                                            value="pdf_searchable",
+                                            selected=default_format == "pdf_searchable",
+                                        ),
+                                        Option(
+                                            "PDF testo a fronte",
+                                            value="pdf_facing",
+                                            selected=default_format == "pdf_facing",
+                                        ),
+                                        id="studio-export-format",
+                                        name="export_format",
+                                        cls=_FIELD_CLASS,
+                                    ),
+                                    cls="space-y-1",
+                                ),
+                                Div(
+                                    Label("Compressione", for_="studio-export-compression", cls=_LABEL_CLASS),
+                                    Select(
+                                        Option(
+                                            "High-Res", value="High-Res", selected=default_compression == "High-Res"
+                                        ),
+                                        Option(
+                                            "Standard", value="Standard", selected=default_compression == "Standard"
+                                        ),
+                                        Option("Light", value="Light", selected=default_compression == "Light"),
+                                        id="studio-export-compression",
+                                        name="compression",
+                                        cls=_FIELD_CLASS,
+                                    ),
+                                    cls="space-y-1",
+                                ),
+                                cls="grid grid-cols-1 md:grid-cols-2 gap-3",
+                            ),
+                            Div(
+                                Label(
+                                    Input(
+                                        type="checkbox",
+                                        id="studio-export-include-cover-checkbox",
+                                        value="1",
+                                        checked=default_include_cover,
+                                        cls="app-check",
+                                    ),
+                                    Span("Includi copertina", cls="text-sm text-slate-700 dark:text-slate-300"),
+                                    cls="flex items-center gap-2",
+                                ),
+                                Label(
+                                    Input(
+                                        type="checkbox",
+                                        id="studio-export-include-colophon-checkbox",
+                                        value="1",
+                                        checked=default_include_colophon,
+                                        cls="app-check",
+                                    ),
+                                    Span("Includi colophon", cls="text-sm text-slate-700 dark:text-slate-300"),
+                                    cls="flex items-center gap-2",
+                                ),
+                                Label(
+                                    Input(
+                                        type="checkbox",
+                                        id="studio-export-force-remote-checkbox",
+                                        value="1",
+                                        checked=default_force_remote_refetch,
+                                        cls="app-check",
+                                    ),
+                                    Span("Forza refetch remoto", cls="text-sm text-slate-700 dark:text-slate-300"),
+                                    cls="flex items-center gap-2",
+                                ),
+                                Label(
+                                    Input(
+                                        type="checkbox",
+                                        id="studio-export-cleanup-temp-checkbox",
+                                        value="1",
+                                        checked=default_cleanup_temp,
+                                        cls="app-check",
+                                    ),
+                                    Span("Cleanup temp high-res", cls="text-sm text-slate-700 dark:text-slate-300"),
+                                    cls="flex items-center gap-2",
+                                ),
+                                cls="flex flex-wrap gap-4",
+                            ),
+                            Div(
+                                Div(
+                                    Label("Sorgente immagini", for_="studio-export-source-mode", cls=_LABEL_CLASS),
+                                    Select(
+                                        Option(
+                                            "PDF da Locale (bilanciato)",
+                                            value="local_balanced",
+                                            selected=default_image_source_mode == "local_balanced",
+                                        ),
+                                        Option(
+                                            "PDF da Locale (high-res)",
+                                            value="local_highres",
+                                            selected=default_image_source_mode == "local_highres",
+                                        ),
+                                        Option(
+                                            "PDF da Remoto temporaneo",
+                                            value="remote_highres_temp",
+                                            selected=default_image_source_mode == "remote_highres_temp",
+                                        ),
+                                        id="studio-export-source-mode",
+                                        name="image_source_mode",
+                                        cls=_FIELD_CLASS,
+                                    ),
+                                    cls="space-y-1",
+                                ),
+                                Div(
+                                    Label("Max long edge (px)", for_="studio-export-max-edge", cls=_LABEL_CLASS),
+                                    Input(
+                                        type="number",
+                                        id="studio-export-max-edge",
+                                        name="image_max_long_edge_px",
+                                        value=str(default_image_max_edge),
+                                        min="0",
+                                        step="1",
+                                        cls=_FIELD_CLASS,
+                                    ),
+                                    cls="space-y-1",
+                                ),
+                                Div(
+                                    Label("JPEG quality", for_="studio-export-jpeg-quality", cls=_LABEL_CLASS),
+                                    Input(
+                                        type="number",
+                                        id="studio-export-jpeg-quality",
+                                        name="image_jpeg_quality",
+                                        value=str(default_jpeg_quality),
+                                        min="40",
+                                        max="100",
+                                        step="1",
+                                        cls=_FIELD_CLASS,
+                                    ),
+                                    cls="space-y-1",
+                                ),
+                                Div(
+                                    Label("Parallel fetch", for_="studio-export-parallel", cls=_LABEL_CLASS),
+                                    Input(
+                                        type="number",
+                                        id="studio-export-parallel",
+                                        name="max_parallel_page_fetch",
+                                        value=str(default_parallel_fetch),
+                                        min="1",
+                                        max="8",
+                                        step="1",
+                                        cls=_FIELD_CLASS,
+                                    ),
+                                    cls="space-y-1",
+                                ),
+                                cls="grid grid-cols-1 md:grid-cols-2 gap-3",
+                            ),
+                            Div(
+                                Div(
+                                    Label("Curatore", for_="studio-export-curator", cls=_LABEL_CLASS),
+                                    Input(
+                                        type="text",
+                                        id="studio-export-curator",
+                                        name="cover_curator",
+                                        value=default_curator,
+                                        placeholder="es. Team Digital Humanities",
+                                        cls=_FIELD_CLASS,
+                                    ),
+                                    cls="space-y-1",
+                                ),
+                                Div(
+                                    Label("Logo copertina (path)", for_="studio-export-logo", cls=_LABEL_CLASS),
+                                    Input(
+                                        type="text",
+                                        id="studio-export-logo",
+                                        name="cover_logo_path",
+                                        value=default_logo_path,
+                                        placeholder="es. assets/logo.png",
+                                        cls=_FIELD_CLASS,
+                                    ),
+                                    cls="space-y-1",
+                                ),
+                                Div(
+                                    Label("Descrizione", for_="studio-export-description", cls=_LABEL_CLASS),
+                                    Textarea(
+                                        default_description,
+                                        id="studio-export-description",
+                                        name="cover_description",
+                                        rows=description_rows,
+                                        cls=_FIELD_CLASS,
+                                    ),
+                                    cls="space-y-1 md:col-span-2",
+                                ),
+                                cls="grid grid-cols-1 md:grid-cols-2 gap-3",
+                            ),
+                            id="studio-export-overrides-panel",
+                            cls=(
+                                "hidden space-y-3 mt-1 pt-3 border-t border-slate-200 dark:border-slate-700"
+                            ),
+                        ),
+                        Div(
+                            Div(
+                                Span(
+                                    "Default: tutte le pagine. In modalità custom usa range o selezione singola.",
+                                    cls="text-xs text-slate-500 dark:text-slate-400",
+                                ),
+                                Span(
+                                    "0 pagine selezionate",
+                                    cls="studio-export-selected-count text-xs text-slate-600 dark:text-slate-300",
+                                ),
+                                cls="space-y-1",
+                            ),
+                            Button(
+                                "Crea PDF",
+                                type="submit",
+                                form="studio-export-form",
+                                data_export_submit="1",
+                                cls="app-btn app-btn-accent",
+                            ),
+                            cls=(
+                                "studio-export-actionbar flex flex-wrap items-center justify-between gap-3 "
+                                "pt-3 border-t border-slate-200 dark:border-slate-700"
+                            ),
+                        ),
+                        hx_post="/api/studio/export/start",
+                        hx_trigger="submit",
+                        hx_include=(
+                            "#studio-export-thumb-page,#studio-export-page-size,#studio-export-subtab-state,"
+                            "#studio-export-selection-mode,#studio-export-selected-pages,"
+                            "#studio-export-build-subtab-state"
+                        ),
+                        hx_target="#studio-export-panel",
+                        hx_swap="outerHTML",
+                        id="studio-export-form",
+                        cls=(
+                            "studio-export-build-generate-block space-y-4"
+                            + (" hidden" if active_build_subtab != "generate" else "")
+                        ),
                     ),
                     Div(
-                        Div(
-                            Div(
-                                Label("Formato", for_="studio-export-format", cls=_LABEL_CLASS),
-                                Select(
-                                    Option(
-                                        "PDF (solo immagini)",
-                                        value="pdf_images",
-                                        selected=default_format == "pdf_images",
-                                    ),
-                                    Option(
-                                        "PDF ricercabile",
-                                        value="pdf_searchable",
-                                        selected=default_format == "pdf_searchable",
-                                    ),
-                                    Option(
-                                        "PDF testo a fronte",
-                                        value="pdf_facing",
-                                        selected=default_format == "pdf_facing",
-                                    ),
-                                    id="studio-export-format",
-                                    name="export_format",
-                                    cls=_FIELD_CLASS,
-                                ),
-                                cls="space-y-1",
-                            ),
-                            Div(
-                                Label("Compressione", for_="studio-export-compression", cls=_LABEL_CLASS),
-                                Select(
-                                    Option("High-Res", value="High-Res", selected=default_compression == "High-Res"),
-                                    Option("Standard", value="Standard", selected=default_compression == "Standard"),
-                                    Option("Light", value="Light", selected=default_compression == "Light"),
-                                    id="studio-export-compression",
-                                    name="compression",
-                                    cls=_FIELD_CLASS,
-                                ),
-                                cls="space-y-1",
-                            ),
-                            cls="grid grid-cols-1 md:grid-cols-2 gap-3",
+                        H3("PDF Generati", cls="text-sm font-semibold text-slate-900 dark:text-slate-100"),
+                        P(
+                            "Elenco di controllo file presenti in item/pdf.",
+                            cls="text-xs text-slate-500 dark:text-slate-400",
                         ),
-                        Div(
-                            Label(
-                                Input(
-                                    type="checkbox",
-                                    id="studio-export-include-cover-checkbox",
-                                    value="1",
-                                    checked=default_include_cover,
-                                    cls="app-check",
-                                ),
-                                Span("Includi copertina", cls="text-sm text-slate-700 dark:text-slate-300"),
-                                cls="flex items-center gap-2",
-                            ),
-                            Label(
-                                Input(
-                                    type="checkbox",
-                                    id="studio-export-include-colophon-checkbox",
-                                    value="1",
-                                    checked=default_include_colophon,
-                                    cls="app-check",
-                                ),
-                                Span("Includi colophon", cls="text-sm text-slate-700 dark:text-slate-300"),
-                                cls="flex items-center gap-2",
-                            ),
-                            Label(
-                                Input(
-                                    type="checkbox",
-                                    id="studio-export-force-remote-checkbox",
-                                    value="1",
-                                    checked=default_force_remote_refetch,
-                                    cls="app-check",
-                                ),
-                                Span("Forza refetch remoto", cls="text-sm text-slate-700 dark:text-slate-300"),
-                                cls="flex items-center gap-2",
-                            ),
-                            Label(
-                                Input(
-                                    type="checkbox",
-                                    id="studio-export-cleanup-temp-checkbox",
-                                    value="1",
-                                    checked=default_cleanup_temp,
-                                    cls="app-check",
-                                ),
-                                Span("Cleanup temp high-res", cls="text-sm text-slate-700 dark:text-slate-300"),
-                                cls="flex items-center gap-2",
-                            ),
-                            cls="flex flex-wrap gap-4",
+                        render_pdf_inventory_panel(
+                            pdf_files,
+                            doc_id=doc_id,
+                            library=library,
+                            polling=has_active_jobs,
                         ),
-                        Div(
-                            Div(
-                                Label("Sorgente immagini", for_="studio-export-source-mode", cls=_LABEL_CLASS),
-                                Select(
-                                    Option(
-                                        "PDF da Locale (bilanciato)",
-                                        value="local_balanced",
-                                        selected=default_image_source_mode == "local_balanced",
-                                    ),
-                                    Option(
-                                        "PDF da Locale (high-res)",
-                                        value="local_highres",
-                                        selected=default_image_source_mode == "local_highres",
-                                    ),
-                                    Option(
-                                        "PDF da Remoto temporaneo",
-                                        value="remote_highres_temp",
-                                        selected=default_image_source_mode == "remote_highres_temp",
-                                    ),
-                                    id="studio-export-source-mode",
-                                    name="image_source_mode",
-                                    cls=_FIELD_CLASS,
-                                ),
-                                cls="space-y-1",
-                            ),
-                            Div(
-                                Label("Max long edge (px)", for_="studio-export-max-edge", cls=_LABEL_CLASS),
-                                Input(
-                                    type="number",
-                                    id="studio-export-max-edge",
-                                    name="image_max_long_edge_px",
-                                    value=str(default_image_max_edge),
-                                    min="0",
-                                    step="1",
-                                    cls=_FIELD_CLASS,
-                                ),
-                                cls="space-y-1",
-                            ),
-                            Div(
-                                Label("JPEG quality", for_="studio-export-jpeg-quality", cls=_LABEL_CLASS),
-                                Input(
-                                    type="number",
-                                    id="studio-export-jpeg-quality",
-                                    name="image_jpeg_quality",
-                                    value=str(default_jpeg_quality),
-                                    min="40",
-                                    max="100",
-                                    step="1",
-                                    cls=_FIELD_CLASS,
-                                ),
-                                cls="space-y-1",
-                            ),
-                            Div(
-                                Label("Parallel fetch", for_="studio-export-parallel", cls=_LABEL_CLASS),
-                                Input(
-                                    type="number",
-                                    id="studio-export-parallel",
-                                    name="max_parallel_page_fetch",
-                                    value=str(default_parallel_fetch),
-                                    min="1",
-                                    max="8",
-                                    step="1",
-                                    cls=_FIELD_CLASS,
-                                ),
-                                cls="space-y-1",
-                            ),
-                            cls="grid grid-cols-1 md:grid-cols-2 gap-3",
-                        ),
-                        Div(
-                            Div(
-                                Label("Curatore", for_="studio-export-curator", cls=_LABEL_CLASS),
-                                Input(
-                                    type="text",
-                                    id="studio-export-curator",
-                                    name="cover_curator",
-                                    value=default_curator,
-                                    placeholder="es. Team Digital Humanities",
-                                    cls=_FIELD_CLASS,
-                                ),
-                                cls="space-y-1",
-                            ),
-                            Div(
-                                Label("Logo copertina (path)", for_="studio-export-logo", cls=_LABEL_CLASS),
-                                Input(
-                                    type="text",
-                                    id="studio-export-logo",
-                                    name="cover_logo_path",
-                                    value=default_logo_path,
-                                    placeholder="es. assets/logo.png",
-                                    cls=_FIELD_CLASS,
-                                ),
-                                cls="space-y-1",
-                            ),
-                            Div(
-                                Label("Descrizione", for_="studio-export-description", cls=_LABEL_CLASS),
-                                Textarea(
-                                    default_description,
-                                    id="studio-export-description",
-                                    name="cover_description",
-                                    rows=description_rows,
-                                    cls=_FIELD_CLASS,
-                                ),
-                                cls="space-y-1 md:col-span-2",
-                            ),
-                            cls="grid grid-cols-1 md:grid-cols-2 gap-3",
-                        ),
-                        id="studio-export-overrides-panel",
-                        cls=(
-                            "hidden space-y-3 mt-1 p-3 rounded-xl border border-slate-200 dark:border-slate-700 "
-                            "bg-white/70 dark:bg-slate-900/55"
+                        cls="studio-export-build-files-block space-y-2" + (
+                            "" if active_build_subtab == "files" else " hidden"
                         ),
                     ),
-                    hx_post="/api/studio/export/start",
-                    hx_trigger="submit",
-                    hx_target="#studio-export-panel",
-                    hx_swap="outerHTML",
-                    id="studio-export-form",
+                    id="studio-export-subtab-build",
                     cls="space-y-3",
-                ),
+                )
+                if active_subtab == "build"
+                else Div("", id="studio-export-subtab-build", cls="hidden")
+            ),
+            (
                 Div(
                     Div(
-                        Span(
-                            "La selezione pagine si gestisce nel sub-tab Immagini.",
+                        H3("Job", cls="text-sm font-semibold text-slate-900 dark:text-slate-100"),
+                        P(
+                            "Coda job generale (export e processi futuri).",
                             cls="text-xs text-slate-500 dark:text-slate-400",
-                        ),
-                        Span(
-                            "0 pagine selezionate",
-                            cls="studio-export-selected-count text-xs text-slate-500 dark:text-slate-400",
                         ),
                         cls="space-y-1",
                     ),
-                    Button(
-                        "Crea PDF",
-                        type="submit",
-                        form="studio-export-form",
-                        data_export_submit="1",
-                        cls="app-btn app-btn-accent",
-                    ),
-                    cls=(
-                        "studio-export-actionbar mt-3 p-3 rounded-xl border border-slate-200 dark:border-slate-700 "
-                        "bg-white/70 dark:bg-slate-900/60 flex items-center justify-between gap-3"
-                    ),
-                ),
-                id="studio-export-subtab-build",
-                cls="space-y-2" if active_subtab == "build" else "hidden space-y-2",
+                    jobs_panel,
+                    id="studio-export-subtab-jobs",
+                    cls="space-y-3",
+                )
+                if active_subtab == "jobs"
+                else Div("", id="studio-export-subtab-jobs", cls="hidden")
             ),
-            Div(
-                _render_export_pages_subtab(
-                    doc_id=doc_id,
-                    library=library,
-                    scan_summary=scan_summary,
-                    optimization_meta=optimization_meta,
-                    optimize_feedback=optimize_feedback,
-                    thumbnails=thumbnails,
-                    thumb_page=thumb_page,
-                    thumb_page_count=thumb_page_count,
-                    thumb_total_pages=thumb_total_pages,
-                    thumb_page_size=thumb_page_size,
-                    thumb_page_size_options=thumb_page_size_options,
-                    has_active_page_actions=has_active_page_actions,
-                ),
-                id="studio-export-subtab-pages",
-                cls="space-y-2 mt-3" if active_subtab == "pages" else "hidden space-y-2 mt-3",
+            cls=(
+                "space-y-3 rounded-2xl border border-slate-200 dark:border-slate-700 "
+                "bg-slate-50 dark:bg-slate-900/70 p-3"
             ),
-            Div(
-                jobs_panel,
-                id="studio-export-subtab-jobs",
-                cls="mt-3" if active_subtab == "jobs" else "hidden mt-3",
-            ),
-            cls="bg-slate-50 dark:bg-slate-900/70 border border-slate-200 dark:border-slate-700 rounded-2xl p-4",
         ),
         Script(
             """
@@ -1213,15 +1289,16 @@ def render_studio_export_tab(
                     const parallelField = panel.querySelector('#studio-export-parallel');
                     const scopeAllBtn = panel.querySelector('#studio-export-scope-all');
                     const scopeCustomBtn = panel.querySelector('#studio-export-scope-custom');
-                    const subtabBuildBtn = panel.querySelector('#studio-export-subtab-btn-build');
-                    const subtabPagesBtn = panel.querySelector('#studio-export-subtab-btn-pages');
-                    const subtabJobsBtn = panel.querySelector('#studio-export-subtab-btn-jobs');
                     const subtabBuild = panel.querySelector('#studio-export-subtab-build');
                     const subtabPages = panel.querySelector('#studio-export-subtab-pages');
                     const subtabJobs = panel.querySelector('#studio-export-subtab-jobs');
                     const optimizeBtn = panel.querySelector('#studio-export-optimize-btn');
                     const optimizeSelectedBtn = panel.querySelector('#studio-export-optimize-selected-btn');
                     const openBuildBtn = panel.querySelector('#studio-export-open-build');
+                    const openPagesBtn = panel.querySelector('#studio-export-open-pages-custom');
+                    const buildSubtabHidden = panel.querySelector('#studio-export-build-subtab-state');
+                    const buildTabGenerateBtn = panel.querySelector('#studio-export-build-tab-generate');
+                    const buildTabFilesBtn = panel.querySelector('#studio-export-build-tab-files');
 
                     if (thumbPageHidden && thumbsSlot && thumbsSlot.dataset.thumbPage) {
                         thumbPageHidden.value = thumbsSlot.dataset.thumbPage;
@@ -1254,11 +1331,13 @@ def render_studio_export_tab(
                             hidden.value = serializeSelection(available);
                         }
                         if (scopeAllBtn) {
-                            scopeAllBtn.classList.toggle('studio-export-scope-btn-active', selected === 'all');
+                            scopeAllBtn.classList.toggle('app-btn-accent', selected === 'all');
+                            scopeAllBtn.classList.toggle('app-btn-neutral', selected !== 'all');
                             scopeAllBtn.setAttribute('aria-pressed', selected === 'all' ? 'true' : 'false');
                         }
                         if (scopeCustomBtn) {
-                            scopeCustomBtn.classList.toggle('studio-export-scope-btn-active', selected === 'custom');
+                            scopeCustomBtn.classList.toggle('app-btn-accent', selected === 'custom');
+                            scopeCustomBtn.classList.toggle('app-btn-neutral', selected !== 'custom');
                             scopeCustomBtn.setAttribute('aria-pressed', selected === 'custom' ? 'true' : 'false');
                         }
                         applySelectionToVisible(panel);
@@ -1266,52 +1345,43 @@ def render_studio_export_tab(
                     }
 
                     function activateSubtab(name) {
-                        const selected = (name === 'pages' || name === 'jobs') ? name : 'build';
+                        const selected = (name === 'build' || name === 'jobs') ? name : 'pages';
                         panel.dataset.exportSubtab = selected;
                         if (subtabStateHidden) {
                             subtabStateHidden.value = selected;
                         }
-                        if (subtabBuild) subtabBuild.classList.toggle('hidden', selected !== 'build');
                         if (subtabPages) subtabPages.classList.toggle('hidden', selected !== 'pages');
+                        if (subtabBuild) subtabBuild.classList.toggle('hidden', selected !== 'build');
                         if (subtabJobs) subtabJobs.classList.toggle('hidden', selected !== 'jobs');
-                        if (subtabBuildBtn) {
-                            subtabBuildBtn.classList.toggle('studio-export-subtab-active', selected === 'build');
-                            subtabBuildBtn.setAttribute('aria-selected', selected === 'build' ? 'true' : 'false');
-                        }
-                        if (subtabPagesBtn) {
-                            subtabPagesBtn.classList.toggle('studio-export-subtab-active', selected === 'pages');
-                            subtabPagesBtn.setAttribute('aria-selected', selected === 'pages' ? 'true' : 'false');
-                        }
-                        if (subtabJobsBtn) {
-                            subtabJobsBtn.classList.toggle('studio-export-subtab-active', selected === 'jobs');
-                            subtabJobsBtn.setAttribute('aria-selected', selected === 'jobs' ? 'true' : 'false');
-                        }
-                    }
-                    if (subtabBuildBtn && subtabBuildBtn.dataset.bound !== '1') {
-                        subtabBuildBtn.dataset.bound = '1';
-                        subtabBuildBtn.addEventListener('click', () => activateSubtab('build'));
-                    }
-                    if (subtabPagesBtn && subtabPagesBtn.dataset.bound !== '1') {
-                        subtabPagesBtn.dataset.bound = '1';
-                        subtabPagesBtn.addEventListener('click', () => activateSubtab('pages'));
-                    }
-                    if (subtabJobsBtn && subtabJobsBtn.dataset.bound !== '1') {
-                        subtabJobsBtn.dataset.bound = '1';
-                        subtabJobsBtn.addEventListener('click', () => activateSubtab('jobs'));
-                    }
-                    if (openBuildBtn && openBuildBtn.dataset.bound !== '1') {
-                        openBuildBtn.dataset.bound = '1';
-                        openBuildBtn.addEventListener('click', () => activateSubtab('build'));
                     }
 
-                    if (overridesToggleBtn && overridesToggleBtn.dataset.bound !== '1') {
-                        overridesToggleBtn.dataset.bound = '1';
-                        overridesToggleBtn.addEventListener('click', () => {
-                            const isOpen = !!(overridesPanel && !overridesPanel.classList.contains('hidden'));
-                            setOverridesVisible(!isOpen);
+                    function activateBuildSubtab(name) {
+                        const selected = name === 'files' ? 'files' : 'generate';
+                        if (buildSubtabHidden) {
+                            buildSubtabHidden.value = selected;
+                        }
+                        const generateBlocks = panel.querySelectorAll('.studio-export-build-generate-block');
+                        generateBlocks.forEach((node) => {
+                            node.classList.toggle('hidden', selected !== 'generate');
                         });
+                        const filesBlocks = panel.querySelectorAll('.studio-export-build-files-block');
+                        filesBlocks.forEach((node) => {
+                            node.classList.toggle('hidden', selected !== 'files');
+                        });
+                        if (buildTabGenerateBtn) {
+                            buildTabGenerateBtn.classList.toggle('app-btn-accent', selected === 'generate');
+                            buildTabGenerateBtn.classList.toggle('app-btn-neutral', selected !== 'generate');
+                            buildTabGenerateBtn.setAttribute(
+                                'aria-pressed',
+                                selected === 'generate' ? 'true' : 'false'
+                            );
+                        }
+                        if (buildTabFilesBtn) {
+                            buildTabFilesBtn.classList.toggle('app-btn-accent', selected === 'files');
+                            buildTabFilesBtn.classList.toggle('app-btn-neutral', selected !== 'files');
+                            buildTabFilesBtn.setAttribute('aria-pressed', selected === 'files' ? 'true' : 'false');
+                        }
                     }
-
                     if (scopeAllBtn && scopeAllBtn.dataset.bound !== '1') {
                         scopeAllBtn.dataset.bound = '1';
                         scopeAllBtn.addEventListener('click', () => setSelectionScope('all'));
@@ -1320,172 +1390,213 @@ def render_studio_export_tab(
                         scopeCustomBtn.dataset.bound = '1';
                         scopeCustomBtn.addEventListener('click', () => setSelectionScope('custom'));
                     }
-
-                    if (hidden && availableInput && !String(hidden.value || '').trim()) {
-                        const available = availablePages(panel);
-                        hidden.value = serializeSelection(available);
-                    }
-                    bindThumbCards(panel, (current) => {
-                        const available = availablePages(panel);
-                        const mode = (available.size > 0 && current.size === available.size) ? 'all' : 'custom';
-                        setSelectionScope(mode);
-                    });
-                    applySelectionToVisible(panel);
-                    syncSelectionStore(panel);
-
-                    function lockThumbActions(buttonEl) {
-                        const actionRow = buttonEl && typeof buttonEl.closest === 'function'
-                            ? buttonEl.closest('.studio-thumb-action')
-                            : null;
-                        const peers = actionRow ? actionRow.querySelectorAll('button') : [buttonEl];
-                        peers.forEach((btn) => {
-                            if (!btn) return;
-                            btn.disabled = true;
-                            btn.classList.add('opacity-60', 'cursor-not-allowed');
+                    if (openBuildBtn && openBuildBtn.dataset.bound !== '1') {
+                        openBuildBtn.dataset.bound = '1';
+                        openBuildBtn.addEventListener('click', () => {
+                            setSelectionScope('custom');
+                            activateSubtab('build');
+                            if (window.switchTab) {
+                                const state = hidden ? hidden.value : '';
+                                const thumbPage = thumbPageHidden ? thumbPageHidden.value : '';
+                                const pageSize = pageSizeHidden ? pageSizeHidden.value : '';
+                                window.switchTab('output', {
+                                    reloadExport: true,
+                                    exportParams: {
+                                        subtab: 'build',
+                                        build_subtab: 'generate',
+                                        selected_pages: state,
+                                        thumb_page: thumbPage,
+                                        page_size: pageSize,
+                                    },
+                                });
+                            }
                         });
                     }
-
-                    function activateThumbProgress(buttonEl) {
-                        const indicator = buttonEl && typeof buttonEl.querySelector === 'function'
-                            ? buttonEl.querySelector('.studio-thumb-progress')
-                            : null;
-                        if (!indicator) return;
-                        indicator.classList.remove(
-                            'studio-thumb-progress-idle',
-                            'studio-thumb-progress-done',
-                            'studio-thumb-progress-error',
-                        );
-                        indicator.classList.add('studio-thumb-progress-active');
-                        indicator.style.setProperty('--progress', '24%');
-                    }
-
-                    const highresButtons = panel.querySelectorAll('.studio-thumb-highres-btn');
-                    highresButtons.forEach((btn) => {
-                        if (btn.dataset.boundClick === '1') return;
-                        btn.dataset.boundClick = '1';
-                        btn.addEventListener('click', () => {
-                            activateThumbProgress(btn);
-                            lockThumbActions(btn);
-                        });
-                    });
-                    const thumbOptimizeButtons = panel.querySelectorAll('.studio-thumb-opt-btn');
-                    thumbOptimizeButtons.forEach((btn) => {
-                        if (btn.dataset.boundClick === '1') return;
-                        btn.dataset.boundClick = '1';
-                        btn.addEventListener('click', () => {
-                            activateThumbProgress(btn);
-                            lockThumbActions(btn);
-                        });
-                    });
-                    if (optimizeBtn && optimizeBtn.dataset.boundClick !== '1') {
-                        optimizeBtn.dataset.boundClick = '1';
-                        optimizeBtn.addEventListener('click', () => {
-                            optimizeBtn.disabled = true;
-                            optimizeBtn.classList.add('opacity-60', 'cursor-not-allowed');
+                    if (openPagesBtn && openPagesBtn.dataset.bound !== '1') {
+                        openPagesBtn.dataset.bound = '1';
+                        openPagesBtn.addEventListener('click', () => {
+                            activateSubtab('pages');
+                            if (window.switchTab) {
+                                const state = hidden ? hidden.value : '';
+                                const thumbPage = thumbPageHidden ? thumbPageHidden.value : '';
+                                const pageSize = pageSizeHidden ? pageSizeHidden.value : '';
+                                window.switchTab('images', {
+                                    reloadExport: true,
+                                    exportParams: {
+                                        subtab: 'pages',
+                                        selected_pages: state,
+                                        thumb_page: thumbPage,
+                                        page_size: pageSize,
+                                    },
+                                });
+                                return;
+                            }
+                            const tabButton = document.getElementById('studio-export-tab-pages');
+                            if (tabButton) tabButton.click();
                         });
                     }
-                    if (optimizeSelectedBtn && optimizeSelectedBtn.dataset.boundClick !== '1') {
-                        optimizeSelectedBtn.dataset.boundClick = '1';
-                        optimizeSelectedBtn.addEventListener('click', () => {
-                            optimizeSelectedBtn.disabled = true;
-                            optimizeSelectedBtn.classList.add('opacity-60', 'cursor-not-allowed');
-                        });
+                    if (buildTabGenerateBtn && buildTabGenerateBtn.dataset.bound !== '1') {
+                        buildTabGenerateBtn.dataset.bound = '1';
+                        buildTabGenerateBtn.addEventListener('click', () => activateBuildSubtab('generate'));
+                    }
+                    if (buildTabFilesBtn && buildTabFilesBtn.dataset.bound !== '1') {
+                        buildTabFilesBtn.dataset.bound = '1';
+                        buildTabFilesBtn.addEventListener('click', () => activateBuildSubtab('files'));
                     }
 
-                    let profileCatalog = {};
-                    if (profileCatalogRaw && profileCatalogRaw.value) {
-                        try { profileCatalog = JSON.parse(profileCatalogRaw.value); } catch (_) { profileCatalog = {}; }
+                    const profileCatalog = (() => {
+                        if (!profileCatalogRaw) return {};
+                        try {
+                            return JSON.parse(profileCatalogRaw.value || '{}');
+                        } catch (_e) {
+                            return {};
+                        }
+                    })();
+
+                    function applyProfile(profileKey) {
+                        const key = String(profileKey || '').trim();
+                        if (!key) return;
+                        const cfg = profileCatalog[key];
+                        if (!cfg || typeof cfg !== 'object') return;
+                        if (compressionField && typeof cfg.compression === 'string' && cfg.compression) {
+                            compressionField.value = cfg.compression;
+                        }
+                        if (sourceModeField && typeof cfg.image_source_mode === 'string' && cfg.image_source_mode) {
+                            sourceModeField.value = cfg.image_source_mode;
+                        }
+                        if (
+                            maxEdgeField &&
+                            cfg.image_max_long_edge_px !== undefined &&
+                            cfg.image_max_long_edge_px !== null
+                        ) {
+                            const val = parseInt(String(cfg.image_max_long_edge_px), 10);
+                            if (!Number.isNaN(val)) maxEdgeField.value = String(val);
+                        }
+                        if (jpegQualityField && cfg.jpeg_quality !== undefined && cfg.jpeg_quality !== null) {
+                            const val = parseInt(String(cfg.jpeg_quality), 10);
+                            if (!Number.isNaN(val)) jpegQualityField.value = String(val);
+                        }
+                        if (
+                            parallelField &&
+                            cfg.max_parallel_page_fetch !== undefined &&
+                            cfg.max_parallel_page_fetch !== null
+                        ) {
+                            const val = parseInt(String(cfg.max_parallel_page_fetch), 10);
+                            if (!Number.isNaN(val)) parallelField.value = String(val);
+                        }
                     }
-                    function applyProfileToControls(profileKey) {
-                        const p = profileCatalog && profileCatalog[profileKey];
-                        if (!p) return;
-                        if (compressionField && p.compression) compressionField.value = p.compression;
-                        if (sourceModeField && p.image_source_mode) sourceModeField.value = p.image_source_mode;
-                        if (maxEdgeField && p.image_max_long_edge_px !== undefined) {
-                            maxEdgeField.value = String(p.image_max_long_edge_px);
-                        }
-                        if (jpegQualityField && p.jpeg_quality !== undefined) {
-                            jpegQualityField.value = String(p.jpeg_quality);
-                        }
-                        if (parallelField && p.max_parallel_page_fetch !== undefined) {
-                            parallelField.value = String(p.max_parallel_page_fetch);
-                        }
-                        if (includeCoverCheckbox && p.include_cover !== undefined) {
-                            includeCoverCheckbox.checked = !!p.include_cover;
-                        }
-                        if (includeColophonCheckbox && p.include_colophon !== undefined) {
-                            includeColophonCheckbox.checked = !!p.include_colophon;
-                        }
-                        if (forceRemoteCheckbox && p.force_remote_refetch !== undefined) {
-                            forceRemoteCheckbox.checked = !!p.force_remote_refetch;
-                        }
-                        if (cleanupTempCheckbox && p.cleanup_temp_after_export !== undefined) {
-                            cleanupTempCheckbox.checked = !!p.cleanup_temp_after_export;
-                        }
-                    }
+
                     if (profileSelect && profileSelect.dataset.bound !== '1') {
                         profileSelect.dataset.bound = '1';
                         profileSelect.addEventListener('change', () => {
-                            applyProfileToControls(profileSelect.value);
+                            applyProfile(profileSelect.value);
                         });
                     }
 
-                    if (allBtn && hidden && allBtn.dataset.bound !== '1') {
+                    if (overridesToggleBtn && overridesToggleBtn.dataset.bound !== '1') {
+                        overridesToggleBtn.dataset.bound = '1';
+                        overridesToggleBtn.addEventListener('click', () => {
+                            const hidden = overridesPanel
+                                ? overridesPanel.classList.contains('hidden')
+                                : true;
+                            setOverridesVisible(hidden);
+                        });
+                    }
+
+                    if (rangeBtn && rangeBtn.dataset.bound !== '1') {
+                        rangeBtn.dataset.bound = '1';
+                        rangeBtn.addEventListener('click', () => {
+                            if (!hidden || !rangeInput) return;
+                            const parsed = parseSelection(rangeInput.value || '');
+                            hidden.value = serializeSelection(parsed);
+                            setSelectionScope('custom');
+                            applySelectionToVisible(panel);
+                            syncSelectionStore(panel);
+                        });
+                    }
+
+                    if (allBtn && allBtn.dataset.bound !== '1') {
                         allBtn.dataset.bound = '1';
                         allBtn.addEventListener('click', () => {
+                            if (!hidden) return;
+                            hidden.value = serializeSelection(availablePages(panel));
                             setSelectionScope('all');
+                            applySelectionToVisible(panel);
+                            syncSelectionStore(panel);
                         });
                     }
 
-                    if (clearBtn && hidden && clearBtn.dataset.bound !== '1') {
+                    if (clearBtn && clearBtn.dataset.bound !== '1') {
                         clearBtn.dataset.bound = '1';
                         clearBtn.addEventListener('click', () => {
+                            if (!hidden) return;
                             hidden.value = '';
+                            setSelectionScope('custom');
+                            applySelectionToVisible(panel);
+                            syncSelectionStore(panel);
+                        });
+                    }
+
+                    if (optimizeBtn && optimizeBtn.dataset.bound !== '1') {
+                        optimizeBtn.dataset.bound = '1';
+                        optimizeBtn.addEventListener('click', () => {
+                            if (subtabStateHidden) subtabStateHidden.value = 'pages';
+                        });
+                    }
+                    if (optimizeSelectedBtn && optimizeSelectedBtn.dataset.bound !== '1') {
+                        optimizeSelectedBtn.dataset.bound = '1';
+                        optimizeSelectedBtn.addEventListener('click', () => {
+                            if (subtabStateHidden) subtabStateHidden.value = 'pages';
                             setSelectionScope('custom');
                         });
                     }
 
-                    if (rangeBtn && hidden && rangeBtn.dataset.bound !== '1') {
-                        rangeBtn.dataset.bound = '1';
-                        rangeBtn.addEventListener('click', () => {
-                            const available = availablePages(panel);
-                            const wanted = parseSelection(rangeInput ? rangeInput.value : '');
-                            const filtered = new Set();
-                            wanted.forEach((value) => {
-                                if (available.has(value)) filtered.add(value);
-                            });
-                            hidden.value = serializeSelection(filtered);
-                            const mode = (available.size > 0 && filtered.size === available.size) ? 'all' : 'custom';
-                            setSelectionScope(mode);
+                    bindThumbCards(panel, () => {
+                        setSelectionScope('custom');
+                    });
+                    applySelectionToVisible(panel);
+                    syncSelectionStore(panel);
+
+                    if (includeCoverCheckbox && includeCoverHidden && includeCoverCheckbox.dataset.bound !== '1') {
+                        includeCoverCheckbox.dataset.bound = '1';
+                        includeCoverCheckbox.addEventListener('change', () => {
+                            includeCoverHidden.value = includeCoverCheckbox.checked ? '1' : '0';
+                        });
+                    }
+                    if (
+                        includeColophonCheckbox &&
+                        includeColophonHidden &&
+                        includeColophonCheckbox.dataset.bound !== '1'
+                    ) {
+                        includeColophonCheckbox.dataset.bound = '1';
+                        includeColophonCheckbox.addEventListener('change', () => {
+                            includeColophonHidden.value = includeColophonCheckbox.checked ? '1' : '0';
+                        });
+                    }
+                    if (forceRemoteCheckbox && forceRemoteHidden && forceRemoteCheckbox.dataset.bound !== '1') {
+                        forceRemoteCheckbox.dataset.bound = '1';
+                        forceRemoteCheckbox.addEventListener('change', () => {
+                            forceRemoteHidden.value = forceRemoteCheckbox.checked ? '1' : '0';
+                        });
+                    }
+                    if (cleanupTempCheckbox && cleanupTempHidden && cleanupTempCheckbox.dataset.bound !== '1') {
+                        cleanupTempCheckbox.dataset.bound = '1';
+                        cleanupTempCheckbox.addEventListener('change', () => {
+                            cleanupTempHidden.value = cleanupTempCheckbox.checked ? '1' : '0';
                         });
                     }
 
                     if (form && form.dataset.bound !== '1') {
                         form.dataset.bound = '1';
                         form.addEventListener('submit', () => {
-                            if (includeCoverHidden && includeCoverCheckbox) {
-                                includeCoverHidden.value = includeCoverCheckbox.checked ? '1' : '0';
-                            }
-                            if (includeColophonHidden && includeColophonCheckbox) {
-                                includeColophonHidden.value = includeColophonCheckbox.checked ? '1' : '0';
-                            }
-                            if (forceRemoteHidden && forceRemoteCheckbox) {
-                                forceRemoteHidden.value = forceRemoteCheckbox.checked ? '1' : '0';
-                            }
-                            if (cleanupTempHidden && cleanupTempCheckbox) {
-                                cleanupTempHidden.value = cleanupTempCheckbox.checked ? '1' : '0';
-                            }
-                            if (selectionModeHidden && hidden) {
-                                const selected = parseSelection(hidden.value || '');
-                                const available = availablePages(panel);
-                                selectionModeHidden.value = (
-                                    available.size > 0 && selected.size === available.size
-                                )
-                                    ? 'all'
-                                    : 'custom';
-                            }
                             if (subtabStateHidden) {
-                                subtabStateHidden.value = panel.dataset.exportSubtab || 'pages';
+                                subtabStateHidden.value = panel.dataset.exportSubtab || 'build';
+                            }
+                            if (thumbPageHidden && thumbsSlot && thumbsSlot.dataset.thumbPage) {
+                                thumbPageHidden.value = thumbsSlot.dataset.thumbPage;
+                            }
+                            if (pageSizeHidden && thumbsSlot && thumbsSlot.dataset.pageSize) {
+                                pageSizeHidden.value = thumbsSlot.dataset.pageSize;
                             }
 
                             const submitButtons = panel.querySelectorAll('button[data-export-submit="1"]');
@@ -1495,8 +1606,9 @@ def render_studio_export_tab(
                             });
                         });
                     }
-                    activateSubtab(panel.dataset.exportSubtab || 'pages');
                     setOverridesVisible(false);
+                    activateSubtab(panel.dataset.exportSubtab || 'pages');
+                    activateBuildSubtab(buildSubtabHidden ? buildSubtabHidden.value : 'generate');
                     let initialScope = panel.dataset.exportScope ||
                         (selectionModeHidden ? selectionModeHidden.value : 'all');
                     if (hidden && availableInput) {
@@ -1520,7 +1632,9 @@ def render_studio_export_tab(
                         }
                         const targetId = target.id || '';
                         if (
-                            targetId === 'tab-content-export' ||
+                            targetId === 'tab-content-images' ||
+                            targetId === 'tab-content-output' ||
+                            targetId === 'tab-content-jobs' ||
                             targetId === 'studio-export-thumbs-slot' ||
                             targetId === 'studio-export-panel'
                         ) {
@@ -1529,6 +1643,31 @@ def render_studio_export_tab(
                         }
                         if (typeof target.closest === 'function' && target.closest('#studio-export-panel')) {
                             initStudioExport();
+                        }
+                    });
+                    document.body.addEventListener('htmx:configRequest', (event) => {
+                        const detail = event && event.detail ? event.detail : null;
+                        const sourceEl = detail && detail.elt ? detail.elt : null;
+                        if (!sourceEl) return;
+                        const pollId = sourceEl.id || '';
+                        if (!pollId) return;
+                        if (
+                            pollId !== 'studio-export-live-state-poller' &&
+                            pollId !== 'studio-export-jobs' &&
+                            pollId !== 'studio-export-pdf-list'
+                        ) {
+                            return;
+                        }
+                        const activeTab = String(document.body && document.body.dataset
+                            ? (document.body.dataset.studioActiveTab || '')
+                            : '').trim().toLowerCase();
+                        const wrongTab = (
+                            (pollId === 'studio-export-live-state-poller' && activeTab !== 'images') ||
+                            (pollId === 'studio-export-pdf-list' && activeTab !== 'output') ||
+                            (pollId === 'studio-export-jobs' && activeTab !== 'jobs')
+                        );
+                        if (document.hidden === true || wrongTab) {
+                            event.preventDefault();
                         }
                     });
                 }

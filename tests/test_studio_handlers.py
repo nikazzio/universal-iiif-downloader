@@ -380,7 +380,10 @@ def test_studio_initial_render_keeps_export_lazy():
 
     response = studio_handlers.studio_page(_request(), doc_id=doc_id, library=library, page=1)
     rendered = str(response)
-    assert "Apri il tab Output per caricare miniature" in rendered
+    assert "Apri il tab Immagini per gestire miniature e ottimizzazione." in rendered
+    assert 'id="tab-button-images"' in rendered
+    assert 'id="tab-button-output"' in rendered
+    assert 'id="tab-button-jobs"' in rendered
     assert "studio-export-form" not in rendered
 
 
@@ -451,43 +454,45 @@ def test_export_panel_uses_submit_trigger_and_card_based_thumbnail_selection():
         asset_state="saved",
     )
 
-    panel = studio_handlers.get_export_tab(doc_id=doc_id, library=library, page=1)
-    rendered = repr(panel)
-    assert 'hx-trigger="submit"' in rendered
-    assert 'class="studio-export-page-card' in rendered
-    assert "studio-export-page-checkbox" not in rendered
-    assert 'data-thumbs-endpoint="/api/studio/export/thumbs' in rendered
-    assert 'form="studio-export-form"' in rendered
-    assert rendered.find('id="studio-export-thumbs-slot"') > rendered.find("</form>")
-    assert rendered.find('id="studio-export-pdf-list"') < rendered.find('id="studio-export-form"')
-    assert 'id="studio-export-thumb-size-select"' in rendered
-    assert 'name="page_size"' in rendered
-    assert 'hx-trigger="change"' in rendered
-    assert 'id="studio-export-subtab-btn-build"' in rendered
-    assert 'id="studio-export-subtab-btn-pages"' in rendered
-    assert 'id="studio-export-subtab-btn-jobs"' in rendered
-    assert 'id="studio-export-subtab-build"' in rendered
-    assert 'id="studio-export-subtab-pages"' in rendered
-    assert 'id="studio-export-subtab-jobs"' in rendered
-    assert 'class="studio-export-subtabs' in rendered
-    assert 'class="studio-export-subtab studio-export-subtab-active"' in rendered
-    assert 'id="studio-export-scope-all"' in rendered
-    assert 'id="studio-export-scope-custom"' in rendered
-    assert 'id="studio-export-selection-mode"' in rendered
-    assert 'id="studio-export-overrides-toggle"' in rendered
-    assert 'id="studio-export-overrides-panel"' in rendered
-    assert "Crea PDF rapido (tutte le pagine)" not in rendered
-    assert "Crea PDF selezionato" not in rendered
-    assert "studio-thumb-meta" in rendered
-    assert "studio-thumb-highres-btn" in rendered
-    assert 'id="studio-export-optimize-btn"' in rendered
-    assert 'id="studio-export-live-state-poller"' in rendered
-    assert 'hx-target="#studio-export-thumbs-slot"' in rendered
-    assert "/api/studio/export/thumbs?doc_id=" in rendered
-    assert "data-export-subtab" in rendered
-    assert "studio-export-profile-form" not in rendered
-    assert "window.__studioExportListenersBound" in rendered
-    assert "initStudioExport();" in rendered
+    panel_images = studio_handlers.get_export_tab(doc_id=doc_id, library=library, page=1, tab="images")
+    rendered_images = repr(panel_images)
+    assert 'class="studio-export-page-card' in rendered_images
+    assert "studio-export-page-checkbox" not in rendered_images
+    assert 'data-thumbs-endpoint="/api/studio/export/thumbs' in rendered_images
+    assert 'id="studio-export-thumbs-slot"' in rendered_images
+    assert 'id="studio-export-thumb-size-select"' in rendered_images
+    assert 'name="page_size"' in rendered_images
+    assert 'hx-trigger="change"' in rendered_images
+    assert 'id="studio-export-subtab-pages"' in rendered_images
+    assert 'id="studio-export-open-build"' in rendered_images
+    assert "studio-thumb-meta" in rendered_images
+    assert "studio-thumb-highres-btn" in rendered_images
+    assert 'id="studio-export-optimize-btn"' in rendered_images
+    assert 'id="studio-export-live-state-poller"' in rendered_images
+    assert 'hx-target="#studio-export-thumbs-slot"' in rendered_images
+    assert "/api/studio/export/thumbs?doc_id=" in rendered_images
+
+    panel_output = studio_handlers.get_export_tab(doc_id=doc_id, library=library, page=1, tab="output")
+    rendered_output = repr(panel_output)
+    assert 'hx-trigger="submit"' in rendered_output
+    assert 'id="studio-export-form"' in rendered_output
+    assert 'form="studio-export-form"' in rendered_output
+    assert 'id="studio-export-subtab-build"' in rendered_output
+    assert 'id="studio-export-open-pages-custom"' in rendered_output
+    assert 'id="studio-export-scope-all"' in rendered_output
+    assert 'id="studio-export-scope-custom"' in rendered_output
+    assert 'id="studio-export-range"' in rendered_output
+    assert 'id="studio-export-apply-range"' in rendered_output
+    assert 'id="studio-export-subtab-state"' in rendered_output
+    assert 'id="studio-export-selection-mode"' in rendered_output
+    assert 'id="studio-export-overrides-toggle"' in rendered_output
+    assert 'id="studio-export-overrides-panel"' in rendered_output
+    assert 'id="studio-export-pdf-list"' in rendered_output
+    assert "Crea PDF rapido (tutte le pagine)" not in rendered_output
+    assert "Crea PDF selezionato" not in rendered_output
+    assert "studio-export-profile-form" not in rendered_output
+    assert "window.__studioExportListenersBound" in rendered_output
+    assert "initStudioExport();" in rendered_output
 
 
 def test_studio_optimize_scans_updates_metadata_and_feedback(tmp_path):
@@ -731,8 +736,8 @@ def test_studio_highres_completed_updates_page_source_pref(tmp_path):
         cm.set_downloads_dir(str(old_downloads))
 
 
-def test_studio_export_live_state_keeps_requested_subtab():
-    """Live-state endpoint should preserve requested subtab instead of forcing pages."""
+def test_studio_export_live_state_returns_restructured_panel():
+    """Live-state endpoint should render image/pdf layout plus jobs panel."""
     doc_id = "MSS_LIVE_STATE_SUBTAB"
     library = "Vaticana"
     cm = get_config_manager()
@@ -755,7 +760,9 @@ def test_studio_export_live_state_keeps_requested_subtab():
     )
     panel = studio_handlers.get_studio_export_live_state(doc_id=doc_id, library=library, subtab="jobs")
     rendered = repr(panel)
-    assert 'id="studio-export-subtab-jobs" class="mt-3"' in rendered
+    assert re.search(r'id="studio-export-subtab-jobs" class="space-y-3"', rendered)
+    assert re.search(r'id="studio-export-subtab-pages" class="hidden', rendered)
+    assert re.search(r'id="studio-export-subtab-build" class="hidden', rendered)
 
 
 def test_export_thumbs_endpoint_preserves_highres_feedback_on_pagination(tmp_path):
@@ -910,7 +917,7 @@ def test_export_thumbs_poller_disables_when_no_active_page_jobs(tmp_path):
         )
         active_rendered = repr(active_panel)
         assert 'id="studio-export-live-state-poller"' in active_rendered
-        assert 'hx-trigger="load, every 4s"' in active_rendered
+        assert 'hx-trigger="load, every 12s"' in active_rendered
 
         vm.set_manuscript_ui_pref(
             doc_id,
@@ -925,7 +932,7 @@ def test_export_thumbs_poller_disables_when_no_active_page_jobs(tmp_path):
         )
         idle_rendered = repr(idle_panel)
         assert 'id="studio-export-live-state-poller"' in idle_rendered
-        assert 'hx-trigger="load, every 4s"' not in idle_rendered
+        assert 'hx-trigger="load, every 12s"' not in idle_rendered
     finally:
         cm.set_downloads_dir(str(old_downloads))
 
@@ -1088,7 +1095,9 @@ def test_export_thumb_page_size_preference_is_persisted_per_item():
     )
 
     _ = studio_handlers.get_studio_export_thumbs(doc_id=doc_id, library=library, thumb_page=1, page_size=24)
-    panel = studio_handlers.get_export_tab(doc_id=doc_id, library=library, page=1, page_size=0)
-    rendered = repr(panel)
-    assert 'name="page_size" value="24" id="studio-export-page-size"' in rendered
-    assert 'id="studio-export-thumb-size-select"' in rendered
+    panel_output = studio_handlers.get_export_tab(doc_id=doc_id, library=library, page=1, page_size=0, tab="output")
+    rendered_output = repr(panel_output)
+    assert 'name="page_size" value="24" id="studio-export-page-size"' in rendered_output
+    panel_images = studio_handlers.get_export_tab(doc_id=doc_id, library=library, page=1, page_size=0, tab="images")
+    rendered_images = repr(panel_images)
+    assert 'id="studio-export-thumb-size-select"' in rendered_images
