@@ -398,9 +398,12 @@ class IIIFDownloader:
                 self.logger.warning(f"Failed to register manuscript in DB: {e}")
 
     def _init_session(self):
+        """Initialize synchronization primitives and session for prewarm URLs."""
         self._lock = threading.Lock()
         self._tile_stitch_sem = threading.Semaphore(1)
-        self._backoff_until = 0
+        
+        # Keep session for prewarm viewer URLs (Gallica, Vatican)
+        # All IIIF image downloads now use HTTPClient
         self.session = requests.Session()
         self.session.headers.update(DEFAULT_HEADERS)
         transport_retries = int(self.network_policy.get("transport_retries") or 0)
@@ -435,20 +438,6 @@ class IIIFDownloader:
                     self.session.headers.update({"Accept": "image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8"})
                 except (requests.RequestException, requests.Timeout):
                     self.logger.debug("Unable to pre-warm viewer session for %s", self.library, exc_info=True)
-
-    def _compute_backoff_wait(self, *, attempt: int, status_code: int, retry_after_header: str | None) -> float:
-        base_wait = float(self.network_policy.get("backoff_base_s") or 15.0) * (2**attempt)
-        capped_wait = min(base_wait, float(self.network_policy.get("backoff_cap_s") or 300.0))
-        retry_after_wait = 0.0
-        if bool(self.network_policy.get("respect_retry_after")) and retry_after_header:
-            with suppress(ValueError, TypeError):
-                retry_after_wait = max(float(retry_after_header), 0.0)
-        wait = max(capped_wait, retry_after_wait)
-        if status_code == 403:
-            self._host_limiter.set_cooldown(int(self.network_policy.get("cooldown_on_403_s") or 0))
-        elif status_code == 429:
-            self._host_limiter.set_cooldown(int(self.network_policy.get("cooldown_on_429_s") or 0))
-        return wait
 
     def _wait_rate_gate(self, should_cancel: Callable[[], bool] | None = None) -> bool:
         window_s = int(self.network_policy.get("burst_window_s") or 60)
@@ -524,25 +513,6 @@ class IIIFDownloader:
     def _stop_requested(should_cancel: Callable[[], bool] | None) -> bool:
         return bool(should_cancel and should_cancel())
 
-    def _wait_before_download_attempt(self, should_cancel: Callable[[], bool] | None = None) -> bool:
-        if self._stop_requested(should_cancel):
-            return False
-        now = time.time()
-        if now < self._backoff_until:
-            jitter = SECURE_RANDOM.uniform(0.1, 0.5)
-            time.sleep(self._backoff_until - now + jitter)
-        if self._stop_requested(should_cancel):
-            return False
-        if not self._wait_rate_gate(should_cancel=should_cancel):
-            return False
-        delay = SECURE_RANDOM.uniform(
-            float(self.network_policy.get("min_delay_s") or 0.1),
-            float(self.network_policy.get("max_delay_s") or 0.2),
-        )
-        if delay > 0:
-            time.sleep(delay)
-        return not self._stop_requested(should_cancel)
-
     def _save_download_response(
         self,
         response: requests.Response,
@@ -569,17 +539,6 @@ class IIIFDownloader:
             "resolution_category": "High" if width > 2500 else "Medium",
         }
         return str(filename), stats
-
-    def _apply_backoff_for_status(self, status_code: int, retry_after_header: str | None, *, attempt: int) -> None:
-        if status_code not in {403, 429}:
-            return
-        wait = self._compute_backoff_wait(
-            attempt=attempt,
-            status_code=int(status_code),
-            retry_after_header=retry_after_header,
-        )
-        with self._lock:
-            self._backoff_until = time.time() + wait
 
     def _download_with_retries(
         self,
