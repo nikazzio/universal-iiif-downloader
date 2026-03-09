@@ -79,7 +79,7 @@ def run(
         canvas_plan,
         progress_callback=cb,
         should_cancel=should_cancel,
-        total_for_progress=operation_total,
+        total_for_progress=total_pages,
     )
     self._store_page_stats(page_stats)
 
@@ -107,10 +107,17 @@ def _download_canvases(
 ):
     downloaded, page_stats, to_download = self._prescan_canvases(canvas_plan)
 
+    # Calculate total completed pages including all previously downloaded files
+    # (not just the ones in current canvas_plan)
+    already_downloaded_count = self._count_all_downloaded_pages()
+
     if progress_callback:
         try:
-            completed = sum(1 for f in downloaded if f)
-            progress_callback(completed, total_for_progress or len(canvas_plan))
+            # completed_in_plan = pages already done in this canvas_plan
+            completed_in_plan = sum(1 for f in downloaded if f)
+            # For partial downloads (target_pages), add pages outside the plan
+            total_completed = already_downloaded_count
+            progress_callback(total_completed, total_for_progress or len(canvas_plan))
         except Exception:
             self.logger.debug("Initial progress callback failed", exc_info=True)
 
@@ -122,8 +129,17 @@ def _download_canvases(
         progress_callback,
         should_cancel,
         total_for_progress or len(canvas_plan),
+        already_downloaded_count,
     )
     return downloaded, page_stats
+
+
+def _count_all_downloaded_pages(self) -> int:
+    """Count all downloaded pages (scans + temp) regardless of canvas_plan."""
+    scans_pages = _page_numbers_in_dir(self.scans_dir)
+    temp_pages = _page_numbers_in_dir(self.temp_dir)
+    known_pages = scans_pages | temp_pages
+    return len(known_pages)
 
 
 def _prescan_canvases(self, canvas_plan: list[tuple[int, dict[str, object]]]):
@@ -152,6 +168,7 @@ def _download_missing_canvases(
     progress_callback: Callable[[int, int], None] | None,
     should_cancel: Callable[[], bool] | None,
     total_canvases: int,
+    already_downloaded_count: int = 0,
 ):
     """Download missing pages using ThreadPoolExecutor and update progress and stats."""
     if not to_download:
@@ -165,7 +182,7 @@ def _download_missing_canvases(
         for future in self._iter_download_futures(future_to_index, len(to_download)):
             idx = future_to_index[future]
             _consume_download_future(future, idx, downloaded, page_stats)
-            _emit_canvas_progress(self, downloaded, total_canvases, progress_callback)
+            _emit_canvas_progress(self, downloaded, total_canvases, progress_callback, already_downloaded_count)
 
             if should_cancel and should_cancel():
                 # Final state (paused vs cancelled) is determined by JobManager
@@ -199,12 +216,16 @@ def _emit_canvas_progress(
     downloaded: list[str | None],
     total_canvases: int,
     progress_callback: Callable[[int, int], None] | None,
+    already_downloaded_count: int = 0,
 ) -> None:
     if not progress_callback:
         return
-    completed = sum(1 for f in downloaded if f)
+    # Count completed in current canvas_plan
+    completed_in_plan = sum(1 for f in downloaded if f)
+    # Total = pages outside plan + pages completed in plan
+    total_completed = already_downloaded_count + completed_in_plan
     try:
-        progress_callback(completed, total_canvases)
+        progress_callback(total_completed, total_canvases)
     except Exception:
         self.logger.debug("Progress callback raised an exception", exc_info=True)
 
