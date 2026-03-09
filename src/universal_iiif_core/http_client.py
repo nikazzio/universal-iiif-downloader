@@ -354,7 +354,7 @@ class HTTPClient:
         hostname: str,
         timeout: tuple[int, int],
         **kwargs,
-    ) -> requests.Response:
+    ) -> tuple[requests.Response, int]:
         """
         Execute request with retry logic.
 
@@ -366,7 +366,7 @@ class HTTPClient:
             **kwargs: Additional arguments for session.get()
 
         Returns:
-            Response object
+            Tuple of (Response object, retry count)
 
         Raises:
             requests.RequestException: On unrecoverable failure
@@ -392,7 +392,7 @@ class HTTPClient:
 
                     # Calculate backoff
                     wait = self._compute_backoff(
-                        attempt, response.status_code, response.headers.get("Retry-After"), policy
+                        attempt, response.status_code, response.headers.get("Retry-After"), policy, hostname
                     )
 
                     # Special handling for 403/429: break early
@@ -417,7 +417,7 @@ class HTTPClient:
 
                 # Success or non-retriable error
                 response.raise_for_status()
-                return response
+                return response, retry_count
 
             except (requests.Timeout, requests.ConnectionError) as e:
                 last_exception = e
@@ -426,7 +426,7 @@ class HTTPClient:
 
                 if attempt < max_retries - 1:
                     # Calculate backoff
-                    wait = self._compute_backoff(attempt, 0, None, policy)
+                    wait = self._compute_backoff(attempt, None, None, policy, hostname)
                     self.logger.debug(f"Retrying after {wait:.1f}s")
                     time.sleep(wait)
                 else:
@@ -441,7 +441,8 @@ class HTTPClient:
         # Should not reach here, but just in case
         if last_exception:
             raise last_exception
-        raise requests.RequestException(f"Failed after {max_retries} attempts")
+        # This should never happen but maintain the interface
+        return self.session.get(url, timeout=timeout, **kwargs), retry_count
 
     def get(
         self,
@@ -526,7 +527,7 @@ class HTTPClient:
             if retries is not None:
                 policy = {**policy, "retry_max_attempts": retries}
 
-            response = self._retry_request(
+            response, retry_count = self._retry_request(
                 url,
                 policy,
                 hostname,
@@ -538,7 +539,6 @@ class HTTPClient:
 
             # Update metrics on success
             response_time = time.time() - start_time
-            retry_count = 0  # _retry_request could track this better
             self._update_metrics(
                 success=True,
                 hostname=hostname,
@@ -574,8 +574,9 @@ class HTTPClient:
             raise
 
         finally:
-            # Always release semaphore
-            semaphore.release()
+            # Only release if we successfully acquired
+            if acquired:
+                semaphore.release()
 
     def get_json(
         self,
