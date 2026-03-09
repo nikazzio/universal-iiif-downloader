@@ -16,6 +16,7 @@ from urllib3.util.retry import Retry
 
 from .._rate_limiter import get_host_limiter
 from ..config_manager import get_config_manager
+from ..http_client import HTTPClient
 from ..iiif_tiles import stitch_iiif_tiles_to_jpeg
 from ..library_catalog import parse_manifest_catalog
 from ..logger import get_download_logger
@@ -314,6 +315,10 @@ class IIIFDownloader:
         self.vault = VaultManager()
         self._register_vault()
         self._init_session()
+        
+        # HTTP client for standardized requests with retry/rate limiting
+        # Pass network_policy settings so HTTPClient can use library-specific config
+        self.http_client = HTTPClient(network_policy=cm.data.get("settings", {}))
 
     def get_pdf_url(self):
         """Check the manifest for a native PDF URL in the rendering section."""
