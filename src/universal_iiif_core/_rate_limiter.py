@@ -1,5 +1,4 @@
-"""
-Host-based rate limiter with sliding window algorithm and cooldown support.
+"""Host-based rate limiter with sliding window algorithm and cooldown support.
 
 This module provides thread-safe per-host rate limiting for HTTP clients.
 Originally extracted from downloader.py to enable centralized HTTP client.
@@ -11,7 +10,7 @@ import threading
 import time
 from collections import deque
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 
@@ -37,8 +36,7 @@ class RateLimiterStats:
 
 
 class HostRateLimiter:
-    """
-    Thread-safe per-host rate limiter with sliding window algorithm.
+    """Thread-safe per-host rate limiter with sliding window algorithm.
 
     Limits requests to a host within a time window and supports cooldown periods
     for rate limit errors (403, 429). Multiple downloader instances can share
@@ -60,8 +58,7 @@ class HostRateLimiter:
         max_requests: int,
         should_cancel: Callable[[], bool] | None = None,
     ) -> bool:
-        """
-        Wait for rate limit slot, respecting burst window and cooldown.
+        """Wait for rate limit slot, respecting burst window and cooldown.
 
         Args:
             window_s: Time window in seconds for burst limiting
@@ -121,8 +118,7 @@ class HostRateLimiter:
             time.sleep(max(wait_s, 0.05))
 
     def set_cooldown(self, cooldown_s: int) -> None:
-        """
-        Set cooldown period during which all requests are blocked.
+        """Set cooldown period during which all requests are blocked.
 
         Used to handle rate limit errors (403, 429) by enforcing a pause
         before retrying. Multiple calls extend the cooldown if longer.
@@ -138,8 +134,7 @@ class HostRateLimiter:
                 self._cooldown_until = until
 
     def get_stats(self) -> dict[str, Any]:
-        """
-        Get rate limiter statistics for diagnostics.
+        """Get rate limiter statistics for diagnostics.
 
         Returns:
             Dict with stats: total_waits, total_wait_time_s, cooldown_hits,
@@ -160,8 +155,7 @@ _HOST_LIMITERS: dict[str, HostRateLimiter] = {}
 
 
 def get_host_limiter(hostname: str) -> HostRateLimiter:
-    """
-    Get or create rate limiter for a hostname.
+    """Get or create rate limiter for a hostname.
 
     Thread-safe singleton registry ensures all downloaders/clients share
     the same rate limiter for a given host.
@@ -179,8 +173,7 @@ def get_host_limiter(hostname: str) -> HostRateLimiter:
 
 
 def get_all_limiter_stats() -> dict[str, dict[str, Any]]:
-    """
-    Get statistics for all registered rate limiters.
+    """Get statistics for all registered rate limiters.
 
     Returns:
         Dict mapping hostname to rate limiter stats

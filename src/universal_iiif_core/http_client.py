@@ -1,5 +1,4 @@
-"""
-Centralized HTTP client with retry, rate limiting, and per-library policy support.
+"""Centralized HTTP client with retry, rate limiting, and per-library policy support.
 
 This module provides a thread-safe HTTP client that consolidates:
 - Per-library network policy overrides (timeout, retry, rate limiting)
@@ -67,16 +66,14 @@ class HTTPMetrics:
 
 
 class HTTPClient:
-    """
-    Centralized HTTP client with per-library policy support.
+    """Centralized HTTP client with per-library policy support.
 
     Supports unlimited library growth through configuration-driven
     policy resolution: parameter > library > host > global.
     """
 
     def __init__(self, network_policy: dict[str, Any], logger: logging.Logger | None = None):
-        """
-        Initialize HTTP client from network policy.
+        """Initialize HTTP client from network policy.
 
         Args:
             network_policy: Network policy dict with structure:
@@ -125,8 +122,7 @@ class HTTPClient:
         return session
 
     def _resolve_policy(self, url: str, library_name: str | None = None) -> dict[str, Any]:
-        """
-        Resolve effective network policy for URL.
+        """Resolve effective network policy for URL.
 
         Resolution order:
         1. Explicit library_name in libraries config
@@ -165,8 +161,7 @@ class HTTPClient:
         return resolved
 
     def _get_setting(self, policy: dict[str, Any], key: str, default: Any = None) -> Any:
-        """
-        Get setting from policy with fallback.
+        """Get setting from policy with fallback.
 
         Args:
             policy: Resolved policy dict
@@ -179,8 +174,7 @@ class HTTPClient:
         return policy.get(key, default)
 
     def _get_host_semaphore(self, host: str, policy: dict[str, Any]) -> threading.Semaphore:
-        """
-        Get or create per-host concurrency semaphore.
+        """Get or create per-host concurrency semaphore.
 
         Args:
             host: Hostname
@@ -201,8 +195,7 @@ class HTTPClient:
             return self.host_semaphores[host]
 
     def get_metrics(self) -> dict[str, Any]:
-        """
-        Get current HTTP metrics for diagnostics.
+        """Get current HTTP metrics for diagnostics.
 
         Returns:
             Dict with metrics including per-host breakdown
@@ -224,8 +217,7 @@ class HTTPClient:
         timeout: bool = False,
         rate_limited: bool = False,
     ) -> None:
-        """
-        Update internal metrics.
+        """Update internal metrics.
 
         Args:
             success: Whether request succeeded
@@ -271,8 +263,7 @@ class HTTPClient:
         policy: dict[str, Any],
         hostname: str = "unknown",
     ) -> float:
-        """
-        Calculate exponential backoff wait time.
+        """Calculate exponential backoff wait time.
 
         Args:
             attempt: Retry attempt number (0-indexed)
@@ -326,8 +317,7 @@ class HTTPClient:
         return wait
 
     def _is_retriable_error(self, response: requests.Response | None, exception: Exception | None) -> bool:
-        """
-        Determine if error is retriable.
+        """Determine if error is retriable.
 
         Args:
             response: Response object if available
@@ -356,8 +346,7 @@ class HTTPClient:
         timeout: tuple[int, int],
         **kwargs,
     ) -> tuple[requests.Response, int]:
-        """
-        Execute request with retry logic.
+        """Execute request with retry logic.
 
         Args:
             url: Target URL
@@ -456,8 +445,7 @@ class HTTPClient:
         headers: dict[str, str] | None = None,
         **kwargs,
     ) -> requests.Response:
-        """
-        GET request with retry, rate limiting, and timeout.
+        """GET request with retry, rate limiting, and timeout.
 
         Integrates all HTTP client features:
         - Per-library policy resolution
@@ -549,7 +537,7 @@ class HTTPClient:
 
             return response
 
-        except requests.Timeout as e:
+        except requests.Timeout:
             # Update metrics on timeout
             response_time = time.time() - start_time
             self._update_metrics(
@@ -591,8 +579,7 @@ class HTTPClient:
         data: bytes | str | None = None,
         **kwargs,
     ) -> requests.Response:
-        """
-        POST request with retry, rate limiting, and timeout.
+        """POST request with retry, rate limiting, and timeout.
 
         Similar to get() but supports POST with JSON or raw data payload.
         Useful for API calls (OpenAI, Anthropic, etc).
@@ -700,7 +687,7 @@ class HTTPClient:
 
                     # Success or non-retriable error
                     response.raise_for_status()
-                    
+
                     # Update success metrics before returning
                     response_time = time.time() - start_time
                     self._update_metrics(
@@ -727,7 +714,7 @@ class HTTPClient:
             # If we get here, all retries exhausted
             raise requests.RequestException(f"POST request failed after {max_retries} attempts: {url}")
 
-        except requests.Timeout as e:
+        except requests.Timeout:
             # Update metrics on timeout
             response_time = time.time() - start_time
             self._update_metrics(
@@ -767,8 +754,7 @@ class HTTPClient:
         headers: dict[str, str] | None = None,
         **kwargs,
     ) -> dict[str, Any] | list[Any] | None:
-        """
-        GET JSON with automatic parsing and fallback handling.
+        """GET JSON with automatic parsing and fallback handling.
 
         Wraps get() with JSON-specific parsing logic including:
         - Brotli decompression support
@@ -819,8 +805,7 @@ class HTTPClient:
             return None
 
     def _handle_json_fallback(self, response: requests.Response) -> dict[str, Any] | list[Any] | None:
-        """
-        Handle edge cases for JSON parsing.
+        """Handle edge cases for JSON parsing.
 
         Tries multiple fallback strategies:
         1. Brotli decompression (if content-encoding: br)

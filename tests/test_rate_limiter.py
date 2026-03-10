@@ -3,8 +3,6 @@
 import threading
 import time
 
-import pytest
-
 from universal_iiif_core._rate_limiter import (
     HostRateLimiter,
     get_all_limiter_stats,

@@ -12,7 +12,6 @@ from bs4 import BeautifulSoup
 
 from .http_client import HTTPClient
 from .logger import get_logger
-from .utils import DEFAULT_HEADERS
 
 logger = get_logger(__name__)
 
@@ -462,12 +461,12 @@ def extract_external_catalog_data(url: str, timeout: int = 8) -> dict[str, Any]:
     """Extract catalog reference text and extra metadata from an external page."""
     if not url:
         return {"reference_text": "", "external_fields": {}}
-    
+
     # Create temporary HTTPClient for this fetch
     from .config_manager import get_config_manager
     cm = get_config_manager()
     http_client = HTTPClient(network_policy=cm.data.get("settings", {}))
-    
+
     try:
         response = http_client.get(url, library_name=None, timeout=(timeout, timeout))
         if response.status_code != 200:

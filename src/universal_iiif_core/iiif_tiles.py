@@ -131,7 +131,9 @@ def _tile_regions(plan: IIIFTilePlan) -> Iterable[tuple[int, int, int, int]]:
             yield x, y, w, h
 
 
-def _fetch_info(http_client: HTTPClient, info_url: str, library_name: str | None, timeout_s: int) -> dict[str, Any] | None:
+def _fetch_info(
+    http_client: HTTPClient, info_url: str, library_name: str | None, timeout_s: int
+) -> dict[str, Any] | None:
     """Fetch info.json via HTTPClient."""
     try:
         return http_client.get_json(info_url, library_name=library_name, timeout=(timeout_s, timeout_s))
@@ -199,9 +201,8 @@ def _fetch_tile_bytes(
     library_name: str | None,
     timeout_s: int,
 ) -> bytes | None:
-    """
-    Fetch tile image bytes via HTTPClient.
-    
+    """Fetch tile image bytes via HTTPClient.
+
     HTTPClient handles retries and backoff automatically, including 429 handling.
     We removed the manual retry loop and throttle logic.
     """
@@ -299,7 +300,7 @@ def stitch_iiif_tiles_to_jpeg(
         - Never keeps more than one tile image in memory at a time.
         - If the uncompressed output would exceed `max_ram_bytes`, we assemble
             the RGB raster on disk (mmap) and then encode to JPEG.
-    
+
     Network behavior:
         - Uses HTTPClient for all requests (info.json and tiles)
         - HTTPClient handles retries, backoff, and rate limiting automatically

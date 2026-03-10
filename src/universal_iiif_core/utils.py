@@ -28,28 +28,27 @@ DEFAULT_HEADERS = {
 
 
 def get_json(url: str, headers: dict | None = None, retries: int = 3) -> Any | None:
-    """
-    Fetch JSON from a URL with retry logic (LEGACY).
-    
+    """Fetch JSON from a URL with retry logic (LEGACY).
+
     DEPRECATED: New code should use HTTPClient.get_json() instead.
     This function is kept for backward compatibility and creates a temporary
     HTTPClient instance for each call.
-    
+
     Args:
         url: URL to fetch
         headers: Optional additional headers (merged with defaults)
         retries: Ignored (HTTPClient uses policy-based retries)
-    
+
     Returns:
         Parsed JSON data or None on error
     """
-    from .http_client import HTTPClient
     from .config_manager import get_config_manager
-    
+    from .http_client import HTTPClient
+
     # Create temporary HTTPClient with current config
     cm = get_config_manager()
     http_client = HTTPClient(network_policy=cm.data.get("settings", {}))
-    
+
     try:
         # HTTPClient.get_json() handles all retry logic, backoff, rate limiting
         return http_client.get_json(url, library_name=None, timeout=(10, 20))
@@ -59,27 +58,26 @@ def get_json(url: str, headers: dict | None = None, retries: int = 3) -> Any | N
 
 
 def get_request_session():
-    """
-    Create a requests Session with default headers and retry strategy (LEGACY).
-    
+    """Create a requests Session with default headers and retry strategy (LEGACY).
+
     DEPRECATED: New code should use HTTPClient instead.
     This function is kept for backward compatibility with code that needs
     direct Session access (e.g., streaming downloads).
-    
+
     Returns a plain requests.Session with:
     - DEFAULT_HEADERS configured
     - Basic retry strategy for transport errors
-    
+
     For new code, use HTTPClient which provides better rate limiting,
     metrics tracking, and per-library policies.
     """
     import requests
     from requests.adapters import HTTPAdapter
     from urllib3.util.retry import Retry
-    
+
     session = requests.Session()
     session.headers.update(DEFAULT_HEADERS)
-    
+
     # Basic retry strategy (transport level only)
     retry_strategy = Retry(
         total=3,
@@ -87,7 +85,7 @@ def get_request_session():
         status_forcelist=[429, 500, 502, 503, 504],
         allowed_methods=["HEAD", "GET", "OPTIONS"],
     )
-    
+
     adapter = HTTPAdapter(max_retries=retry_strategy)
     session.mount("https://", adapter)
     session.mount("http://", adapter)

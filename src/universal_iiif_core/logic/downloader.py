@@ -4,6 +4,7 @@ import threading
 import time
 from collections import deque
 from contextlib import suppress
+from collections.abc import Callable
 from pathlib import Path
 from secrets import SystemRandom
 from typing import Any
@@ -315,7 +316,7 @@ class IIIFDownloader:
         self.vault = VaultManager()
         self._register_vault()
         self._init_session()
-        
+
         # HTTP client for standardized requests with retry/rate limiting
         # Pass network_policy settings so HTTPClient can use library-specific config
         self.http_client = HTTPClient(network_policy=cm.data.get("settings", {}))
@@ -401,7 +402,7 @@ class IIIFDownloader:
         """Initialize synchronization primitives and session for prewarm URLs."""
         self._lock = threading.Lock()
         self._tile_stitch_sem = threading.Semaphore(1)
-        
+
         # Keep session for prewarm viewer URLs (Gallica, Vatican)
         # All IIIF image downloads now use HTTPClient
         self.session = requests.Session()
@@ -549,20 +550,19 @@ class IIIFDownloader:
         base_url: str,
         should_cancel: Callable[[], bool] | None = None,
     ):
-        """
-        Download canvas image with retries.
-        
+        """Download canvas image with retries.
+
         HTTPClient handles retries, backoff, and rate limiting automatically.
         We just need to try each URL and save the first successful response.
         """
         # Check cancellation before starting
         if self._stop_requested(should_cancel):
             return None
-            
+
         for url in urls_to_try:
             if self._stop_requested(should_cancel):
                 return None
-                
+
             try:
                 # HTTPClient handles all retry logic, backoff, and rate limiting
                 response = self.http_client.get(
@@ -570,7 +570,7 @@ class IIIFDownloader:
                     library_name=self.library,
                     timeout=self._request_timeout,
                 )
-                
+
                 # Try to save the response
                 saved = self._save_download_response(
                     response,
@@ -579,10 +579,10 @@ class IIIFDownloader:
                     index=index,
                     url=url,
                 )
-                
+
                 if saved:
                     return saved
-                    
+
                 # If save failed but status was OK, log and try next URL
                 if response.status_code != 200:
                     self.logger.debug(
@@ -592,12 +592,12 @@ class IIIFDownloader:
                         url,
                         response.text[:200],
                     )
-                    
+
             except Exception as exc:
                 self.logger.debug("Download attempt failed for %s: %s", url, exc, exc_info=True)
                 # Try next URL
                 continue
-                
+
         # All URLs failed
         message = f"Failed to download canvas {index}; URLs tried: {urls_to_try}"
         self.logger.warning(message)

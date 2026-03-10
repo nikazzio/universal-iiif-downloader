@@ -45,9 +45,8 @@ def probe_remote_max_dimensions(
     library_name: str | None = None,
     timeout_s: int = 12,
 ) -> tuple[int | None, int | None, str | None]:
-    """
-    Return `(width, height, service_base)` from remote IIIF info.json for one page.
-    
+    """Return `(width, height, service_base)` from remote IIIF info.json for one page.
+
     If http_client is not provided, creates a temporary one with default settings.
     """
     base = _service_base_for_page(manifest, page_num_1_based)
@@ -55,13 +54,13 @@ def probe_remote_max_dimensions(
         return None, None, None
 
     info_url = base.rstrip("/") + "/info.json"
-    
+
     # Create temporary client if none provided
     if http_client is None:
         from .config_manager import get_config_manager
         cm = get_config_manager()
         http_client = HTTPClient(network_policy=cm.data.get("settings", {}))
-    
+
     try:
         t = max(3, int(timeout_s))
         payload = http_client.get_json(info_url, library_name=library_name, timeout=(t, t))
@@ -93,9 +92,8 @@ def fetch_highres_page_image(
     iiif_quality: str = "default",
     timeout_s: int = 45,
 ) -> tuple[bool, str]:
-    """
-    Download one page at `full/max` from IIIF and validate written image bytes.
-    
+    """Download one page at `full/max` from IIIF and validate written image bytes.
+
     If http_client is not provided, creates a temporary one with default settings.
     """
     base = _service_base_for_page(manifest, page_num_1_based)
@@ -118,7 +116,7 @@ def fetch_highres_page_image(
             library_name=library_name,
             timeout=(t, t),
         )
-        
+
         if response.status_code != 200:
             return False, f"HTTP {response.status_code}"
 

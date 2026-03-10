@@ -114,7 +114,7 @@ def _download_canvases(
     if progress_callback:
         try:
             # completed_in_plan = pages already done in this canvas_plan
-            completed_in_plan = sum(1 for f in downloaded if f)
+            sum(1 for f in downloaded if f)
             # For partial downloads (target_pages), add pages outside the plan
             total_completed = already_downloaded_count
             progress_callback(total_completed, total_for_progress or len(canvas_plan))

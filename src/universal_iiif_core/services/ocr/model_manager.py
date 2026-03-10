@@ -57,7 +57,7 @@ class ModelManager:
             # Last-resort fallback for non-writable install locations
             self.models_dir = _default_cache_dir()
             self.models_dir.mkdir(parents=True, exist_ok=True)
-            
+
         # Initialize HTTPClient for model downloads
         # Use default network policy (no library-specific policy needed for Zenodo)
         from ...config_manager import get_config_manager
@@ -236,7 +236,7 @@ class ModelManager:
             # Use HTTPClient for download with longer timeout for large files
             response = self.http_client.get(download_url, stream=True, timeout=(10, 120))
             response.raise_for_status()
-            
+
             # Write streamed content to file
             with tmp.open("wb") as f:
                 for chunk in response.iter_content(chunk_size=1024 * 1024):

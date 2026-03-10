@@ -2,7 +2,7 @@
 
 import json
 
-from fasthtml.common import A, Div, H2, Script, Span
+from fasthtml.common import H2, A, Div, Script, Span
 
 from studio_ui.components.studio.status_panel import technical_status_panel
 from studio_ui.components.studio.tabs import render_studio_tabs

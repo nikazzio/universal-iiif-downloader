@@ -7,7 +7,7 @@ from fasthtml.common import Div, Span
 
 def status_badge(label: str, value: str, variant: str = "default") -> Div:
     """Create a status badge with color-coded styling.
-    
+
     Args:
         label: Badge label text
         value: Badge value text
@@ -51,9 +51,9 @@ def status_badge(label: str, value: str, variant: str = "default") -> Div:
             "value": "text-gray-800 dark:text-gray-200",
         },
     }
-    
+
     styles = variant_styles.get(variant, variant_styles["default"])
-    
+
     return Div(
         Span(
             label.upper(),
@@ -100,7 +100,7 @@ def technical_status_panel(
     pdf_local: str,
 ) -> Div:
     """Render professional technical status panel with badges.
-    
+
     Args:
         doc_id: Document identifier
         library: Library name
@@ -117,14 +117,14 @@ def technical_status_panel(
         ("scans_local", scans_local),
         ("staging_pages", staging_pages),
     ]
-    
+
     secondary_items = [
         ("pdf_source", pdf_source),
         ("pdf_local", pdf_local),
         ("library", library),
         ("id", doc_id),
     ]
-    
+
     return Div(
         # Primary Status Row (prominent)
         Div(
