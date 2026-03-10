@@ -579,6 +579,185 @@ class HTTPClient:
             if acquired:
                 semaphore.release()
 
+    def post(
+        self,
+        url: str,
+        *,
+        library_name: str | None = None,
+        timeout: tuple[int, int] | None = None,
+        retries: int | None = None,
+        headers: dict[str, str] | None = None,
+        json: dict | None = None,
+        data: bytes | str | None = None,
+        **kwargs,
+    ) -> requests.Response:
+        """
+        POST request with retry, rate limiting, and timeout.
+
+        Similar to get() but supports POST with JSON or raw data payload.
+        Useful for API calls (OpenAI, Anthropic, etc).
+
+        Args:
+            url: Target URL
+            library_name: Optional library identifier for explicit policy lookup
+            timeout: Override timeout as (connect, read) tuple
+            retries: Override max retry attempts
+            headers: Additional headers to merge with defaults
+            json: JSON payload (automatically serialized and sets Content-Type)
+            data: Raw data payload (bytes or string)
+            **kwargs: Additional arguments passed to requests.Session.post()
+
+        Returns:
+            requests.Response object
+
+        Raises:
+            requests.RequestException: On unrecoverable failure
+
+        Examples:
+            >>> client.post("https://api.openai.com/v1/chat", json={"model": "gpt-4"})
+            >>> client.post("https://api.example.com/data", data=b"raw bytes")
+        """
+        start_time = time.time()
+        hostname = urlparse(url).netloc or "unknown"
+
+        # Resolve effective policy
+        policy = self._resolve_policy(url, library_name)
+
+        # Resolve timeout (parameter > policy > default)
+        if timeout is None:
+            connect_timeout = int(self._get_setting(policy, "connect_timeout_s", 10))
+            read_timeout = int(self._get_setting(policy, "read_timeout_s", 30))
+            timeout = (connect_timeout, read_timeout)
+
+        # Merge headers
+        request_headers = dict(self.session.headers)
+        if headers:
+            request_headers.update(headers)
+
+        # Get per-host semaphore for concurrency control
+        semaphore = self._get_host_semaphore(hostname, policy)
+
+        # Get rate limiter for this host
+        rate_limiter = get_host_limiter(hostname)
+
+        # Wait for rate limiter
+        burst_window = int(self._get_setting(policy, "burst_window_s", 60))
+        burst_max = int(self._get_setting(policy, "burst_max_requests", 100))
+
+        if not rate_limiter.wait_turn(window_s=burst_window, max_requests=burst_max):
+            raise requests.RequestException("Request cancelled during rate limiting")
+
+        # Acquire concurrency semaphore
+        acquired = semaphore.acquire(timeout=30)
+        if not acquired:
+            raise requests.RequestException(f"Could not acquire semaphore for {hostname}")
+
+        try:
+            # Override retries if provided
+            if retries is not None:
+                policy = {**policy, "retry_max_attempts": retries}
+
+            # Execute POST request with retry logic
+            max_retries = int(self._get_setting(policy, "retry_max_attempts", 3))
+            retry_count = 0
+
+            for attempt in range(max_retries):
+                try:
+                    # Make POST request
+                    response = self.session.post(
+                        url,
+                        json=json,
+                        data=data,
+                        headers=request_headers,
+                        timeout=timeout,
+                        **kwargs,
+                    )
+
+                    # Check for rate limiting or server errors
+                    if response.status_code in {429, 500, 502, 503, 504}:
+                        retry_count += 1
+                        self.logger.debug(f"Retriable status {response.status_code} for POST {url}")
+
+                        # Calculate backoff
+                        wait = self._compute_backoff(
+                            attempt, response.status_code, response.headers.get("Retry-After"), policy, hostname
+                        )
+
+                        # Special handling for 403/429: break early
+                        if response.status_code in {403, 429}:
+                            self.logger.warning(
+                                f"Rate limit hit (POST {url}), waiting {wait:.1f}s. "
+                                f"Consider increasing burst_window_s or reducing concurrency."
+                            )
+                            time.sleep(wait)
+                            continue
+
+                        # For 5xx errors, retry
+                        if attempt < max_retries - 1:
+                            self.logger.debug(f"Retrying POST after {wait:.1f}s")
+                            time.sleep(wait)
+                            continue
+
+                    # Success or non-retriable error
+                    response.raise_for_status()
+                    return response
+
+                except (requests.Timeout, requests.ConnectionError) as e:
+                    retry_count += 1
+                    self.logger.debug(f"POST request exception for {url}: {e}")
+
+                    if attempt < max_retries - 1:
+                        # Calculate backoff
+                        wait = self._compute_backoff(attempt, None, None, policy, hostname)
+                        self.logger.debug(f"Retrying POST after {wait:.1f}s")
+                        time.sleep(wait)
+                    else:
+                        # Last attempt, raise
+                        raise
+
+            # If we get here, all retries exhausted
+            raise requests.RequestException(f"POST request failed after {max_retries} attempts: {url}")
+
+        except requests.Timeout as e:
+            # Update metrics on timeout
+            response_time = time.time() - start_time
+            self._update_metrics(
+                success=False,
+                hostname=hostname,
+                response_time=response_time,
+                timeout=True,
+            )
+            self.logger.warning(f"POST request timeout for {hostname}: {url}")
+            raise
+
+        except requests.RequestException as e:
+            # Update metrics on other failures
+            response_time = time.time() - start_time
+            rate_limited = "429" in str(e) or "rate limit" in str(e).lower()
+            self._update_metrics(
+                success=False,
+                hostname=hostname,
+                response_time=response_time,
+                rate_limited=rate_limited,
+            )
+            self.logger.warning(f"POST request failed for {hostname}: {url}, error: {e}")
+            raise
+
+        finally:
+            # Only release if we successfully acquired
+            if acquired:
+                semaphore.release()
+
+            # Update success metrics if we got here without exception
+            if "response" in locals():
+                response_time = time.time() - start_time
+                self._update_metrics(
+                    success=True,
+                    hostname=hostname,
+                    response_time=response_time,
+                    retries=retry_count,
+                )
+
     def get_json(
         self,
         url: str,
