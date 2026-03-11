@@ -41,7 +41,7 @@ def test_parse_manifest_catalog_extracts_see_also_reference(monkeypatch):
     class _MockHTTPClient:
         def __init__(self, **_kwargs):
             pass
-        
+
         def get(self, *_args, **_kwargs):
             return _MockResponse()
 
@@ -74,7 +74,7 @@ def test_parse_manifest_catalog_ignores_generic_site_title_for_catalog_title(mon
     class _MockHTTPClient:
         def __init__(self, **_kwargs):
             pass
-        
+
         def get(self, *_args, **_kwargs):
             return _MockResponse()
 
@@ -124,7 +124,7 @@ def test_parse_manifest_catalog_ignores_search_and_discover_placeholder(monkeypa
     class _MockHTTPClient:
         def __init__(self, **_kwargs):
             pass
-        
+
         def get(self, *_args, **_kwargs):
             return _MockResponse()
 
@@ -239,7 +239,7 @@ def test_parse_manifest_catalog_enrichment_merges_external_fields(monkeypatch):
     class _MockHTTPClient:
         def __init__(self, **_kwargs):
             pass
-        
+
         def get(self, *_args, **_kwargs):
             return _MockResponse()
 
@@ -277,7 +277,7 @@ def test_parse_manifest_catalog_extracts_vatican_bibliographic_references(monkey
     class _MockHTTPClient:
         def __init__(self, **_kwargs):
             pass
-        
+
         def get(self, *_args, **_kwargs):
             return _MockResponse()
 
@@ -320,7 +320,7 @@ def test_parse_manifest_catalog_extracts_vatican_bibliographic_references_from_d
     class _MockHTTPClient:
         def __init__(self, **_kwargs):
             pass
-        
+
         def get(self, *_args, **_kwargs):
             return _MockResponse()
 
