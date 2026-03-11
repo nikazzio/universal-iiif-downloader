@@ -30,7 +30,6 @@ All notable changes to this project are documented in this file.
 
 <!-- version list -->
 
-
 ## v0.22.3 (2026-03-11)
 
 _This release is published under the MIT License._
@@ -836,12 +835,6 @@ _This release is published under the MIT License._
 ---
 
 **Detailed Changes**: [v0.6.0...v0.7.0](https://github.com/nikazzio/universal-iiif-downloader/compare/v0.6.0...v0.7.0)
-
-## What's Changed
-* Refactor logging setup and improve code formatting across multiple mo… by @nikazzio in https://github.com/nikazzio/universal-iiif-downloader/pull/5
-
-
-**Full Changelog**: https://github.com/nikazzio/universal-iiif-downloader/compare/v0.5.0...v0.5.1
 
 ## [v0.6.1] - 2026-03-02
 
