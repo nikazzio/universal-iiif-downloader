@@ -58,3 +58,7 @@ jobs:
       - name: Check changelog policy
         run: |
           python scripts/check_changelog_policy.py
+
+      - name: Check release consistency
+        run: |
+          python scripts/check_release_consistency.py
