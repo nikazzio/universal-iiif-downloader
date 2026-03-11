@@ -354,11 +354,13 @@ def test_studio_saved_remote_first_renders_degraded_remote_when_manifest_unavail
         cm.set_setting("viewer.source_policy.saved_mode", "remote_first")
         original_get_json = studio_handlers.get_json
         studio_handlers.get_json = lambda _url, retries=2: None
-        response = studio_handlers.studio_page(_request(), doc_id=doc_id, library=library, page=1)
+        response = studio_handlers.studio_page(_request(), doc_id=doc_id, library=library, page=7)
         rendered = str(response)
         assert "mirador-viewer" in rendered
         assert "versione online del documento" in rendered
         assert "Manifesto non trovato." not in rendered
+        assert '"manifestId": "https://example.org/unavailable-remote-manifest.json"' in rendered
+        assert "const initialPage = 7;" in rendered
     finally:
         studio_handlers.get_json = original_get_json
         cm.set_setting("viewer.mirador.require_complete_local_images", old_gate)
@@ -398,11 +400,14 @@ def test_studio_remote_first_uses_local_manifest_context_when_remote_fetch_fails
         cm.set_setting("viewer.source_policy.saved_mode", "remote_first")
         original_get_json = studio_handlers.get_json
         studio_handlers.get_json = lambda _url, retries=2: None
-        response = studio_handlers.studio_page(_request(), doc_id=doc_id, library=library, page=1)
+        response = studio_handlers.studio_page(_request(), doc_id=doc_id, library=library, page=2)
         rendered = str(response)
         assert "mirador-viewer" in rendered
         assert "Pagine attese (manifest)" in rendered
         assert "2" in rendered
+        assert '"manifestId": "http://testserver/iiif/manifest/Vaticana/MSS_REMOTE_LOCAL_FALLBACK"' in rendered
+        assert '"canvasId": "https://example.org/canvas/2"' in rendered
+        assert "remote-manifest-missing.json" not in rendered
     finally:
         studio_handlers.get_json = original_get_json
         cm.set_setting("viewer.source_policy.saved_mode", old_policy)

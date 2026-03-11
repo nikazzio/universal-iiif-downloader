@@ -30,6 +30,7 @@ def studio_layout(
     manifest_total_pages: int = 0,
     read_source_mode: str = "remote",
     mirador_enabled: bool = True,
+    mirador_initial_page: int | None = None,
     mirador_override_url: str = "",
     active_tab: str = "transcription",
     source_notice_text: str = "",
@@ -62,7 +63,12 @@ def studio_layout(
     notice_cls = notice_palette.get(source_notice_tone, notice_palette["info"])
     if mirador_enabled:
         viewer_block = Div(
-            *mirador_viewer(manifest_url, "mirador-viewer", canvas_id=initial_canvas),
+            *mirador_viewer(
+                manifest_url,
+                "mirador-viewer",
+                canvas_id=initial_canvas,
+                initial_page=mirador_initial_page,
+            ),
             cls="flex-none bg-slate-900 border-r border-slate-200 dark:border-slate-700",
             style="width: 55%;",
         )
