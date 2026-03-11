@@ -200,7 +200,7 @@ def test_studio_blocks_mirador_when_local_images_are_incomplete():
         assert 'data-mirador-gated="1"' in rendered
         assert "Viewer bloccato finche non sono disponibili tutte le immagini locali." in rendered
         assert "Pagine temporanee" in rendered
-        assert "const containerId = 'mirador-viewer';" not in rendered
+        assert 'const containerId = "mirador-viewer";' not in rendered
     finally:
         cm.set_setting("viewer.mirador.require_complete_local_images", old_gate)
 
@@ -254,7 +254,7 @@ def test_studio_allows_mirador_override_with_query_flag():
         )
         rendered = str(response)
         assert 'data-mirador-gated="1"' not in rendered
-        assert "const containerId = 'mirador-viewer';" in rendered
+        assert 'const containerId = "mirador-viewer";' in rendered
     finally:
         cm.set_setting("viewer.mirador.require_complete_local_images", old_gate)
 
@@ -315,7 +315,7 @@ def test_studio_saved_remote_first_bypasses_local_gate():
         response = studio_handlers.studio_page(_request(), doc_id=doc_id, library=library, page=1)
         rendered = str(response)
         assert 'data-mirador-gated="1"' not in rendered
-        assert "const containerId = 'mirador-viewer';" in rendered
+        assert 'const containerId = "mirador-viewer";' in rendered
         assert "remote" in rendered
     finally:
         studio_handlers.get_json = original_get_json

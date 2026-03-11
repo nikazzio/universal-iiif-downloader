@@ -34,8 +34,8 @@ def mirador_viewer(
         # 2. Initialization Script
         Script(f"""
             (function() {{
-                const containerId = '{container_id}';
-                const manifestId = '{manifest_url}';
+                const containerId = {json.dumps(container_id)};
+                const manifestId = {json.dumps(manifest_url)};
                 const initialPage = {json.dumps(initial_page)};
 
                 function resolveCanvasId(manifestJson, page) {{

@@ -1606,7 +1606,7 @@ def _build_source_notice(*, read_source_mode: str, degraded_remote_manifest: boo
         return "", "info"
     if degraded_remote_manifest:
         return (
-            "Stai leggendo la versione online del documento. Il manifest remoto non e disponibile lato server in "
+            "Stai leggendo la versione online del documento. Il manifest remoto non è disponibile lato server in "
             "questo momento, quindi alcuni metadati e contatori potrebbero essere incompleti.",
             "warning",
         )
@@ -1686,14 +1686,14 @@ def _resolve_workspace_manifest_context(
         should_gate_mirador = False
     manifest_json, initial_canvas, manifest_exists_local, manifest_url, resolved_read_source_mode = (
         _resolve_manifest_for_selected_source(
-        read_source_mode=read_source_mode,
-        page=requested_page,
-        manifest_path=manifest_path,
-        local_manifest_url=workspace["local_manifest_url"],
-        remote_manifest_url=remote_manifest_url,
-        fallback_manifest=manifest_json,
-        fallback_canvas=initial_canvas,
-    )
+            read_source_mode=read_source_mode,
+            page=requested_page,
+            manifest_path=manifest_path,
+            local_manifest_url=workspace["local_manifest_url"],
+            remote_manifest_url=remote_manifest_url,
+            fallback_manifest=manifest_json,
+            fallback_canvas=initial_canvas,
+        )
     )
     degraded_remote_manifest = False
     if not manifest_json:
