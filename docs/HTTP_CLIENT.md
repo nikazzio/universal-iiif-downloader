@@ -94,8 +94,8 @@ Hierarchy: **Parameter override > Library config > Download defaults > Global de
 ```python
 metrics = http_client.get_metrics()
 print(f"Requests: {metrics['total_requests']}")
-print(f"Retries: {metrics['total_retries']}")
-print(f"Timeouts: {metrics['total_timeouts']}")
+print(f"Retries: {metrics['retry_count']}")
+print(f"Timeouts: {metrics['timeout_count']}")
 ```
 
 ---
@@ -122,14 +122,15 @@ print(f"Timeouts: {metrics['total_timeouts']}")
 ```json
 {
   "global": {
-    "connection_timeout_s": 15,
+    "connect_timeout_s": 15,
     "read_timeout_s": 30,
-    "retry_max_attempts": 3,
-    "backoff_base_s": 15,
-    "backoff_cap_s": 300,
-    "burst_max_requests": 20,
-    "burst_window_s": 60,
     "per_host_concurrency": 4
+  },
+  "download": {
+    "default_retry_max_attempts": 3,
+    "default_backoff_base_s": 15,
+    "default_backoff_cap_s": 300,
+    "respect_retry_after": true
   }
 }
 ```
@@ -140,7 +141,7 @@ Gallica example (strictest rate limiting):
 
 ```json
 {
-  "Gallica": {
+  "gallica": {
     "burst_max_requests": 4,
     "burst_window_s": 60,
     "retry_max_attempts": 5,
@@ -245,10 +246,10 @@ from universal_iiif_core.http_client import HTTPClient
 from universal_iiif_core.config_manager import get_config_manager
 
 cm = get_config_manager()
-http_client = HTTPClient(network_policy=cm.data.get("settings", {}))
+http_client = HTTPClient(network_policy=cm.data.get("settings", {}).get("network", {}))
 
 # Automatic retry, backoff, rate limiting
-data = http_client.get_json(url, library_name="Gallica", timeout=30)
+data = http_client.get_json(url, library_name="gallica", timeout=(20, 20))
 ```
 
 **Benefits**:

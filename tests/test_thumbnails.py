@@ -1,4 +1,4 @@
-import time
+import os
 from pathlib import Path
 
 from PIL import Image as PILImage
@@ -105,8 +105,9 @@ def test_ensure_thumbnail_regenerates_when_source_scan_changes(tmp_path: Path) -
     assert thumb_path is not None
     first_mtime = thumb_path.stat().st_mtime_ns
 
-    time.sleep(0.01)
     PILImage.new("RGB", (1200, 900), color=(255, 0, 0)).save(scan_path)
+    updated_mtime = scan_path.stat().st_mtime_ns + 1_000_000
+    os.utime(scan_path, ns=(updated_mtime, updated_mtime))
 
     refreshed = ensure_thumbnail(
         scans_dir=scans,

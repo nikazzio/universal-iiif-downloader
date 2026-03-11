@@ -450,7 +450,7 @@ class HTTPClient:
         timeout: tuple[int, int],
         should_cancel: Callable[[], bool] | None = None,
         **kwargs,
-    ) -> tuple[requests.Response, int]:
+    ) -> tuple[requests.Response | None, int]:
         """Execute request with retry logic.
 
         Args:
@@ -462,7 +462,7 @@ class HTTPClient:
             **kwargs: Additional arguments for session.get()
 
         Returns:
-            Tuple of (Response object, retry count), or (None, retry_count) if cancelled
+            Tuple of (Response object, retry count), or `(None, retry_count)` if cancelled
 
         Raises:
             requests.RequestException: On unrecoverable failure
@@ -569,10 +569,10 @@ class HTTPClient:
             **kwargs: Additional arguments passed to requests.Session.get()
 
         Returns:
-            requests.Response object or None if cancelled
+            requests.Response object
 
         Raises:
-            requests.RequestException: On unrecoverable failure
+            requests.RequestException: On unrecoverable failure or cancellation
 
         Examples:
             >>> client.get("https://example.com/image.jpg")
@@ -605,6 +605,7 @@ class HTTPClient:
         if not acquired:
             raise requests.RequestException(f"Could not acquire semaphore for {hostname}")
 
+        metrics_recorded = False
         try:
             # Execute request with retry logic
             # Pass a modified policy if retries override was provided
@@ -622,8 +623,18 @@ class HTTPClient:
                 **kwargs,
             )
 
-            # Update metrics on success
             response_time = time.time() - start_time
+            if response is None:
+                self._update_metrics(
+                    success=False,
+                    hostname=hostname,
+                    response_time=response_time,
+                    retries=retry_count,
+                )
+                metrics_recorded = True
+                raise requests.RequestException(f"Request to {url} was cancelled")
+
+            # Update metrics on success
             self._update_metrics(
                 success=True,
                 hostname=hostname,
@@ -636,12 +647,13 @@ class HTTPClient:
         except requests.Timeout:
             # Update metrics on timeout
             response_time = time.time() - start_time
-            self._update_metrics(
-                success=False,
-                hostname=hostname,
-                response_time=response_time,
-                timeout=True,
-            )
+            if not metrics_recorded:
+                self._update_metrics(
+                    success=False,
+                    hostname=hostname,
+                    response_time=response_time,
+                    timeout=True,
+                )
             self.logger.warning(f"Request timeout for {hostname}: {url}")
             raise
 
@@ -649,19 +661,18 @@ class HTTPClient:
             # Update metrics on other failures
             response_time = time.time() - start_time
             rate_limited = "429" in str(e) or "rate limit" in str(e).lower()
-            self._update_metrics(
-                success=False,
-                hostname=hostname,
-                response_time=response_time,
-                rate_limited=rate_limited,
-            )
+            if not metrics_recorded:
+                self._update_metrics(
+                    success=False,
+                    hostname=hostname,
+                    response_time=response_time,
+                    rate_limited=rate_limited,
+                )
             self.logger.warning(f"Request failed for {hostname}: {url}, error: {e}")
             raise
 
         finally:
-            # Only release if we successfully acquired
-            if acquired:
-                semaphore.release()
+            semaphore.release()
 
     def post(
         self,

@@ -37,7 +37,7 @@ def get_json(url: str, headers: dict | None = None, retries: int = 3) -> Any | N
     Args:
         url: URL to fetch
         headers: Optional additional headers (merged with defaults)
-        retries: Ignored (HTTPClient uses policy-based retries)
+        retries: Optional override for max retry attempts, kept for backward compatibility
 
     Returns:
         Parsed JSON data or None on error

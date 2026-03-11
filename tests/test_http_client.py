@@ -552,6 +552,21 @@ class TestGetMethod:
         assert metrics["per_host_stats"]["host1.com"]["requests"] == 2
         assert metrics["per_host_stats"]["host2.com"]["requests"] == 1
 
+    def test_get_treats_cancelled_retry_loop_as_failure(self, mock_network_policy, monkeypatch):
+        """Cancelled retry loops should not be recorded as successful requests."""
+        client = HTTPClient(mock_network_policy)
+
+        monkeypatch.setattr(client, "_retry_request", lambda *args, **kwargs: (None, 2))
+
+        with pytest.raises(requests.RequestException, match="cancelled"):
+            client.get("https://example.com/image.jpg")
+
+        metrics = client.get_metrics()
+        assert metrics["total_requests"] == 1
+        assert metrics["successful_requests"] == 0
+        assert metrics["failed_requests"] == 1
+        assert metrics["retry_count"] == 2
+
 
 class TestGetJsonMethod:
     """Test get_json() method with JSON parsing."""
