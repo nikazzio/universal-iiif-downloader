@@ -318,8 +318,8 @@ class IIIFDownloader:
         self._init_session()
 
         # HTTP client for standardized requests with retry/rate limiting
-        # Pass network_policy settings so HTTPClient can use library-specific config
-        self.http_client = HTTPClient(network_policy=cm.data.get("settings", {}))
+        # Pass network_policy dict (settings.network) so HTTPClient can resolve library-specific config
+        self.http_client = HTTPClient(network_policy=cm.data.get("settings", {}).get("network", {}))
 
     def get_pdf_url(self):
         """Check the manifest for a native PDF URL in the rendering section."""
@@ -565,11 +565,17 @@ class IIIFDownloader:
 
             try:
                 # HTTPClient handles all retry logic, backoff, and rate limiting
+                # Pass should_cancel to enable prompt cancellation during backoff waits
                 response = self.http_client.get(
                     url,
                     library_name=self.library,
                     timeout=self._request_timeout,
+                    should_cancel=should_cancel,
                 )
+
+                # Check if cancelled during HTTP operation
+                if response is None:
+                    return None
 
                 # Try to save the response
                 saved = self._save_download_response(

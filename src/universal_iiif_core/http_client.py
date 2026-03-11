@@ -19,6 +19,7 @@ import json
 import logging
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import urlparse
@@ -344,6 +345,7 @@ class HTTPClient:
         policy: dict[str, Any],
         hostname: str,
         timeout: tuple[int, int],
+        should_cancel: Callable[[], bool] | None = None,
         **kwargs,
     ) -> tuple[requests.Response, int]:
         """Execute request with retry logic.
@@ -353,10 +355,11 @@ class HTTPClient:
             policy: Resolved network policy
             hostname: Hostname for logging
             timeout: Timeout tuple (connect, read)
+            should_cancel: Optional callable that returns True when operation should be cancelled
             **kwargs: Additional arguments for session.get()
 
         Returns:
-            Tuple of (Response object, retry count)
+            Tuple of (Response object, retry count), or (None, retry_count) if cancelled
 
         Raises:
             requests.RequestException: On unrecoverable failure
@@ -391,6 +394,10 @@ class HTTPClient:
                             f"Rate limit error {response.status_code} for {hostname}, backing off {wait:.1f}s"
                         )
                         if attempt < max_retries - 1:
+                            # Check cancellation before sleeping
+                            if should_cancel and should_cancel():
+                                self.logger.info(f"Request cancelled during backoff for {url}")
+                                return None, retry_count
                             time.sleep(wait)
                             continue
                         else:
@@ -399,6 +406,10 @@ class HTTPClient:
 
                     # Other retriable errors
                     if attempt < max_retries - 1:
+                        # Check cancellation before sleeping
+                        if should_cancel and should_cancel():
+                            self.logger.info(f"Request cancelled during backoff for {url}")
+                            return None, retry_count
                         time.sleep(wait)
                         continue
                     else:
@@ -418,6 +429,10 @@ class HTTPClient:
                     # Calculate backoff
                     wait = self._compute_backoff(attempt, None, None, policy, hostname)
                     self.logger.debug(f"Retrying after {wait:.1f}s")
+                    # Check cancellation before sleeping
+                    if should_cancel and should_cancel():
+                        self.logger.info(f"Request cancelled during backoff for {url}")
+                        return None, retry_count
                     time.sleep(wait)
                 else:
                     # Last attempt, raise
@@ -443,6 +458,7 @@ class HTTPClient:
         retries: int | None = None,
         stream: bool = False,
         headers: dict[str, str] | None = None,
+        should_cancel: Callable[[], bool] | None = None,
         **kwargs,
     ) -> requests.Response:
         """GET request with retry, rate limiting, and timeout.
@@ -461,10 +477,11 @@ class HTTPClient:
             retries: Override max retry attempts
             stream: Stream response body
             headers: Additional headers to merge with defaults
+            should_cancel: Optional callable that returns True when operation should be cancelled
             **kwargs: Additional arguments passed to requests.Session.get()
 
         Returns:
-            requests.Response object
+            requests.Response object or None if cancelled
 
         Raises:
             requests.RequestException: On unrecoverable failure
@@ -473,6 +490,7 @@ class HTTPClient:
             >>> client.get("https://example.com/image.jpg")
             >>> client.get("https://gallica.bnf.fr/image.jpg", library_name="gallica")
             >>> client.get("https://example.com/api", timeout=(5, 15), retries=3)
+            >>> client.get("https://example.com/data", should_cancel=lambda: job.cancelled)
         """
         start_time = time.time()
         hostname = urlparse(url).netloc or "unknown"
@@ -521,6 +539,7 @@ class HTTPClient:
                 policy,
                 hostname,
                 timeout,
+                should_cancel=should_cancel,
                 stream=stream,
                 headers=request_headers,
                 **kwargs,

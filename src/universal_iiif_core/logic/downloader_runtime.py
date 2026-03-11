@@ -107,17 +107,18 @@ def _download_canvases(
 ):
     downloaded, page_stats, to_download = self._prescan_canvases(canvas_plan)
 
-    # Calculate total completed pages including all previously downloaded files
-    # (not just the ones in current canvas_plan)
-    already_downloaded_count = self._count_all_downloaded_pages()
+    # Calculate pages completed OUTSIDE the current canvas_plan to avoid double-counting
+    # already_downloaded_count = all pages in scans/ + temp/
+    # completed_in_current_plan = pages in canvas_plan that were resumed from cache
+    # pages_outside_plan = pages not in current canvas_plan that are already done
+    all_downloaded = self._count_all_downloaded_pages()
+    completed_in_current_plan = sum(1 for f in downloaded if f)
+    pages_outside_plan = all_downloaded - completed_in_current_plan
 
     if progress_callback:
         try:
-            # completed_in_plan = pages already done in this canvas_plan
-            sum(1 for f in downloaded if f)
-            # For partial downloads (target_pages), add pages outside the plan
-            total_completed = already_downloaded_count
-            progress_callback(total_completed, total_for_progress or len(canvas_plan))
+            # Initial progress = pages outside plan (from previous runs)
+            progress_callback(pages_outside_plan, total_for_progress or len(canvas_plan))
         except Exception:
             self.logger.debug("Initial progress callback failed", exc_info=True)
 
@@ -129,7 +130,7 @@ def _download_canvases(
         progress_callback,
         should_cancel,
         total_for_progress or len(canvas_plan),
-        already_downloaded_count,
+        pages_outside_plan,  # Pass pages outside plan, not total
     )
     return downloaded, page_stats
 
@@ -168,9 +169,14 @@ def _download_missing_canvases(
     progress_callback: Callable[[int, int], None] | None,
     should_cancel: Callable[[], bool] | None,
     total_canvases: int,
-    already_downloaded_count: int = 0,
+    pages_outside_plan: int = 0,
 ):
-    """Download missing pages using ThreadPoolExecutor and update progress and stats."""
+    """Download missing pages using ThreadPoolExecutor and update progress and stats.
+
+    Args:
+        pages_outside_plan: Count of pages completed in previous runs that are NOT in current canvas_plan.
+                           This is used to offset progress updates without double-counting resumed pages.
+    """
     if not to_download:
         return downloaded, page_stats
 
@@ -182,7 +188,7 @@ def _download_missing_canvases(
         for future in self._iter_download_futures(future_to_index, len(to_download)):
             idx = future_to_index[future]
             _consume_download_future(future, idx, downloaded, page_stats)
-            _emit_canvas_progress(self, downloaded, total_canvases, progress_callback, already_downloaded_count)
+            _emit_canvas_progress(self, downloaded, total_canvases, progress_callback, pages_outside_plan)
 
             if should_cancel and should_cancel():
                 # Final state (paused vs cancelled) is determined by JobManager
@@ -216,14 +222,22 @@ def _emit_canvas_progress(
     downloaded: list[str | None],
     total_canvases: int,
     progress_callback: Callable[[int, int], None] | None,
-    already_downloaded_count: int = 0,
+    pages_outside_plan: int = 0,
 ) -> None:
+    """Emit progress update without double-counting.
+
+    Args:
+        downloaded: List of filenames for current canvas_plan (None if not yet downloaded)
+        total_canvases: Total pages in the full manuscript
+        progress_callback: Callback to report (completed, total)
+        pages_outside_plan: Pages already completed that are NOT in current canvas_plan
+    """
     if not progress_callback:
         return
     # Count completed in current canvas_plan
     completed_in_plan = sum(1 for f in downloaded if f)
-    # Total = pages outside plan + pages completed in plan
-    total_completed = already_downloaded_count + completed_in_plan
+    # Total = pages outside plan + pages completed in plan (no double-counting)
+    total_completed = pages_outside_plan + completed_in_plan
     try:
         progress_callback(total_completed, total_canvases)
     except Exception:
