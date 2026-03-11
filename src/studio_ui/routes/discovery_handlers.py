@@ -11,9 +11,8 @@ from urllib.parse import unquote
 
 from fasthtml.common import Request
 
+from studio_ui.common.title_utils import resolve_preferred_title
 from studio_ui.common.toasts import build_toast
-
-# Importiamo i nuovi componenti grafici
 from studio_ui.components.discovery import (
     discovery_content,
     render_download_manager,
@@ -102,6 +101,30 @@ def _is_manuscript_complete(row: dict | None) -> bool:
     return total > 0 and downloaded >= total
 
 
+def _resolve_saved_entry_title(info: dict, doc_id: str, *, result_title: str = "") -> str:
+    """Choose the strongest human title available for a saved discovery entry."""
+    clean_doc_id = str(doc_id or "").strip()
+    clean_result_title = str(result_title or "").strip()
+    clean_shelfmark = str(info.get("shelfmark") or "").strip()
+    preferred = str(
+        resolve_preferred_title(
+            {
+                "id": clean_doc_id,
+                "catalog_title": str(info.get("catalog_title") or "").strip(),
+                "display_title": str(info.get("label") or "").strip(),
+                "title": str(info.get("label") or "").strip(),
+                "reference_text": clean_result_title or str(info.get("reference_text") or "").strip(),
+                "shelfmark": clean_shelfmark,
+            },
+            fallback_doc_id=clean_doc_id,
+        )
+        or ""
+    ).strip()
+    if clean_result_title and preferred in {"", clean_doc_id, clean_shelfmark}:
+        return clean_result_title
+    return preferred or clean_result_title or clean_doc_id or "Senza Titolo"
+
+
 def _upsert_saved_entry(
     manifest_url: str,
     doc_id: str,
@@ -126,8 +149,15 @@ def _upsert_saved_entry(
     metadata_json: str = "{}",
     manifest_local_available: bool = False,
     thumbnail_url: str = "",
+    preferred_title: str = "",
 ) -> None:
-    entry_label = (label or doc_id or "Senza Titolo").strip()
+    entry_label = (
+        str(preferred_title or "").strip()
+        or str(label or "").strip()
+        or str(catalog_title or "").strip()
+        or str(doc_id or "").strip()
+        or "Senza Titolo"
+    )
     total = int(pages or 0)
     v = VaultManager()
     existing = _find_manuscript_by_id_and_library(doc_id, library) or {}
@@ -144,11 +174,14 @@ def _upsert_saved_entry(
     existing_thumbnail = str(existing.get("thumbnail_url") or "").strip()
     source_mode = str(existing.get("read_source_mode") or "remote").strip().lower() or "remote"
     thumbnail_to_store = str(thumbnail_url or existing_thumbnail or "").strip()
+    catalog_title_to_store = str(catalog_title or "").strip() or entry_label
+    if str(preferred_title or "").strip():
+        catalog_title_to_store = str(preferred_title).strip()
     v.upsert_manuscript(
         doc_id,
         display_title=entry_label,
         title=entry_label,
-        catalog_title=(catalog_title or "").strip() or entry_label,
+        catalog_title=catalog_title_to_store,
         library=library,
         manifest_url=manifest_url,
         local_path=str(_downloads_doc_path(library, doc_id)),
@@ -356,11 +389,13 @@ def discovery_page(request: Request):
 
 def _build_item_preview_data(item: dict, library: str, pages: int = 0) -> dict:
     """Build preview payload from a search result item."""
+    result_title = item.get("title", "Senza Titolo")
     return {
         "id": item.get("id"),
         "library": library,
         "url": item.get("manifest"),
-        "label": item.get("title", "Senza Titolo"),
+        "label": result_title,
+        "result_title": result_title,
         "description": item.get("description", ""),
         "pages": pages,
         "thumbnail": item.get("thumbnail"),
@@ -370,11 +405,13 @@ def _build_item_preview_data(item: dict, library: str, pages: int = 0) -> dict:
 
 def _build_manifest_preview_data(manifest_info: dict, manifest_url: str, doc_id: str | None, library: str) -> dict:
     """Build preview payload from analyzed manifest metadata."""
+    label = manifest_info.get("catalog_title") or manifest_info.get("label", "Senza Titolo")
     return {
         "id": doc_id or manifest_info.get("label", "Unknown"),
         "library": library,
         "url": manifest_url,
-        "label": manifest_info.get("catalog_title") or manifest_info.get("label", "Senza Titolo"),
+        "label": label,
+        "result_title": label,
         "description": manifest_info.get("description", "Nessuna descrizione."),
         "pages": manifest_info.get("pages", 0),
         "thumbnail": manifest_info.get("thumbnail"),
@@ -570,22 +607,25 @@ def resolve_manifest(library: str, shelfmark: str, gallica_type: str = "all"):
         )
 
 
-def add_to_library(manifest_url: str, doc_id: str, library: str):
+def add_to_library(manifest_url: str, doc_id: str, library: str, result_title: str = ""):
     """Persist a manuscript in Library without starting a download."""
     try:
         manifest_url = unquote(manifest_url)
         doc_id = unquote(doc_id)
         library = unquote(library)
+        result_title = unquote(result_title)
         if not manifest_url or not doc_id or not library:
             return _with_feedback_toast("Dati mancanti", "Manifest, ID e biblioteca sono obbligatori.", tone="danger")
 
         info, _err = _analyze_manifest_safe(manifest_url)
         info = info or {}
+        preferred_title = _resolve_saved_entry_title(info, doc_id, result_title=result_title)
+        reference_text = str(info.get("reference_text") or result_title or "").strip()
         manifest_cached, prefetch_thumb = _persist_prefetch_light(
             manifest_url,
             doc_id,
             library,
-            title=str(info.get("catalog_title") or info.get("label") or doc_id),
+            title=preferred_title,
             description=str(info.get("description") or ""),
             pages=int(info.get("pages", 0) or 0),
             thumbnail_url=str(info.get("thumbnail") or ""),
@@ -606,13 +646,14 @@ def add_to_library(manifest_url: str, doc_id: str, library: str):
             date_label=info.get("date_label", ""),
             language_label=info.get("language_label", ""),
             source_detail_url=info.get("source_detail_url", ""),
-            reference_text=info.get("reference_text", ""),
+            reference_text=reference_text,
             item_type=info.get("item_type", "non classificato"),
             item_type_confidence=float(info.get("item_type_confidence", 0.0) or 0.0),
             item_type_reason=info.get("item_type_reason", ""),
             metadata_json=info.get("metadata_json", "{}"),
             manifest_local_available=manifest_cached,
             thumbnail_url=prefetch_thumb,
+            preferred_title=preferred_title,
         )
         return _with_toast(
             _download_manager_fragment(),
@@ -627,12 +668,13 @@ def add_to_library(manifest_url: str, doc_id: str, library: str):
         return _with_feedback_toast("Errore Libreria", "Impossibile salvare l'entry in Libreria.", tone="danger")
 
 
-def add_and_download(manifest_url: str, doc_id: str, library: str):
+def add_and_download(manifest_url: str, doc_id: str, library: str, result_title: str = ""):
     """Persist a manuscript and enqueue download."""
     try:
         manifest_url = unquote(manifest_url)
         doc_id = unquote(doc_id)
         library = unquote(library)
+        result_title = unquote(result_title)
         if not manifest_url or not doc_id or not library:
             return _with_feedback_toast("Dati mancanti", "Manifest, ID e biblioteca sono obbligatori.", tone="danger")
 
@@ -646,11 +688,13 @@ def add_and_download(manifest_url: str, doc_id: str, library: str):
 
         info, _err = _analyze_manifest_safe(manifest_url)
         info = info or {}
+        preferred_title = _resolve_saved_entry_title(info, doc_id, result_title=result_title)
+        reference_text = str(info.get("reference_text") or result_title or "").strip()
         manifest_cached, prefetch_thumb = _persist_prefetch_light(
             manifest_url,
             doc_id,
             library,
-            title=str(info.get("catalog_title") or info.get("label") or doc_id),
+            title=preferred_title,
             description=str(info.get("description") or ""),
             pages=int(info.get("pages", 0) or 0),
             thumbnail_url=str(info.get("thumbnail") or ""),
@@ -671,13 +715,14 @@ def add_and_download(manifest_url: str, doc_id: str, library: str):
             date_label=info.get("date_label", ""),
             language_label=info.get("language_label", ""),
             source_detail_url=info.get("source_detail_url", ""),
-            reference_text=info.get("reference_text", ""),
+            reference_text=reference_text,
             item_type=info.get("item_type", "non classificato"),
             item_type_confidence=float(info.get("item_type_confidence", 0.0) or 0.0),
             item_type_reason=info.get("item_type_reason", ""),
             metadata_json=info.get("metadata_json", "{}"),
             manifest_local_available=manifest_cached,
             thumbnail_url=prefetch_thumb,
+            preferred_title=preferred_title,
         )
 
         download_id = start_downloader_thread(manifest_url, doc_id, library)
@@ -701,9 +746,9 @@ def add_and_download(manifest_url: str, doc_id: str, library: str):
         )
 
 
-def start_download(manifest_url: str, doc_id: str, library: str):
+def start_download(manifest_url: str, doc_id: str, library: str, result_title: str = ""):
     """Backward-compatible endpoint kept for legacy callers."""
-    return add_and_download(manifest_url, doc_id, library)
+    return add_and_download(manifest_url, doc_id, library, result_title=result_title)
 
 
 def get_download_status(download_id: str, doc_id: str = "", library: str = ""):

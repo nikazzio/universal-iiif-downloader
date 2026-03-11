@@ -55,7 +55,15 @@ def render_search_results_list(results: list) -> Div:
         elif library == "Institut de France" and doc_id:
             viewer_url = f"https://bibnum.institutdefrance.fr/viewer/{doc_id}"
 
-        hx_vals = json.dumps({"manifest_url": manifest_url, "doc_id": doc_id, "library": library}, ensure_ascii=True)
+        hx_vals = json.dumps(
+            {
+                "manifest_url": manifest_url,
+                "doc_id": doc_id,
+                "library": library,
+                "result_title": title,
+            },
+            ensure_ascii=True,
+        )
         badge_id = f"pdf-badge-{(doc_id or 'item').replace(' ', '-').replace('/', '-')[:28]}"
         pdf_badge = Div(
             "PDF: verifica automatica…",
@@ -355,6 +363,7 @@ def render_preview(data: dict) -> Div:
     description = data.get("description", "")
     thumbnail = data.get("thumbnail", "")
     has_native_pdf = data.get("has_native_pdf")
+    result_title = str(data.get("result_title") or label or "")
 
     # Warning se ci sono troppe pagine
     warning = None
@@ -443,7 +452,15 @@ def render_preview(data: dict) -> Div:
         cls="flex-grow",
     )
 
-    hx_vals = f'{{"manifest_url": "{manifest_url}", "doc_id": "{doc_id}", "library": "{library}"}}'
+    hx_vals = json.dumps(
+        {
+            "manifest_url": str(manifest_url or ""),
+            "doc_id": str(doc_id or ""),
+            "library": str(library or ""),
+            "result_title": result_title,
+        },
+        ensure_ascii=True,
+    )
     download_form = Div(
         Button(
             Span("➕ Aggiungi a Libreria", cls="font-bold"),

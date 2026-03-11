@@ -95,6 +95,23 @@ def test_library_page_uses_configurable_default_mode_in_script():
     assert 'const DEFAULT_MODE = "archivio";' in rendered
 
 
+def test_library_delete_uses_styled_modal_instead_of_native_confirm():
+    """Delete action should use the app modal instead of browser confirm dialogs."""
+    rendered = repr(render_library_card(_base_doc()))
+    assert "openLibraryDeleteModal(" in rendered
+    assert "hx_confirm" not in rendered
+
+
+def test_library_page_includes_delete_modal_shell():
+    """Library page should include the shared delete modal and script hooks."""
+    rendered = repr(render_library_page([_base_doc()]))
+    assert 'id="library-delete-overlay"' in rendered
+    assert 'id="library-delete-sheet"' in rendered
+    assert 'id="library-delete-confirm"' in rendered
+    assert "window.openLibraryDeleteModal" in rendered
+    assert "window.closeLibraryDeleteModal" in rendered
+
+
 def test_library_card_truncates_long_title():
     """Card title should be truncated for very long labels."""
     long_title = "Titolo molto lungo " * 10
