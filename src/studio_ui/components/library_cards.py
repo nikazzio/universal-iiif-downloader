@@ -133,15 +133,21 @@ def _card_action_flags(doc: dict) -> dict[str, bool]:
 
 
 def _delete_action(doc: dict, *, enabled: bool = True) -> Button:
-    doc_id = quote(str(doc.get("id") or ""), safe="")
-    library = quote(str(doc.get("library") or "Unknown"), safe="")
-    return _action_button(
+    base_cls = _ACTION_BUTTON_CLS["danger"]
+    if not enabled:
+        return Button(
+            "🗑️ Elimina",
+            type="button",
+            cls=f"{base_cls} opacity-45 cursor-not-allowed pointer-events-none",
+            disabled=True,
+            title="Disabilitato durante un download attivo.",
+        )
+    return Button(
         "🗑️ Elimina",
-        f"/api/library/delete?doc_id={doc_id}&library={library}",
-        "danger",
-        confirm="Confermi eliminazione completa del manoscritto locale?",
-        enabled=enabled,
-        hint="Disabilitato durante un download attivo." if not enabled else None,
+        type="button",
+        cls=base_cls,
+        data_payload=_delete_payload(doc),
+        onclick="openLibraryDeleteModal(this.dataset.payload)",
     )
 
 
@@ -357,6 +363,18 @@ def _metadata_payload(doc: dict) -> str:
         "source_detail_url": str(doc.get("source_detail_url") or ""),
         "user_notes": str(doc.get("user_notes") or ""),
         "metadata_items": _metadata_items(doc),
+    }
+    text = json.dumps(payload, ensure_ascii=True)
+    return base64.b64encode(text.encode("utf-8")).decode("ascii")
+
+
+def _delete_payload(doc: dict) -> str:
+    payload = {
+        "doc_id": str(doc.get("id") or ""),
+        "library": str(doc.get("library") or "Unknown"),
+        "title": str(doc.get("display_title") or doc.get("id") or "Documento"),
+        "asset_state": str(doc.get("asset_state") or "saved"),
+        "shelfmark": str(doc.get("shelfmark") or doc.get("id") or "-"),
     }
     text = json.dumps(payload, ensure_ascii=True)
     return base64.b64encode(text.encode("utf-8")).decode("ascii")
@@ -729,6 +747,189 @@ def render_library_list(docs: list[dict], view: str = "grid", mode: str = "opera
     if (mode or "operativa").lower() == "archivio":
         return _render_archive_list(docs, view)
     return _render_operational_list(docs, view)
+
+
+def _delete_modal() -> Div:
+    return Div(
+        Div(
+            id="library-delete-overlay",
+            onclick="closeLibraryDeleteModal(event)",
+            cls="hidden fixed inset-0 z-40 bg-slate-900/55 backdrop-blur-[1px]",
+        ),
+        Div(
+            Div(
+                Div(
+                    H3(
+                        "Elimina documento",
+                        cls="text-lg font-semibold text-slate-900 dark:text-slate-100",
+                    ),
+                    Button(
+                        "✕",
+                        type="button",
+                        onclick="closeLibraryDeleteModal()",
+                        cls="text-lg text-slate-500 hover:text-slate-700 dark:text-slate-300 dark:hover:text-slate-100",
+                    ),
+                    cls="flex items-center justify-between border-b border-slate-200 dark:border-slate-700 px-4 py-3",
+                ),
+                Div(
+                    Div(
+                        P(
+                            "Stai per rimuovere questo item dalla Libreria locale.",
+                            cls="text-sm font-medium text-slate-700 dark:text-slate-200",
+                        ),
+                        P(
+                            (
+                                "L'operazione elimina file locali, cache del manifest "
+                                "e dati OCR associati. Non e reversibile."
+                            ),
+                            cls="text-sm text-slate-500 dark:text-slate-400",
+                        ),
+                        cls="space-y-1",
+                    ),
+                    Div(
+                        P(
+                            "",
+                            id="library-delete-doc-title",
+                            cls="text-base font-semibold text-slate-900 dark:text-slate-100",
+                        ),
+                        Div(
+                            Span("Segnatura:", cls="app-tech-key"),
+                            Span("-", id="library-delete-shelfmark", cls="app-tech-val"),
+                            cls="app-tech-row",
+                        ),
+                        Div(
+                            Span("Stato:", cls="app-tech-key"),
+                            Span("-", id="library-delete-state", cls="app-tech-val"),
+                            cls="app-tech-row",
+                        ),
+                        cls=(
+                            "rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 "
+                            "dark:bg-slate-800/60 p-3 space-y-2"
+                        ),
+                    ),
+                    cls="p-4 space-y-4 overflow-y-auto flex-1",
+                ),
+                Div(
+                    Button(
+                        "Annulla",
+                        type="button",
+                        onclick="closeLibraryDeleteModal()",
+                        cls=_ACTION_BUTTON_CLS["neutral"],
+                    ),
+                    Button(
+                        "Elimina definitivamente",
+                        id="library-delete-confirm",
+                        type="button",
+                        cls=_ACTION_BUTTON_CLS["danger"],
+                        hx_target="#library-page",
+                        hx_swap="outerHTML show:none",
+                        hx_include="#library-filters",
+                    ),
+                    cls="border-t border-slate-200 dark:border-slate-700 px-4 py-3 flex flex-wrap justify-end gap-2",
+                ),
+                cls=(
+                    "flex h-full flex-col bg-white dark:bg-slate-900 shadow-2xl "
+                    "rounded-t-2xl sm:rounded-none sm:rounded-2xl"
+                ),
+            ),
+            id="library-delete-sheet",
+            cls=(
+                "hidden fixed z-50 inset-x-0 bottom-0 max-h-[72vh] "
+                "sm:inset-0 sm:m-auto sm:h-auto sm:max-h-[420px] sm:w-[560px]"
+            ),
+        ),
+        Script(
+            """(function () {
+                if (window.__libraryDeleteModalBootstrapped) return;
+                window.__libraryDeleteModalBootstrapped = true;
+
+                function parsePayload(encoded) {
+                    if (!encoded) return null;
+                    try {
+                        return JSON.parse(atob(encoded));
+                    } catch (_error) {
+                        return null;
+                    }
+                }
+
+                function stateLabel(rawState) {
+                    var state = String(rawState || 'saved').toLowerCase();
+                    var labels = {
+                        saved: 'Remoto',
+                        partial: 'Parziale',
+                        complete: 'Completo',
+                        downloading: 'In download',
+                        running: 'In download',
+                        queued: 'In coda',
+                        error: 'Errore'
+                    };
+                    return labels[state] || state;
+                }
+
+                function modalElements() {
+                    return {
+                        overlay: document.getElementById('library-delete-overlay'),
+                        sheet: document.getElementById('library-delete-sheet'),
+                        title: document.getElementById('library-delete-doc-title'),
+                        shelfmark: document.getElementById('library-delete-shelfmark'),
+                        state: document.getElementById('library-delete-state'),
+                        confirm: document.getElementById('library-delete-confirm')
+                    };
+                }
+
+                window.openLibraryDeleteModal = function (encoded) {
+                    var data = parsePayload(encoded);
+                    var els = modalElements();
+                    if (
+                        !data || !els.overlay || !els.sheet || !els.title ||
+                        !els.shelfmark || !els.state || !els.confirm
+                    ) {
+                        return;
+                    }
+                    if (typeof window.closeLibraryMetadata === 'function') {
+                        window.closeLibraryMetadata();
+                    }
+
+                    els.title.textContent = String(data.title || data.doc_id || 'Documento');
+                    els.shelfmark.textContent = String(data.shelfmark || data.doc_id || '-');
+                    els.state.textContent = stateLabel(data.asset_state);
+                    els.confirm.setAttribute(
+                        'hx-post',
+                        '/api/library/delete?doc_id='
+                            + encodeURIComponent(String(data.doc_id || ''))
+                            + '&library='
+                            + encodeURIComponent(String(data.library || 'Unknown'))
+                    );
+                    if (window.htmx && typeof window.htmx.process === 'function') {
+                        window.htmx.process(els.confirm);
+                    }
+
+                    els.overlay.classList.remove('hidden');
+                    els.sheet.classList.remove('hidden');
+                    document.body.classList.add('overflow-hidden');
+                };
+
+                window.closeLibraryDeleteModal = function (event) {
+                    if (event && event.target && event.target.id !== 'library-delete-overlay') return;
+                    var els = modalElements();
+                    if (els.overlay) els.overlay.classList.add('hidden');
+                    if (els.sheet) els.sheet.classList.add('hidden');
+                    document.body.classList.remove('overflow-hidden');
+                };
+
+                document.addEventListener('keydown', function(event) {
+                    if (event.key === 'Escape') window.closeLibraryDeleteModal();
+                });
+
+                document.body.addEventListener('htmx:afterRequest', function(event) {
+                    var trigger = event && event.detail && event.detail.elt;
+                    if (trigger && trigger.id === 'library-delete-confirm') {
+                        window.closeLibraryDeleteModal();
+                    }
+                });
+            })();"""
+        ),
+    )
 
 
 def _metadata_drawer() -> Div:

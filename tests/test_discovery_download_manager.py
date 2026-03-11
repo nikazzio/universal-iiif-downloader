@@ -39,6 +39,49 @@ def test_add_to_library_persists_saved_entry(monkeypatch):
     assert (doc_data / "manifest.json").exists()
 
 
+@pytest.mark.parametrize("handler_name", ["add_to_library", "add_and_download"])
+def test_discovery_preserves_search_result_title_over_signature_manifest(monkeypatch, handler_name):
+    """Discovery should keep the human search-result title when manifest metadata looks like a shelfmark."""
+    monkeypatch.setattr(
+        discovery_handlers,
+        "analyze_manifest",
+        lambda _url: {
+            "label": "BnF, département Littérature et art, V-9536",
+            "catalog_title": "BnF, département Littérature et art, V-9536",
+            "description": "Manuale schermistico",
+            "pages": 8,
+            "shelfmark": "BnF, département Littérature et art, V-9536",
+            "reference_text": "Esercizio di spada",
+        },
+    )
+    monkeypatch.setattr(
+        discovery_handlers,
+        "get_json",
+        lambda _url, retries=2: {"items": [{"id": "canvas-1"}]},
+    )
+    monkeypatch.setattr(
+        discovery_handlers,
+        "start_downloader_thread",
+        lambda *_args, **_kwargs: "job-title-fix",
+    )
+
+    handler = getattr(discovery_handlers, handler_name)
+    result = handler(
+        "https://example.org/manifest.json",
+        "bpt6k1234567",
+        "Gallica",
+        "Esercizio di spada",
+    )
+
+    assert ("Aggiunto in Libreria" in repr(result)) or ("Download accodato" in repr(result))
+    ms = VaultManager().get_manuscript("bpt6k1234567") or {}
+    assert ms.get("display_title") == "Esercizio di spada"
+    assert ms.get("title") == "Esercizio di spada"
+    assert ms.get("catalog_title") == "Esercizio di spada"
+    assert ms.get("shelfmark") == "BnF, département Littérature et art, V-9536"
+    assert ms.get("reference_text") == "Esercizio di spada"
+
+
 def test_add_to_library_rejects_path_traversal_and_does_not_write(monkeypatch, tmp_path):
     """Traversal in library/doc_id must be rejected before any filesystem write."""
     cm = get_config_manager()

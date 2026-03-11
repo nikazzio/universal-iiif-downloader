@@ -30,7 +30,7 @@ def render_library_page(
     categories: list[str] | None = None,
 ) -> Div:
     """Render the full Local Library page."""
-    from .library_cards import _kpi_strip, _metadata_drawer, render_library_list
+    from .library_cards import _delete_modal, _kpi_strip, _metadata_drawer, render_library_list
     from .library_filters import (
         _library_filters_persistence_script,
         _normalize_mode,
@@ -75,6 +75,7 @@ def render_library_page(
         ),
         _library_filters_persistence_script(normalized_default_mode),
         render_library_list(docs, view=view, mode=current_mode),
+        _delete_modal(),
         _metadata_drawer(),
         cls="p-6 max-w-7xl mx-auto",
         id="library-page",
