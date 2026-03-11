@@ -22,9 +22,10 @@ Parametri **override per biblioteca** (attivi solo con `settings.network.librari
 * `workers_per_job`, `min_delay_s`, `max_delay_s`, `retry_max_attempts`, `backoff_base_s`, `backoff_cap_s`, `respect_retry_after`.
 
 * `settings.images.tile_stitch_max_ram_gb`: Limite RAM per l'assemblaggio di immagini IIIF giganti (Tile Stitching).
-* `settings.images.probe_remote_max_resolution`: Abilita il probing automatico della risoluzione massima online per pagina.
-* `settings.images.download_strategy_mode`: Preset operativo (`balanced`, `quality_first`, `fast`, `archival`, `custom`) che definisce l'ordine dei tentativi size IIIF.
-* `settings.images.download_strategy_custom`: Strategia custom (lista size, es. `3000,1740,max`) usata solo quando `mode=custom`.
+* `settings.images.probe_remote_max_resolution`: mantiene il probing `info.json` usato dalla riga informativa `Remote` nelle miniature Studio; non cambia la strategia di download.
+* `settings.images.download_strategy_mode`: Preset operativo (`balanced`, `quality_first`, `fast`, `archival`, `custom`) che definisce l'ordine dei tentativi diretti IIIF prima dell'eventuale stitch.
+* `settings.images.download_strategy_custom`: Strategia custom (lista size, es. `3000,1740,max`) usata solo quando `mode=custom`. E un ordine di tentativi, non una classifica assoluta di qualità.
+* `settings.images.stitch_mode_default`: decide se il download standard puo fare fallback automatico a stitch (`auto_fallback`), restare solo diretto (`direct_only`) o usare solo stitch (`stitch_only`).
 * `settings.images.iiif_quality`: Segmento quality nelle URL IIIF (`.../quality.jpg`). In generale lasciare `default`; usare `gray/bitonal` solo per casi specifici.
 * `settings.images.local_optimize.max_long_edge_px`: lato lungo massimo usato da `Ottimizza scans locali`.
 * `settings.images.local_optimize.jpeg_quality`: qualità JPEG usata da `Ottimizza scans locali`.
@@ -34,6 +35,7 @@ Parametri **override per biblioteca** (attivi solo con `settings.network.librari
 * `settings.pdf.prefer_native_pdf` (default: `true`): se il manifest IIIF espone un PDF nativo (`rendering`), il downloader lo usa come sorgente primaria.
 * `settings.pdf.create_pdf_from_images` (default: `false`): se non viene usato un PDF nativo, crea un PDF compilato dalle immagini scaricate.
 * `settings.pdf.viewer_dpi` (default: `150`): DPI usati per estrarre le immagini JPG dal PDF nativo per il viewer.
+* `settings.pdf.viewer_jpeg_quality` (default: `95`): qualità JPEG usata solo nella rasterizzazione dei PDF nativi in scans locali.
 * `settings.pdf.profiles`: catalogo preset PDF avanzati (`balanced`, `high_quality`, `archival_highres`, `lightweight`) con supporto custom globale.
 * `settings.pdf.profiles.catalog.<profilo>.image_source_mode`: definisce la sorgente immagini del profilo (`local_balanced`, `local_highres`, `remote_highres_temp`).
 * `settings.pdf.profiles.catalog.<profilo>.max_parallel_page_fetch`: limite di fetch parallelo quando il profilo usa il remoto high-res temporaneo.
@@ -77,8 +79,9 @@ Nel tab **Studio > Output**:
   - eventuali override compilati nel pannello espanso;
   - lo scope selezionato (`Tutte le pagine` oppure `Solo selezione`).
 * nel sub-tab `Pagine`:
-  - la griglia miniature mostra per ogni pagina risoluzione **Locale** e **Online max** per confronto immediato;
-  - azione puntuale **High-Res** per scaricare solo la pagina necessaria;
+  - la griglia miniature mostra per ogni pagina **Locale** e **Remote**; se una dimensione diretta è stata verificata da un download reale, compare un pallino verde accanto a `Locale`;
+  - azione puntuale **Hi** per forzare un refresh diretto `full/max` della singola pagina;
+  - azione puntuale **Std** per usare la stessa strategia standard del volume (tentativi diretti + stitch solo come fallback);
   - pulsante **Ottimizza scans locali** per ridurre lo spazio occupato dalle scans locali con ottimizzazione lossy (resize + compressione JPEG configurabile via `settings.images.local_optimize.max_long_edge_px` e `settings.images.local_optimize.jpeg_quality`).
     - **Nota di sicurezza**: l'ottimizzazione valida tutti i percorsi file per prevenire attacchi di path traversal via symlink. Solo i file all'interno della directory downloads vengono processati.
 
@@ -116,6 +119,7 @@ Config chiavi: `settings.network.global.*` (globale) e `settings.network.librari
 La pagina Discovery è divisa in due aree:
 * **Sinistra**: ricerca/risoluzione manifest e anteprime.
 * **Destra**: **Download Manager** con coda, job in esecuzione, errori e retry.
+* I job pagina generati da `Hi` / `Std` nello Studio non sporcano più la lista principale: vengono mostrati in una sezione compatta separata (`Attività Immagini Studio`) con solo testo e azione `Annulla` o `Rimuovi`.
 
 Questo permette di continuare a cercare nuovi manoscritti mentre uno o più download sono in corso.
 
@@ -175,8 +179,9 @@ Indicazioni pratiche:
 
 Per collezioni con pagine molto pesanti, il flusso consigliato e:
 * mantieni nel repository locale una copia **bilanciata** per lavorare veloce in viewer e trascrizione;
-* usa il confronto **Locale vs Online max** nel tab `Studio > Output` per capire subito dove manca dettaglio;
-* scarica la high-res solo sulle pagine necessarie con il pulsante **High-Res** della miniatura;
+* usa il confronto **Locale / Remote** nel tab `Studio > Output` per capire subito dove il dato dichiarato dal servizio IIIF differisce dal locale;
+* usa **Hi** solo per forzare il miglior diretto disponibile sulla singola pagina;
+* usa **Std** quando vuoi riallineare una pagina alla stessa strategia standard usata dal download automatico del volume;
 * quando serve un PDF finale ad altissima qualita, usa un profilo con `image_source_mode=remote_highres_temp`;
 * abilita `cleanup_temp_after_export` nel profilo per eliminare in automatico i temporanei high-res a fine export.
 

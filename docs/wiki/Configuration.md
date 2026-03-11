@@ -8,7 +8,7 @@ Runtime settings live in `config.json` and are managed through `universal_iiif_c
 - `settings.network.global`: global HTTP transport (timeout, retries, max concurrent jobs).
 - `settings.network.download`: default download policies (workers, delays, retry, backoff).
 - `settings.network.libraries.<library>`: per-library network policies for HTTPClient (rate limiting, concurrency, backoff - e.g., Gallica has stricter limits).
-- `settings.images`: IIIF fetch strategy and quality.
+- `settings.images`: IIIF fetch strategy, local optimization, and stitch limits.
 - `settings.pdf`: native PDF behavior, export defaults, and profile catalog.
 - `settings.storage`: retention and staging-to-scans promotion policy.
 - `settings.viewer`: mirador gating/source policy and OpenSeadragon tuning.
@@ -18,6 +18,7 @@ Runtime settings live in `config.json` and are managed through `universal_iiif_c
 - `settings.pdf.prefer_native_pdf`
 - `settings.pdf.create_pdf_from_images`
 - `settings.pdf.viewer_dpi`
+- `settings.pdf.viewer_jpeg_quality`
 - `settings.pdf.profiles.default`
 - `settings.pdf.profiles.catalog.<profile>.image_source_mode`
 - `settings.pdf.profiles.catalog.<profile>.max_parallel_page_fetch`
@@ -43,6 +44,14 @@ Runtime settings live in `config.json` and are managed through `universal_iiif_c
 - `settings.images.local_optimize.max_long_edge_px`
 - `settings.images.local_optimize.jpeg_quality`
 
+## Essential Image Strategy Keys
+
+- `settings.images.download_strategy_mode`
+- `settings.images.download_strategy_custom`
+- `settings.images.stitch_mode_default`
+- `settings.images.iiif_quality`
+- `settings.images.tile_stitch_max_ram_gb`
+
 ## Notes
 
 - `settings.network.global.*` is always shared across libraries (no per-library timeout/concurrency override).
@@ -50,6 +59,9 @@ Runtime settings live in `config.json` and are managed through `universal_iiif_c
 - HTTPClient automatically applies per-library rate limiting and backoff (Gallica: 4 req/min, others: 20 req/min).
 - Keep local scans balanced by default for speed and storage.
 - Use export profiles for job-level quality decisions instead of changing global defaults frequently.
+- `download_strategy_custom` is an ordered attempt list (`3000`, `1740`, `max`), not a guarantee that `max` is the largest actual image a server will return.
+- `stitch_mode_default` controls whether the standard page downloader can fall back to tile stitching after direct IIIF attempts.
+- `iiif_quality` changes the IIIF URL quality segment only; it does not decide the requested size.
 - Staged downloads can live in `temp_images/<doc_id>` before promotion to `scans/`.
 - Segmented retries/range downloads count previously staged validated pages before final promotion.
 - With `partial_promotion_mode=on_pause`, promotion on pause keeps existing scans by default and overwrites only for explicit refresh/redownload flows.

@@ -200,18 +200,22 @@ Notes:
   - used only when `download_strategy_mode=custom`
 - `settings.images.download_strategy` (`string[]`, default: `['3000', '1740', 'max']`)
   - canonical resolved strategy used at runtime (materialized from mode/custom)
+- `settings.images.stitch_mode_default` (`string`, default: `auto_fallback`)
+  - allowed: `auto_fallback|direct_only|stitch_only`
 - `settings.images.iiif_quality` (`string`, default: `default`)
   - segment used in IIIF URLs: `/full/{size}/0/{quality}.jpg`
-- `settings.images.viewer_quality` (`int`, default: `95`)
 - `settings.images.probe_remote_max_resolution` (`bool`, default: `true`)
 - `settings.images.tile_stitch_max_ram_gb` (`number`, default: `2`)
 - `settings.images.local_optimize.max_long_edge_px` (`int`, default: `2600`, allowed range: `512..12000`)
 - `settings.images.local_optimize.jpeg_quality` (`int`, default: `82`, allowed range: `10..100`)
 
 Runtime notes:
-- `download_strategy_mode` defines ordered size attempts before tile stitching.
+- `download_strategy_mode` defines ordered direct size attempts before tile stitching.
+- The Studio `Std` button uses the same strategy as a normal volume download.
+- `download_strategy_custom` is an ordered attempt list (`3000`, `1740`, `max`), not a guarantee that `max` is larger than every explicit numeric attempt.
+- `stitch_mode_default` controls whether the standard volume strategy can fall back to stitching after direct attempts.
 - `iiif_quality` applies to normal page downloads and temporary remote high-res export fetches.
-- `probe_remote_max_resolution` enables `info.json` probing for Studio Export thumbnails.
+- `probe_remote_max_resolution` drives the Studio thumbnail “Remote” informational line by probing `info.json`; it does not change download behavior.
 - local optimize keys are used by `POST /api/studio/export/optimize_scans` (in-place lossy rewrite of `scans/`).
 
 ## `settings.ocr`
@@ -222,6 +226,7 @@ Runtime notes:
 ## `settings.pdf`
 
 - `settings.pdf.viewer_dpi` (`int`, default: `150`)
+- `settings.pdf.viewer_jpeg_quality` (`int`, default: `95`)
 - `settings.pdf.prefer_native_pdf` (`bool`, default: `true`)
 - `settings.pdf.create_pdf_from_images` (`bool`, default: `false`)
 

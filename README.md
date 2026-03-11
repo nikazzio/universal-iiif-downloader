@@ -39,7 +39,7 @@ iiif-cli "https://digi.vatlib.it/iiif/MSS_Urb.lat.1779/manifest.json"
 - Local Library + Studio workflow: select in Library, analyze in Studio
 - Studio Output tab with PDF profiles, source-mode selection (`Locale` / `Remoto temporaneo`) and job monitor
 - **Mirador dual viewing modes**: remote preview for incomplete downloads, local-only for offline work
-- Thumbnail-level resolution transparency (`Locale` vs `Online max`) with on-demand `High-Res` fetch
+- Thumbnail-level page controls in Studio Output (`Hi`, `Std`, `Opt`) with resolution transparency (`Locale`, `Remote`, verified-direct indicator)
 - Professional status panel with color-coded technical indicators
 - `src/` package layout with separated `core`, `ui`, and `cli` modules
 
@@ -88,6 +88,7 @@ Key PDF settings:
     },
     "pdf": {
       "viewer_dpi": 150,
+      "viewer_jpeg_quality": 95,
       "prefer_native_pdf": true,
       "create_pdf_from_images": false,
       "profiles": {
@@ -102,8 +103,10 @@ Meaning:
 - `prefer_native_pdf`: if manifest `rendering` contains a native PDF, native flow is attempted first
 - `create_pdf_from_images`: when native PDF is not used, build a PDF from downloaded images only if `true`
 - `viewer_dpi`: DPI used when extracting JPG pages from native PDF for the web viewer
-- `images.download_strategy_mode`: preset ordering for IIIF size fallback (`balanced|quality_first|fast|archival|custom`)
-- `images.download_strategy_custom`: size list used when `mode=custom`
+- `viewer_jpeg_quality`: JPEG quality used only when rasterizing a native PDF into local scans
+- `images.download_strategy_mode`: preset ordering for direct IIIF attempts before stitch fallback (`balanced|quality_first|fast|archival|custom`)
+- `images.download_strategy_custom`: size list used when `mode=custom`; it is an ordered attempt list, not a “quality ranking”
+- `images.stitch_mode_default`: fallback policy for the standard downloader (`auto_fallback|direct_only|stitch_only`)
 - `images.iiif_quality`: IIIF quality segment in image URLs (recommended `default`)
 - `images.local_optimize.max_long_edge_px`: in-place optimization max edge for local scans
 - `images.local_optimize.jpeg_quality`: in-place optimization JPEG quality for local scans
@@ -136,6 +139,7 @@ Download staging behavior:
 - segmented/retry runs are supported: previously staged validated pages are counted together with current-run pages.
 - optional pause-time promotion is controlled by `settings.storage.partial_promotion_mode`.
 - with `on_pause`, staged pages are promoted when a running job is paused; existing scans are overwritten only for explicit refresh/redownload flows.
+- Studio page actions (`Hi`/`Std`) can overwrite a single local scan immediately without waiting for full-manuscript completeness.
 
 ## Dev Commands
 

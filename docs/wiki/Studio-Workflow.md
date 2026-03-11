@@ -42,7 +42,8 @@ Studio supports **two viewing modes** for the Mirador viewer:
 - Sub-tabs:
   - `Crea PDF`: profile selection and optional per-job overrides.
   - `Pagine`: thumbnail gallery with per-page actions:
-    - `High-Res`: fetch high-resolution version of individual pages from remote source.
+    - `Hi`: force a direct single-page refresh using `full/max` from the remote IIIF service.
+    - `Std`: rerun the same standard strategy used by the full-volume download (ordered direct attempts, stitch only as fallback).
     - **Ottimizza scans locali**: in-place lossy optimization of local scan images to reduce storage footprint (configurable via `settings.images.local_optimize.max_long_edge_px` and `settings.images.local_optimize.jpeg_quality`).
       - **Security**: Optimization validates all file paths to prevent symlink-based path traversal attacks. Only files within the downloads directory are processed.
   - `Job`: export queue and progress.
@@ -58,9 +59,18 @@ Studio supports **two viewing modes** for the Mirador viewer:
 
 ## Thumbnail Decisions
 
-- Each thumbnail shows local resolution (`Locale`) and probed remote max resolution (`Online max`).
-- `High-Res` allows targeted page fetch without forcing full-document high-res download.
+- Each thumbnail shows local resolution (`Locale`) and probed remote declaration (`Remote`).
+- `Remote` comes from the IIIF service declaration (`info.json`) and is informational; it is not a guarantee that direct fetches cannot return more.
+- When a page has already been fetched successfully via direct download, a green dot beside `Locale` indicates that the local size is backed by a verified direct result.
+- `Hi` allows a targeted direct page refresh without forcing a full-document high-res download.
+- `Std` is the safe “same as automatic volume strategy” button and should be preferred when you want a page to follow the same logic as the regular downloader.
 - Scope controls let you export `Tutte le pagine` or `Solo selezione`.
+
+## Discovery Visibility for Page Jobs
+
+- Jobs created by `Hi` / `Std` are persisted as `studio_export_page`.
+- Discovery does not render them as full download-manager cards.
+- They appear in a compact section (`Attività Immagini Studio`) with only text plus `Annulla` or `Rimuovi`.
 
 ## Info Tab
 

@@ -113,6 +113,7 @@ Studio supports **two distinct viewing modes** for the Mirador viewer, automatic
 * **Visual Feedback**:
   * **Toasts**: Floating notifications anchored to the top-right viewport.
   * **Progress**: Real-time queue/running status driven by DB polling in the Download Manager side panel.
+  * **Studio page jobs**: per-page `Hi/Std` actions are stored as `studio_export_page` jobs and rendered in Discovery as a compact auxiliary section, not as full document download cards.
   * **Status Panel**: Professional color-coded badges for technical status (read_source, state, scans, staging, PDF info).
 
 ## Key Design Decisions
