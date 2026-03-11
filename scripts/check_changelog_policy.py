@@ -2,9 +2,9 @@
 """Validate CHANGELOG format policy.
 
 Checks:
-- Release headings: ## [vX.Y.Z] - YYYY-MM-DD
-- Required sections per release: Added, Changed, Fixed
-- Top-level non-empty bullets end with issue/PR reference: (#123)
+- Release headings: ## [vX.Y.Z] - YYYY-MM-DD or ## vX.Y.Z (YYYY-MM-DD)
+- At least one subsection per release block
+- Top-level non-empty bullets end with issue/PR reference or generated commit link
 """
 
 from __future__ import annotations
@@ -13,9 +13,11 @@ import re
 from pathlib import Path
 
 CHANGELOG_PATH = Path("CHANGELOG.md")
-RE_HEADING = re.compile(r"^## \[(v\d+\.\d+\.\d+)\] - (\d{4}-\d{2}-\d{2})$")
-RE_SECTION = re.compile(r"^### (Added|Changed|Fixed)$")
-RE_REF = re.compile(r"\(#\d+\)\.?$")
+INSERTION_FLAG = "<!-- version list -->"
+RE_HEADING = re.compile(r"^(## \[(v\d+\.\d+\.\d+)\] - (\d{4}-\d{2}-\d{2})|## v\d+\.\d+\.\d+ \(\d{4}-\d{2}-\d{2}\))$")
+RE_SECTION = re.compile(r"^### (?P<section>[A-Za-z][A-Za-z /-]*)$")
+RE_ISSUE_REF = re.compile(r"\(#\d+\)\.?$")
+RE_COMMIT_LINK = re.compile(r"\(\[`[0-9a-f]{7,}`\]\(https?://[^)]+\)\)\.?$")
 
 
 class ValidationError(RuntimeError):
@@ -53,7 +55,7 @@ def _validate_release_block(title: str, block_lines: list[str]) -> list[str]:
     for line in block_lines:
         section = RE_SECTION.match(line)
         if section:
-            current_section = section.group(1)
+            current_section = section.group("section")
             sections_seen.add(current_section)
             continue
 
@@ -64,12 +66,11 @@ def _validate_release_block(title: str, block_lines: list[str]) -> list[str]:
             item = line[2:].strip()
             if item.lower() == "none.":
                 continue
-            if not RE_REF.search(item):
+            if not RE_ISSUE_REF.search(item) and not RE_COMMIT_LINK.search(item):
                 errors.append(f"{title}: bullet missing issue/PR reference -> '{line}'")
 
-    missing = {"Added", "Changed", "Fixed"} - sections_seen
-    for section_name in sorted(missing):
-        errors.append(f"{title}: missing section '### {section_name}'")
+    if not sections_seen:
+        errors.append(f"{title}: missing at least one '### <section>' subsection")
 
     return errors
 
@@ -80,6 +81,10 @@ def main() -> int:
         raise ValidationError("CHANGELOG.md not found")
 
     lines = CHANGELOG_PATH.read_text(encoding="utf-8").splitlines()
+    if INSERTION_FLAG not in lines:
+        raise ValidationError(
+            "CHANGELOG.md missing semantic-release insertion flag '<!-- version list -->'.",
+        )
     release_blocks = _iter_release_blocks(lines)
     if not release_blocks:
         raise ValidationError("No release blocks found. Expected headings like '## [vX.Y.Z] - YYYY-MM-DD'.")
