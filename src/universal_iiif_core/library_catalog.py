@@ -457,6 +457,32 @@ def _merge_external_metadata(metadata_map: dict[str, str], external_fields: dict
     return merged
 
 
+def _add_vatican_reference_fields(host: str, html: str, external_fields: dict[str, str]) -> None:
+    if "digi.vatlib.it" not in host:
+        return
+    refs = _extract_vatican_bibliographic_refs(html)
+    if not refs:
+        return
+    external_fields["bibliographic_references_count"] = str(len(refs))
+    external_fields["bibliographic_reference_1"] = refs[0][:240]
+    if len(refs) > 1:
+        external_fields["bibliographic_reference_2"] = refs[1][:240]
+
+
+def _add_common_external_fields(html: str, json_ld: list[dict[str, Any]], external_fields: dict[str, str]) -> None:
+    author = _extract_json_ld_value(json_ld, ("author", "creator"))
+    if not author:
+        author = next(iter(_extract_meta_contents(html, ["author", "citation_author", "dc.creator"])), "")
+    if author:
+        external_fields["author"] = author[:240]
+
+    description = _extract_json_ld_value(json_ld, ("description",))
+    if not description:
+        description = next(iter(_extract_meta_contents(html, ["description", "dc.description"])), "")
+    if description and not _is_generic_site_title(description):
+        external_fields["description"] = description[:240]
+
+
 def extract_external_catalog_data(url: str, timeout: int = 8) -> dict[str, Any]:
     """Extract catalog reference text and extra metadata from an external page."""
     if not url:
@@ -464,8 +490,10 @@ def extract_external_catalog_data(url: str, timeout: int = 8) -> dict[str, Any]:
 
     # Create temporary HTTPClient for this fetch
     from .config_manager import get_config_manager
+
     cm = get_config_manager()
-    http_client = HTTPClient(network_policy=cm.data.get("settings", {}))
+    network_policy = cm.data.get("settings", {}).get("network", {})
+    http_client = HTTPClient(network_policy=network_policy)
 
     try:
         response = http_client.get(url, library_name=None, timeout=(timeout, timeout))
@@ -481,25 +509,8 @@ def extract_external_catalog_data(url: str, timeout: int = 8) -> dict[str, Any]:
     external_fields = _extract_host_specific_fields(url)
     host = urlparse(url).netloc.lower()
 
-    if "digi.vatlib.it" in host:
-        refs = _extract_vatican_bibliographic_refs(html)
-        if refs:
-            external_fields["bibliographic_references_count"] = str(len(refs))
-            external_fields["bibliographic_reference_1"] = refs[0][:240]
-            if len(refs) > 1:
-                external_fields["bibliographic_reference_2"] = refs[1][:240]
-
-    author = _extract_json_ld_value(json_ld, ("author", "creator"))
-    if not author:
-        author = next(iter(_extract_meta_contents(html, ["author", "citation_author", "dc.creator"])), "")
-    if author:
-        external_fields["author"] = author[:240]
-
-    description = _extract_json_ld_value(json_ld, ("description",))
-    if not description:
-        description = next(iter(_extract_meta_contents(html, ["description", "dc.description"])), "")
-    if description and not _is_generic_site_title(description):
-        external_fields["description"] = description[:240]
+    _add_vatican_reference_fields(host, html, external_fields)
+    _add_common_external_fields(html, json_ld, external_fields)
 
     return {
         "reference_text": reference_text,

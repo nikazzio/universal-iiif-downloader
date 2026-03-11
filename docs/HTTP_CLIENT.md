@@ -30,20 +30,20 @@ from universal_iiif_core.config_manager import get_config_manager
 
 # Create client with config
 cm = get_config_manager()
-http_client = HTTPClient(network_policy=cm.data.get("settings", {}))
+http_client = HTTPClient(network_policy=cm.data.get("settings", {}).get("network", {}))
 
 # GET request
 response = http_client.get(
     "https://example.com/api/data",
-    library_name="Gallica",  # Optional: for library-specific policy
-    timeout=30
+    library_name="gallica",  # Optional: canonical library key
+    timeout=(30, 30),
 )
 
 # GET JSON
 data = http_client.get_json(
     "https://example.com/api/manifest.json",
-    library_name="Gallica",
-    timeout=20
+    library_name="gallica",
+    timeout=(20, 20),
 )
 ```
 
@@ -71,7 +71,7 @@ Configure different policies per library in `network_policy.py`:
 
 ```python
 "libraries": {
-    "Gallica": {
+    "gallica": {
         "burst_max_requests": 4,
         "burst_window_s": 60,
         "retry_max_attempts": 5,
@@ -81,7 +81,7 @@ Configure different policies per library in `network_policy.py`:
 }
 ```
 
-Hierarchy: **Parameter override > Library config > Global defaults**
+Hierarchy: **Parameter override > Library config > Download defaults > Global defaults**
 
 ### 4. Concurrency Control
 

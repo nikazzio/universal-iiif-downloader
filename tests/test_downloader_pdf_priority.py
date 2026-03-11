@@ -47,6 +47,23 @@ def _build_downloader(
     monkeypatch.setattr(downloader_module, "get_json", lambda _url: manifest)
     monkeypatch.setattr(downloader_module, "get_download_logger", lambda _ms: _DummyLogger())
     monkeypatch.setattr(downloader_module, "VaultManager", _DummyVault)
+    monkeypatch.setattr(
+        downloader_module,
+        "parse_manifest_catalog",
+        lambda *_args, **_kwargs: {
+            "catalog_title": "Test manuscript",
+            "shelfmark": "",
+            "date_label": "",
+            "language_label": "",
+            "source_detail_url": "",
+            "reference_text": "",
+            "item_type": "non classificato",
+            "item_type_confidence": 0.0,
+            "item_type_reason": "",
+            "metadata_map": {},
+            "metadata_json": "{}",
+        },
+    )
 
     downloader = IIIFDownloader(
         "https://example.org/manifest.json",

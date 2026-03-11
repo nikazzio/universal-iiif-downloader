@@ -58,8 +58,10 @@ def probe_remote_max_dimensions(
     # Create temporary client if none provided
     if http_client is None:
         from .config_manager import get_config_manager
+
         cm = get_config_manager()
-        http_client = HTTPClient(network_policy=cm.data.get("settings", {}))
+        network_policy = cm.data.get("settings", {}).get("network", {})
+        http_client = HTTPClient(network_policy=network_policy)
 
     try:
         t = max(3, int(timeout_s))
@@ -106,15 +108,19 @@ def fetch_highres_page_image(
     # Create temporary client if none provided
     if http_client is None:
         from .config_manager import get_config_manager
-        cm = get_config_manager()
-        http_client = HTTPClient(network_policy=cm.data.get("settings", {}))
 
+        cm = get_config_manager()
+        network_policy = cm.data.get("settings", {}).get("network", {})
+        http_client = HTTPClient(network_policy=network_policy)
+
+    response = None
     try:
         t = max(8, int(timeout_s))
         response = http_client.get(
             image_url,
             library_name=library_name,
             timeout=(t, t),
+            stream=True,
         )
 
         if response.status_code != 200:
@@ -122,7 +128,9 @@ def fetch_highres_page_image(
 
         out_path.parent.mkdir(parents=True, exist_ok=True)
         with out_path.open("wb") as fh:
-            fh.write(response.content)
+            for chunk in response.iter_content(chunk_size=1024 * 1024):
+                if chunk:
+                    fh.write(chunk)
 
         with Image.open(out_path) as img:
             img.verify()
@@ -133,3 +141,6 @@ def fetch_highres_page_image(
             with suppress(OSError):
                 out_path.unlink()
         return False, str(exc)
+    finally:
+        if response is not None:
+            response.close()

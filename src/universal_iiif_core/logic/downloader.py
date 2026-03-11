@@ -568,7 +568,7 @@ class IIIFDownloader:
                 # Pass should_cancel to enable prompt cancellation during backoff waits
                 response = self.http_client.get(
                     url,
-                    library_name=self.library,
+                    library_name=self.network_policy.get("library_key", self.library),
                     timeout=self._request_timeout,
                     should_cancel=should_cancel,
                 )

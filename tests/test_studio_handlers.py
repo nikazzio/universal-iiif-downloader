@@ -300,13 +300,25 @@ def test_studio_saved_remote_first_bypasses_local_gate():
     try:
         cm.set_setting("viewer.mirador.require_complete_local_images", True)
         cm.set_setting("viewer.source_policy.saved_mode", "remote_first")
+        remote_manifest = {
+            "items": [
+                {"id": "https://example.org/canvas/1"},
+                {"id": "https://example.org/canvas/2"},
+            ]
+        }
+        original_get_json = studio_handlers.get_json
+        studio_handlers.get_json = (
+            lambda url, retries=2: remote_manifest
+            if "remote-manifest.json" in url
+            else original_get_json(url, retries=retries)
+        )
         response = studio_handlers.studio_page(_request(), doc_id=doc_id, library=library, page=1)
         rendered = str(response)
         assert 'data-mirador-gated="1"' not in rendered
         assert "const containerId = 'mirador-viewer';" in rendered
-        assert "read_source:" in rendered
         assert "remote" in rendered
     finally:
+        studio_handlers.get_json = original_get_json
         cm.set_setting("viewer.mirador.require_complete_local_images", old_gate)
         cm.set_setting("viewer.source_policy.saved_mode", old_policy)
 

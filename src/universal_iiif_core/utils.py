@@ -47,11 +47,12 @@ def get_json(url: str, headers: dict | None = None, retries: int = 3) -> Any | N
 
     # Create temporary HTTPClient with current config
     cm = get_config_manager()
-    http_client = HTTPClient(network_policy=cm.data.get("settings", {}))
+    network_policy = cm.data.get("settings", {}).get("network", {})
+    http_client = HTTPClient(network_policy=network_policy)
 
     try:
         # HTTPClient.get_json() handles all retry logic, backoff, rate limiting
-        return http_client.get_json(url, library_name=None, timeout=(10, 20))
+        return http_client.get_json(url, library_name=None, timeout=(10, 20), headers=headers, retries=retries)
     except Exception as e:
         logger.debug(f"get_json failed for {url}: {e}")
         return None

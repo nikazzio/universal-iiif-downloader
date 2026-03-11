@@ -17,6 +17,7 @@ def mock_network_policy():
             "connect_timeout_s": 10,
             "read_timeout_s": 30,
             "transport_retries": 3,
+            "per_host_concurrency": 4,
         },
         "download": {
             "default_retry_max_attempts": 5,
@@ -39,10 +40,12 @@ def mock_network_policy():
                 "read_timeout_s": 60,
                 "burst_max_requests": 15,
                 "per_host_concurrency": 3,
+                "use_custom_policy": True,
             },
             "vaticana": {
                 "burst_max_requests": 25,
                 "min_delay_s": 0.6,
+                "use_custom_policy": True,
             },
         },
     }
@@ -175,8 +178,32 @@ class TestHostSemaphoreManagement:
         policy = client._resolve_policy("https://gallica.bnf.fr/", library_name="gallica")
         semaphore = client._get_host_semaphore("gallica.bnf.fr", policy)
 
-        # Semaphore should allow 2 concurrent
-        assert semaphore._value == 2  # Access internal value for testing
+        # Semaphore should allow 2 concurrent acquisitions and then block/fail
+        assert semaphore.acquire(blocking=False) is True
+        assert semaphore.acquire(blocking=False) is True
+        assert semaphore.acquire(blocking=False) is False
+        semaphore.release()
+        semaphore.release()
+
+    def test_resolve_policy_normalizes_display_library_name(self, mock_network_policy):
+        """Display names should map to canonical library keys."""
+        client = HTTPClient(mock_network_policy)
+
+        policy = client._resolve_policy("https://example.com/resource", library_name="Gallica")
+
+        assert policy["per_host_concurrency"] == 2
+        assert policy["retry_max_attempts"] == 3
+
+    def test_resolve_policy_skips_library_overrides_when_disabled(self, mock_network_policy):
+        """Libraries with use_custom_policy disabled should keep global/download defaults."""
+        client = HTTPClient(mock_network_policy)
+        client.libraries["bodleian"]["use_custom_policy"] = False
+
+        policy = client._resolve_policy("https://example.com/resource", library_name="bodleian")
+
+        assert policy["connect_timeout_s"] == 10
+        assert policy["read_timeout_s"] == 30
+        assert policy["per_host_concurrency"] == 4
 
     def test_different_hosts_get_different_semaphores(self, mock_network_policy):
         """Test different hosts get separate semaphores."""
@@ -357,12 +384,12 @@ class TestRetryLogic:
         assert client._is_retriable_error(MockResponse(502), None) is True
         assert client._is_retriable_error(MockResponse(503), None) is True
         assert client._is_retriable_error(MockResponse(504), None) is True
+        assert client._is_retriable_error(MockResponse(403), None) is True
 
         # Non-retriable
         assert client._is_retriable_error(MockResponse(200), None) is False
         assert client._is_retriable_error(MockResponse(400), None) is False
         assert client._is_retriable_error(MockResponse(401), None) is False
-        assert client._is_retriable_error(MockResponse(403), None) is False
         assert client._is_retriable_error(MockResponse(404), None) is False
 
     def test_is_retriable_error_exceptions(self, mock_network_policy):
@@ -537,7 +564,7 @@ class TestGetJsonMethod:
 
         mock_response = requests.Response()
         mock_response.status_code = 200
-        mock_response._content = b''
+        mock_response._content = b""
 
         monkeypatch.setattr(client.session, "get", lambda *args, **kwargs: mock_response)
 
@@ -553,7 +580,7 @@ class TestGetJsonMethod:
         mock_response = requests.Response()
         mock_response.status_code = 200
         mock_response._content = b'\xef\xbb\xbf{"key": "value"}'
-        mock_response.encoding = 'utf-8'
+        mock_response.encoding = "utf-8"
 
         monkeypatch.setattr(client.session, "get", lambda *args, **kwargs: mock_response)
 
@@ -584,7 +611,7 @@ class TestGetJsonMethod:
 
         monkeypatch.setattr(client.session, "get", mock_get)
 
-        result = client.get_json("https://example.com/api/data.json")
+        result = client.get_json("https://example.com/api/data.json", retries=1)
 
         assert result is None
 
@@ -605,10 +632,10 @@ class TestGetJsonMethod:
         monkeypatch.setattr(client.session, "get", mock_get)
 
         result = client.get_json(
-            "https://example.com/api/data.json",
+            "https://params.example.test/api/data.json",
             library_name="gallica",
             timeout=(5, 20),
-            headers={"X-Custom": "test"}
+            headers={"X-Custom": "test"},
         )
 
         assert result == {"success": True}

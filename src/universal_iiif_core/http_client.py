@@ -29,6 +29,7 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 from ._rate_limiter import get_host_limiter
+from .network_policy import normalize_library_key
 from .utils import DEFAULT_HEADERS
 
 
@@ -141,25 +142,51 @@ class HTTPClient:
         resolved = {**self.global_policy, **self.download_policy}
 
         # Try explicit library_name first
-        if library_name and library_name in self.libraries:
-            library_policy = self.libraries[library_name]
-            resolved.update(library_policy)
-            self.logger.debug(f"Using policy for library: {library_name}")
-            return resolved
+        if library_name:
+            library_key = normalize_library_key(library_name)
+            library_policy = self.libraries.get(library_key)
+            if isinstance(library_policy, dict):
+                if library_policy.get("use_custom_policy", library_key == "gallica"):
+                    resolved.update(library_policy)
+                    self.logger.debug(f"Using policy for library: {library_key}")
+                else:
+                    self.logger.debug(f"Using default policy for library: {library_key}")
+                return resolved
 
         # Fall back to hostname extraction
-        hostname = urlparse(url).netloc
+        hostname = urlparse(url).netloc.lower()
         if hostname:
             # Check if hostname matches any known library
             for lib_name, lib_policy in self.libraries.items():
                 if lib_name in hostname or hostname in lib_name:
-                    resolved.update(lib_policy)
-                    self.logger.debug(f"Using policy for library: {lib_name} (matched from hostname: {hostname})")
+                    if lib_policy.get("use_custom_policy", lib_name == "gallica"):
+                        resolved.update(lib_policy)
+                        self.logger.debug(f"Using policy for library: {lib_name} (matched from hostname: {hostname})")
+                    else:
+                        self.logger.debug(f"Using default policy for hostname match: {lib_name} ({hostname})")
                     return resolved
 
         # Default to global
         self.logger.debug(f"Using global policy for: {hostname or url}")
         return resolved
+
+    def _wait_for_rate_limit(
+        self,
+        hostname: str,
+        policy: dict[str, Any],
+        *,
+        should_cancel: Callable[[], bool] | None = None,
+    ) -> None:
+        """Block until the current host is allowed to make another request."""
+        burst_window = int(self._get_setting(policy, "burst_window_s", 60))
+        burst_max = int(self._get_setting(policy, "burst_max_requests", 100))
+        limiter = get_host_limiter(hostname)
+        if not limiter.wait_turn(
+            window_s=burst_window,
+            max_requests=burst_max,
+            should_cancel=should_cancel,
+        ):
+            raise requests.RequestException("Request cancelled during rate limiting")
 
     def _get_setting(self, policy: dict[str, Any], key: str, default: Any = None) -> Any:
         """Get setting from policy with fallback.
@@ -328,7 +355,7 @@ class HTTPClient:
             True if error is retriable
         """
         # Retriable status codes
-        retriable_status_codes = {429, 500, 502, 503, 504}
+        retriable_status_codes = {403, 429, 500, 502, 503, 504}
 
         if response is not None:
             return response.status_code in retriable_status_codes
@@ -338,6 +365,78 @@ class HTTPClient:
             return isinstance(exception, (requests.Timeout, requests.ConnectionError))
 
         return False
+
+    def _sleep_before_retry(
+        self,
+        wait: float,
+        *,
+        url: str,
+        should_cancel: Callable[[], bool] | None = None,
+    ) -> bool:
+        """Sleep before a retry unless the caller requested cancellation."""
+        if should_cancel and should_cancel():
+            self.logger.info(f"Request cancelled during backoff for {url}")
+            return False
+        time.sleep(wait)
+        return True
+
+    def _retry_response_or_raise(
+        self,
+        *,
+        response: requests.Response,
+        attempt: int,
+        max_retries: int,
+        url: str,
+        hostname: str,
+        policy: dict[str, Any],
+        retry_count: int,
+        should_cancel: Callable[[], bool] | None = None,
+        rate_limit_log: str | None = None,
+    ) -> tuple[bool | None, int]:
+        """Handle a retriable HTTP response.
+
+        Returns:
+            `(True, retry_count)` when caller should continue the retry loop,
+            `(False, retry_count)` when the request should stop due to cancellation.
+        """
+        wait = self._compute_backoff(
+            attempt, response.status_code, response.headers.get("Retry-After"), policy, hostname
+        )
+        if rate_limit_log:
+            self.logger.warning(rate_limit_log.format(wait=wait))
+        if attempt >= max_retries - 1:
+            response.raise_for_status()
+        if not self._sleep_before_retry(wait, url=url, should_cancel=should_cancel):
+            return False, retry_count
+        return True, retry_count
+
+    def _retry_exception_or_raise(
+        self,
+        *,
+        attempt: int,
+        exception: Exception,
+        max_retries: int,
+        url: str,
+        hostname: str,
+        policy: dict[str, Any],
+        retry_count: int,
+        should_cancel: Callable[[], bool] | None = None,
+        log_prefix: str = "Retrying after",
+    ) -> tuple[bool | None, int]:
+        """Handle a retriable transport exception.
+
+        Returns:
+            `(True, retry_count)` when caller should continue the retry loop,
+            `(False, retry_count)` when the request should stop due to cancellation.
+        """
+        self.logger.debug(f"Request exception for {url}: {exception}")
+        if attempt >= max_retries - 1:
+            raise exception
+        wait = self._compute_backoff(attempt, None, None, policy, hostname)
+        self.logger.debug(f"{log_prefix} {wait:.1f}s")
+        if not self._sleep_before_retry(wait, url=url, should_cancel=should_cancel):
+            return False, retry_count
+        return True, retry_count
 
     def _retry_request(
         self,
@@ -375,6 +474,7 @@ class HTTPClient:
         for attempt in range(max_retries):
             try:
                 self.logger.debug(f"Request attempt {attempt + 1}/{max_retries} for {url}")
+                self._wait_for_rate_limit(hostname, policy, should_cancel=should_cancel)
 
                 response = self.session.get(url, timeout=timeout, **kwargs)
 
@@ -382,39 +482,24 @@ class HTTPClient:
                 if self._is_retriable_error(response, None):
                     retry_count += 1
                     self.logger.debug(f"Retriable status {response.status_code} for {url}")
-
-                    # Calculate backoff
-                    wait = self._compute_backoff(
-                        attempt, response.status_code, response.headers.get("Retry-After"), policy, hostname
+                    should_continue, retry_count = self._retry_response_or_raise(
+                        response=response,
+                        attempt=attempt,
+                        max_retries=max_retries,
+                        url=url,
+                        hostname=hostname,
+                        policy=policy,
+                        retry_count=retry_count,
+                        should_cancel=should_cancel,
+                        rate_limit_log=(
+                            f"Rate limit error {response.status_code} for {hostname}, backing off {{wait:.1f}}s"
+                            if response.status_code in {403, 429}
+                            else None
+                        ),
                     )
-
-                    # Special handling for 403/429: break early
-                    if response.status_code in {403, 429}:
-                        self.logger.warning(
-                            f"Rate limit error {response.status_code} for {hostname}, backing off {wait:.1f}s"
-                        )
-                        if attempt < max_retries - 1:
-                            # Check cancellation before sleeping
-                            if should_cancel and should_cancel():
-                                self.logger.info(f"Request cancelled during backoff for {url}")
-                                return None, retry_count
-                            time.sleep(wait)
-                            continue
-                        else:
-                            # Last attempt, raise
-                            response.raise_for_status()
-
-                    # Other retriable errors
-                    if attempt < max_retries - 1:
-                        # Check cancellation before sleeping
-                        if should_cancel and should_cancel():
-                            self.logger.info(f"Request cancelled during backoff for {url}")
-                            return None, retry_count
-                        time.sleep(wait)
-                        continue
-                    else:
-                        # Last attempt
-                        response.raise_for_status()
+                    if should_continue is False:
+                        return None, retry_count
+                    continue
 
                 # Success or non-retriable error
                 response.raise_for_status()
@@ -423,20 +508,19 @@ class HTTPClient:
             except (requests.Timeout, requests.ConnectionError) as e:
                 last_exception = e
                 retry_count += 1
-                self.logger.debug(f"Request exception for {url}: {e}")
-
-                if attempt < max_retries - 1:
-                    # Calculate backoff
-                    wait = self._compute_backoff(attempt, None, None, policy, hostname)
-                    self.logger.debug(f"Retrying after {wait:.1f}s")
-                    # Check cancellation before sleeping
-                    if should_cancel and should_cancel():
-                        self.logger.info(f"Request cancelled during backoff for {url}")
-                        return None, retry_count
-                    time.sleep(wait)
-                else:
-                    # Last attempt, raise
-                    raise
+                should_continue, retry_count = self._retry_exception_or_raise(
+                    attempt=attempt,
+                    exception=e,
+                    max_retries=max_retries,
+                    url=url,
+                    hostname=hostname,
+                    policy=policy,
+                    retry_count=retry_count,
+                    should_cancel=should_cancel,
+                )
+                if should_continue is False:
+                    return None, retry_count
+                continue
 
             except requests.RequestException as e:
                 # Non-retriable request exception
@@ -511,17 +595,6 @@ class HTTPClient:
 
         # Get per-host semaphore for concurrency control
         semaphore = self._get_host_semaphore(hostname, policy)
-
-        # Get rate limiter for this host
-        rate_limiter = get_host_limiter(hostname)
-
-        # Wait for rate limiter
-        burst_window = int(self._get_setting(policy, "burst_window_s", 60))
-        burst_max = int(self._get_setting(policy, "burst_max_requests", 100))
-
-        if not rate_limiter.wait_turn(window_s=burst_window, max_requests=burst_max):
-            # Cancelled (should_cancel would need to be passed in)
-            raise requests.RequestException("Request cancelled during rate limiting")
 
         # Acquire concurrency semaphore
         acquired = semaphore.acquire(timeout=30)
@@ -598,143 +671,49 @@ class HTTPClient:
         data: bytes | str | None = None,
         **kwargs,
     ) -> requests.Response:
-        """POST request with retry, rate limiting, and timeout.
-
-        Similar to get() but supports POST with JSON or raw data payload.
-        Useful for API calls (OpenAI, Anthropic, etc).
-
-        Args:
-            url: Target URL
-            library_name: Optional library identifier for explicit policy lookup
-            timeout: Override timeout as (connect, read) tuple
-            retries: Override max retry attempts
-            headers: Additional headers to merge with defaults
-            json: JSON payload (automatically serialized and sets Content-Type)
-            data: Raw data payload (bytes or string)
-            **kwargs: Additional arguments passed to requests.Session.post()
-
-        Returns:
-            requests.Response object
-
-        Raises:
-            requests.RequestException: On unrecoverable failure
-
-        Examples:
-            >>> client.post("https://api.openai.com/v1/chat", json={"model": "gpt-4"})
-            >>> client.post("https://api.example.com/data", data=b"raw bytes")
-        """
+        """POST request with retry, rate limiting, and timeout."""
         start_time = time.time()
         hostname = urlparse(url).netloc or "unknown"
-
-        # Resolve effective policy
         policy = self._resolve_policy(url, library_name)
 
-        # Resolve timeout (parameter > policy > default)
         if timeout is None:
             connect_timeout = int(self._get_setting(policy, "connect_timeout_s", 10))
             read_timeout = int(self._get_setting(policy, "read_timeout_s", 30))
             timeout = (connect_timeout, read_timeout)
 
-        # Merge headers
         request_headers = dict(self.session.headers)
         if headers:
             request_headers.update(headers)
 
-        # Get per-host semaphore for concurrency control
         semaphore = self._get_host_semaphore(hostname, policy)
-
-        # Get rate limiter for this host
-        rate_limiter = get_host_limiter(hostname)
-
-        # Wait for rate limiter
-        burst_window = int(self._get_setting(policy, "burst_window_s", 60))
-        burst_max = int(self._get_setting(policy, "burst_max_requests", 100))
-
-        if not rate_limiter.wait_turn(window_s=burst_window, max_requests=burst_max):
-            raise requests.RequestException("Request cancelled during rate limiting")
-
-        # Acquire concurrency semaphore
         acquired = semaphore.acquire(timeout=30)
         if not acquired:
             raise requests.RequestException(f"Could not acquire semaphore for {hostname}")
 
         try:
-            # Override retries if provided
             if retries is not None:
                 policy = {**policy, "retry_max_attempts": retries}
 
-            # Execute POST request with retry logic
-            max_retries = int(self._get_setting(policy, "retry_max_attempts", 3))
-            retry_count = 0
-
-            for attempt in range(max_retries):
-                try:
-                    # Make POST request
-                    response = self.session.post(
-                        url,
-                        json=json,
-                        data=data,
-                        headers=request_headers,
-                        timeout=timeout,
-                        **kwargs,
-                    )
-
-                    # Check for rate limiting or server errors
-                    if response.status_code in {429, 500, 502, 503, 504}:
-                        retry_count += 1
-                        self.logger.debug(f"Retriable status {response.status_code} for POST {url}")
-
-                        # Calculate backoff
-                        wait = self._compute_backoff(
-                            attempt, response.status_code, response.headers.get("Retry-After"), policy, hostname
-                        )
-
-                        # Special handling for 403/429: break early
-                        if response.status_code in {403, 429}:
-                            self.logger.warning(
-                                f"Rate limit hit (POST {url}), waiting {wait:.1f}s. "
-                                f"Consider increasing burst_window_s or reducing concurrency."
-                            )
-                            time.sleep(wait)
-                            continue
-
-                        # For 5xx errors, retry
-                        if attempt < max_retries - 1:
-                            self.logger.debug(f"Retrying POST after {wait:.1f}s")
-                            time.sleep(wait)
-                            continue
-
-                    # Success or non-retriable error
-                    response.raise_for_status()
-
-                    # Update success metrics before returning
-                    response_time = time.time() - start_time
-                    self._update_metrics(
-                        success=True,
-                        hostname=hostname,
-                        response_time=response_time,
-                        retries=retry_count,
-                    )
-                    return response
-
-                except (requests.Timeout, requests.ConnectionError) as e:
-                    retry_count += 1
-                    self.logger.debug(f"POST request exception for {url}: {e}")
-
-                    if attempt < max_retries - 1:
-                        # Calculate backoff
-                        wait = self._compute_backoff(attempt, None, None, policy, hostname)
-                        self.logger.debug(f"Retrying POST after {wait:.1f}s")
-                        time.sleep(wait)
-                    else:
-                        # Last attempt, raise
-                        raise
-
-            # If we get here, all retries exhausted
-            raise requests.RequestException(f"POST request failed after {max_retries} attempts: {url}")
+            response, retry_count = self._post_with_retries(
+                url=url,
+                policy=policy,
+                hostname=hostname,
+                timeout=timeout,
+                headers=request_headers,
+                json_payload=json,
+                data=data,
+                **kwargs,
+            )
+            response_time = time.time() - start_time
+            self._update_metrics(
+                success=True,
+                hostname=hostname,
+                response_time=response_time,
+                retries=retry_count,
+            )
+            return response
 
         except requests.Timeout:
-            # Update metrics on timeout
             response_time = time.time() - start_time
             self._update_metrics(
                 success=False,
@@ -746,9 +725,8 @@ class HTTPClient:
             raise
 
         except requests.RequestException as e:
-            # Update metrics on other failures
             response_time = time.time() - start_time
-            rate_limited = "429" in str(e) or "rate limit" in str(e).lower()
+            rate_limited = any(token in str(e).lower() for token in ("403", "429", "rate limit"))
             self._update_metrics(
                 success=False,
                 hostname=hostname,
@@ -759,9 +737,78 @@ class HTTPClient:
             raise
 
         finally:
-            # Only release if we successfully acquired
             if acquired:
                 semaphore.release()
+
+    def _post_with_retries(
+        self,
+        *,
+        url: str,
+        policy: dict[str, Any],
+        hostname: str,
+        timeout: tuple[int, int],
+        headers: dict[str, str],
+        json_payload: dict | None,
+        data: bytes | str | None,
+        **kwargs,
+    ) -> tuple[requests.Response, int]:
+        """POST request with retry, rate limiting, and timeout."""
+        max_retries = int(self._get_setting(policy, "retry_max_attempts", 3))
+        retry_count = 0
+
+        for attempt in range(max_retries):
+            try:
+                self._wait_for_rate_limit(hostname, policy)
+                response = self.session.post(
+                    url,
+                    json=json_payload,
+                    data=data,
+                    headers=headers,
+                    timeout=timeout,
+                    **kwargs,
+                )
+            except (requests.Timeout, requests.ConnectionError) as e:
+                retry_count += 1
+                should_continue, retry_count = self._retry_exception_or_raise(
+                    attempt=attempt,
+                    exception=e,
+                    max_retries=max_retries,
+                    url=url,
+                    hostname=hostname,
+                    policy=policy,
+                    retry_count=retry_count,
+                    log_prefix="Retrying POST after",
+                )
+                if should_continue:
+                    continue
+                raise requests.RequestException(f"POST request cancelled during backoff: {url}") from e
+
+            if response.status_code in {403, 429, 500, 502, 503, 504}:
+                retry_count += 1
+                self.logger.debug(f"Retriable status {response.status_code} for POST {url}")
+                should_continue, retry_count = self._retry_response_or_raise(
+                    response=response,
+                    attempt=attempt,
+                    max_retries=max_retries,
+                    url=url,
+                    hostname=hostname,
+                    policy=policy,
+                    retry_count=retry_count,
+                    rate_limit_log=(
+                        f"Rate limit hit (POST {url}), waiting {{wait:.1f}}s. "
+                        "Consider increasing burst_window_s or reducing concurrency."
+                        if response.status_code in {403, 429}
+                        else None
+                    ),
+                )
+                if should_continue:
+                    continue
+                raise requests.RequestException(f"POST request cancelled during backoff: {url}")
+
+            response.raise_for_status()
+            return response, retry_count
+
+        raise requests.RequestException(f"POST request failed after {max_retries} attempts: {url}")
 
     def get_json(
         self,

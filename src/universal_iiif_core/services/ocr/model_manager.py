@@ -61,7 +61,9 @@ class ModelManager:
         # Initialize HTTPClient for model downloads
         # Use default network policy (no library-specific policy needed for Zenodo)
         from ...config_manager import get_config_manager
-        self.http_client = HTTPClient(network_policy=get_config_manager().data.get("settings", {}))
+
+        network_policy = get_config_manager().data.get("settings", {}).get("network", {})
+        self.http_client = HTTPClient(network_policy=network_policy)
 
     def list_installed_models(self) -> list[str]:
         """Returns a list of installed `.mlmodel` file names."""
@@ -232,6 +234,7 @@ class ModelManager:
     def _download_file(self, download_url: str, dest: Path) -> tuple[bool, str]:
         """Download model file with HTTPClient and streaming."""
         tmp = dest.with_suffix(dest.suffix + ".part")
+        response = None
         try:
             # Use HTTPClient for download with longer timeout for large files
             response = self.http_client.get(download_url, stream=True, timeout=(10, 120))
@@ -250,6 +253,9 @@ class ModelManager:
             except OSError:
                 pass
             return False, f"Download failed: {e}"
+        finally:
+            if response is not None:
+                response.close()
         return True, f"Downloaded model to: {dest.name}"
 
     def download_model(

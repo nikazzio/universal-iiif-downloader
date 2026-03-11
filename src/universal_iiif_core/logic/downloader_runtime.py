@@ -174,6 +174,7 @@ def _download_missing_canvases(
     """Download missing pages using ThreadPoolExecutor and update progress and stats.
 
     Args:
+        self: Downloader instance
         to_download: List of (local_idx, canvas_idx, canvas) tuples to download
         downloaded: List tracking downloaded filenames (None if not yet downloaded)
         page_stats: List to accumulate page statistics
@@ -233,6 +234,7 @@ def _emit_canvas_progress(
     """Emit progress update without double-counting.
 
     Args:
+        self: Downloader instance
         downloaded: List of filenames for current canvas_plan (None if not yet downloaded)
         total_canvases: Total pages in the full manuscript
         progress_callback: Callback to report (completed, total)

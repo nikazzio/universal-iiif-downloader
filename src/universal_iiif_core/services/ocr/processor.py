@@ -193,7 +193,9 @@ class GoogleVisionProvider:
         self.api_key = api_key
         # Initialize HTTPClient for API calls
         from ...config_manager import get_config_manager
-        self.http_client = HTTPClient(network_policy=get_config_manager().data.get("settings", {}))
+
+        network_policy = get_config_manager().data.get("settings", {}).get("network", {})
+        self.http_client = HTTPClient(network_policy=network_policy)
 
     def process(self, image: Image.Image, status_callback: Callable[[str], None] | None = None) -> OCRResult:
         """Send the image to Google Vision for OCR."""
@@ -244,7 +246,9 @@ class HFInferenceProvider:
         self.model_id = model_id
         # Initialize HTTPClient for API calls
         from ...config_manager import get_config_manager
-        self.http_client = HTTPClient(network_policy=get_config_manager().data.get("settings", {}))
+
+        network_policy = get_config_manager().data.get("settings", {}).get("network", {})
+        self.http_client = HTTPClient(network_policy=network_policy)
 
     def process(self, image: Image.Image, status_callback: Callable[[str], None] | None = None) -> OCRResult:
         """Submit the image to Hugging Face for OCR."""
