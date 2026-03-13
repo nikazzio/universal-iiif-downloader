@@ -25,7 +25,9 @@ The application is strictly divided into two main layers. The **UI Layer** depen
 * **Discovery Module**:
   * **Provider Registry**: A shared provider catalog drives web Discovery, settings options, and CLI direct resolution from the same metadata source.
   * **Resolvers**: Direct resolution still ends in provider-specific resolver classes, but registration happens through the provider registry rather than UI/CLI hardcoding.
-  * **Search**: Search remains provider-specific and optional. Today it includes Gallica SRU plus fallback search adapters where APIs are limited (`Vaticana`, `Institut de France`).
+  * **Search Modes**: Each provider declares `search_mode` (`direct`, `fallback`, `search_first`) plus an optional `search_strategy`. This keeps the UX consistent while allowing provider-specific search adapters.
+  * **Search Coverage**: Current searchable providers are `Gallica`, `Vaticana`, `Institut de France`, `Internet Archive`, `Bodleian`, and `e-codices`. The remaining providers are currently direct-resolution only.
+  * **Result Contract**: Provider adapters return canonical `SearchResult` payloads. `viewer_url` is the normalized field for source viewer links; `raw` remains available only for provider-specific extras.
 * **Downloader Logic**:
   * Implements the **Golden Flow** (Native PDF check -> Extraction -> Fallback to IIIF).
   * Manages threading and DB updates.
@@ -53,11 +55,11 @@ The application is strictly divided into two main layers. The **UI Layer** depen
 ### 1. Discovery, Library Add, and Resolution
 
 1. **User Input**: The user enters free text, shelfmark (e.g., "Urb.lat.1779"), an ID, or a URL.
-2. **Dispatcher**: `resolve_shelfmark` detects the library signature and selects the correct strategy.
-3. **Provider Resolution**: The selected provider decides whether to try direct resolution first, search first, or direct resolution with search fallback.
-4. **Normalization**: The resolver converts "dirty" inputs into a canonical IIIF Manifest URL.
-5. **Provider Filter Stage**: Optional provider-specific filters are applied before preview rendering (for example Gallica type filters).
-6. **Preview**: The UI fetches basic metadata and lazy-checks native PDF availability.
+2. **Provider Lookup**: Discovery resolves the selected library through the shared provider registry.
+3. **Provider Resolution**: The provider decides whether to try direct resolution first, search first, or direct resolution with search fallback.
+4. **Normalization**: Provider resolvers convert "dirty" inputs into canonical IIIF Manifest URLs only when `can_resolve()` positively identifies the input as direct.
+5. **Search Adapter Stage**: Optional provider-specific filters are applied before invoking the provider search adapter (for example the Gallica type filter).
+6. **Preview / Result List**: Search adapters return canonical `SearchResult` entries; direct resolution fetches manifest details for preview and lazy-checks native PDF availability.
 7. **Action Split**: From each result, the user can either add to local Library (`saved`) or add + enqueue download.
 
 ### 2. Download Manager + Golden Flow
@@ -126,6 +128,7 @@ Studio supports **two distinct viewing modes** for the Mirador viewer, automatic
 4. **Pure HTTP Front-end**: No heavy client-side frameworks (React/Vue). The UI logic is driven by Python via FastHTML and HTMX.
 5. **Studio PR3 route scope (decision log, 2026-03-05)**: do not add dedicated `/studio/partial/viewer` and `/studio/partial/availability` routes for now. Keep viewer gating and availability in the main `/studio` flow to avoid route surface growth and duplicated state logic. Re-evaluate only if measured UI payload/latency or independent refresh requirements justify a split.
 6. **Centralized HTTP Client (Issue #71, 2026-03-09)**: Eliminated ~200+ lines of duplicate retry/backoff logic by introducing `HTTPClient` class with automatic retry, exponential backoff, per-host rate limiting, and metrics. All IIIF core modules now use this centralized client.
+7. **Current Discovery Refactor Boundary (2026-03-14)**: The provider registry is shared and stable, but `universal_iiif_core.resolvers.discovery` still mixes orchestration with provider-specific adapters/parsers, and `studio_ui.components.discovery` remains a large renderer. Further file-splitting should happen in a dedicated refactor, not opportunistically inside feature PRs.
 
 ## Local Data & Cleanup
 

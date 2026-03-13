@@ -37,8 +37,8 @@ ECODICES_SEARCH_URL: Final = "https://www.e-codices.unifr.ch/en/search/all"
 VATICAN_HOME_URL: Final = "https://digi.vatlib.it/mss/"
 VATICAN_SEARCH_URL: Final = "https://digi.vatlib.it/mss/search"
 
-# HEADER REALI PER EVITARE IL BAN (Errore 500/403)
-# Gallica blocca le richieste se non sembrano provenire da un browser.
+# Browser-like headers are required for several catalog/search surfaces that reject
+# generic scripted requests with 403/500 responses.
 REAL_BROWSER_HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -214,6 +214,18 @@ def _search_with_provider(
     return handler(text, payload)
 
 
+def _try_provider_direct_resolution(provider: IIIFProvider, text: str) -> tuple[str | None, str | None]:
+    """Attempt direct resolution only when the provider explicitly claims the input.
+
+    This guard is important for providers with free-text search support: we only want to
+    bypass search when the input is a plausible direct identifier or provider URL.
+    """
+    resolver = provider.resolver()
+    if not resolver.can_resolve(text):
+        return None, None
+    return resolve_shelfmark(provider.key, text)
+
+
 def resolve_provider_input(
     library: str,
     user_input: str,
@@ -232,21 +244,19 @@ def resolve_provider_input(
         results = _search_with_provider(provider, text, filters=filter_payload)
         if results:
             return ProviderResolution(provider=provider, status="results", results=results)
-        if provider.resolver().can_resolve(text):
-            manifest_url, doc_id = resolve_shelfmark(provider.key, text)
-            if manifest_url:
-                return ProviderResolution(
-                    provider=provider,
-                    status="manifest",
-                    manifest_url=manifest_url,
-                    doc_id=doc_id,
-                )
+        manifest_url, doc_id = _try_provider_direct_resolution(provider, text)
+        if manifest_url:
+            return ProviderResolution(
+                provider=provider,
+                status="manifest",
+                manifest_url=manifest_url,
+                doc_id=doc_id,
+            )
         return ProviderResolution(provider=provider, status="not_found", not_found_hint=provider.not_found_hint)
 
-    if provider.resolver().can_resolve(text):
-        manifest_url, doc_id = resolve_shelfmark(provider.key, text)
-        if manifest_url:
-            return ProviderResolution(provider=provider, status="manifest", manifest_url=manifest_url, doc_id=doc_id)
+    manifest_url, doc_id = _try_provider_direct_resolution(provider, text)
+    if manifest_url:
+        return ProviderResolution(provider=provider, status="manifest", manifest_url=manifest_url, doc_id=doc_id)
 
     if provider.supports_search():
         results = _search_with_provider(provider, text, filters=filter_payload)
@@ -467,6 +477,7 @@ def search_archive_org(query: str, max_results: int = 12) -> list[SearchResult]:
             "manifest": manifest_url,
             "thumbnail": thumb,
             "thumb": thumb,
+            "viewer_url": f"https://archive.org/details/{doc_id}",
             "library": "Archive.org",
             "publisher": "Internet Archive",
             "raw": {
@@ -602,6 +613,7 @@ def _fetch_institut_manifest_result(
     if not parsed.get("title") or parsed.get("title") == doc_id:
         parsed["title"] = fallback_title
     parsed["library"] = "Institut de France"
+    parsed["viewer_url"] = INSTITUT_VIEWER_URL.format(doc_id=doc_id)
     parsed.setdefault("raw", {})
     parsed["raw"]["viewer_url"] = INSTITUT_VIEWER_URL.format(doc_id=doc_id)
     return parsed
@@ -615,6 +627,7 @@ def _fallback_institut_result(doc_id: str, title: str, manifest_url: str) -> Sea
         "manifest": manifest_url,
         "thumbnail": "",
         "thumb": "",
+        "viewer_url": INSTITUT_VIEWER_URL.format(doc_id=doc_id),
         "library": "Institut de France",
         "raw": {"viewer_url": INSTITUT_VIEWER_URL.format(doc_id=doc_id)},
     }
@@ -699,6 +712,7 @@ def _build_bodleian_result(member: dict[str, Any], resolver: OxfordResolver) -> 
         "manifest": manifest_url,
         "thumbnail": thumbnail,
         "thumb": thumbnail,
+        "viewer_url": viewer_url,
         "library": "Bodleian",
         "raw": {"viewer_url": viewer_url},
     }
@@ -741,6 +755,7 @@ def _build_ecodices_result(chunk: str, resolver: EcodicesResolver) -> SearchResu
         "manifest": manifest_url,
         "thumbnail": thumbnail,
         "thumb": thumbnail,
+        "viewer_url": viewer_url,
         "library": "e-codices",
         "raw": {"viewer_url": viewer_url},
     }
@@ -785,13 +800,14 @@ def get_manifest_details(manifest_url: str) -> SearchResult | None:
 
 
 def search_vatican(query: str, max_results: int = 5) -> list[SearchResult]:
-    """Search Vatican Library by generating shelfmark variants.
+    """Search Vatican Library through a hybrid strategy.
 
-    Since Vatican doesn't have a public search API, we try common shelfmark
-    patterns and verify which manifests actually exist.
+    We first try direct shelfmark normalization and a few historical heuristics for
+    common manuscript patterns. If that fails and the query looks like free text, we
+    fall back to DigiVatLib's public manuscripts search flow.
 
     Args:
-        query: User input (e.g., "1223", "Urb lat 1223", "Vat.gr.123")
+        query: User input (e.g., "1223", "Urb lat 1223", "Vat.gr.123", "dante")
         max_results: Maximum number of results to return
 
     Returns:
@@ -896,7 +912,11 @@ def _query_can_use_vatican_text_search(query: str) -> bool:
 
 
 def _search_vatican_official_site(query: str, max_results: int = 5) -> list[SearchResult]:
-    """Use DigiVatLib's public manuscripts search flow for free-text queries."""
+    """Use DigiVatLib's public manuscripts search flow for free-text queries.
+
+    The result page rejects cold requests from non-browser clients, so we first prime the
+    session on the manuscripts landing page and then send the actual search with a referer.
+    """
     if not (q := (query or "").strip()):
         return []
 
@@ -946,6 +966,7 @@ def _build_vatican_html_result(chunk: str) -> SearchResult | None:
         "manifest": _build_vatican_manifest_url(doc_id),
         "thumbnail": thumb,
         "thumb": thumb,
+        "viewer_url": f"https://digi.vatlib.it/view/{doc_id}",
         "library": "Vaticana",
         "raw": {"viewer_url": f"https://digi.vatlib.it/view/{doc_id}"},
     }
@@ -989,6 +1010,7 @@ def _verify_vatican_manifest(manifest_url: str, ms_id: str, resolver) -> SearchR
             "manifest": manifest_url,
             "thumbnail": thumb_url or "",
             "thumb": thumb_url or "",
+            "viewer_url": f"https://digi.vatlib.it/view/{ms_id}",
             "library": "Vaticana",
             "language": meta_map.get("language", ""),
             "publisher": meta_map.get("publisher", meta_map.get("source", "")),

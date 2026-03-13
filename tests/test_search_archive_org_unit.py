@@ -60,6 +60,7 @@ def test_search_archive_org_parses_advancedsearch_docs(monkeypatch):
     assert first["publisher"] == "Internet Archive"
     assert first["date"] == "1909"
     assert "Subject-index" in first["title"]
+    assert first["viewer_url"] == "https://archive.org/details/b29000427_0001"
     assert "archive.org/details/b29000427_0001" in first["raw"]["viewer_url"]
     assert first["thumbnail"].startswith("https://iiif.archive.org/image/iiif/2/")
 

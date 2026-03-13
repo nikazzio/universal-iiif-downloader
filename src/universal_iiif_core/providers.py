@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Literal
 
 from universal_iiif_core.logger import get_logger
 from universal_iiif_core.resolvers.archive_org import ArchiveOrgResolver
@@ -17,6 +18,9 @@ from universal_iiif_core.resolvers.oxford import OxfordResolver
 from universal_iiif_core.resolvers.vatican import VaticanResolver
 
 logger = get_logger(__name__)
+
+SearchStrategy = Literal["archive_org", "bodleian", "ecodices", "gallica", "institut", "vatican"]
+SearchMode = Literal["direct", "fallback", "search_first"]
 
 
 @dataclass(frozen=True)
@@ -44,8 +48,8 @@ class IIIFProvider:
     label: str
     aliases: tuple[str, ...]
     resolver_cls: type[BaseResolver]
-    search_strategy: str | None = None
-    search_mode: str = "direct"
+    search_strategy: SearchStrategy | None = None
+    search_mode: SearchMode = "direct"
     filters: tuple[ProviderFilter, ...] = ()
     not_found_hint: str = "Verifica la segnatura."
     placeholder: str = "Inserisci ID, URL o testo libero"
@@ -198,7 +202,7 @@ _PROVIDER_BY_KEY = {provider.key: provider for provider in PROVIDERS}
 
 def iter_providers(*, include_generic: bool = True, ui_only: bool = False) -> list[IIIFProvider]:
     """Return provider descriptors in stable UI/CLI order."""
-    providers = list(PROVIDERS)
+    providers = sorted(PROVIDERS, key=lambda provider: (provider.sort_order, provider.label.lower()))
     if not include_generic:
         providers = [provider for provider in providers if provider.key != "Unknown"]
     if ui_only:
@@ -221,6 +225,17 @@ def get_provider(value: str | None, fallback: str = "Vaticana") -> IIIFProvider:
         if lowered in provider.aliases:
             return provider
     return _PROVIDER_BY_KEY.get(fallback, _PROVIDER_BY_KEY["Unknown"])
+
+
+def is_known_provider(value: str | None) -> bool:
+    """Return True when the supplied value maps to an explicit provider/alias."""
+    text = str(value or "").strip()
+    if not text:
+        return False
+    provider = get_provider(text, fallback="Unknown")
+    if text == provider.key or text.lower() == provider.label.lower():
+        return True
+    return text.lower() in provider.aliases
 
 
 def provider_library_options() -> list[tuple[str, str]]:
@@ -255,6 +270,7 @@ __all__ = [
     "ProviderFilter",
     "ProviderFilterOption",
     "get_provider",
+    "is_known_provider",
     "iter_providers",
     "normalize_provider_value",
     "provider_library_options",

@@ -85,6 +85,33 @@ Direct resolution is shared across web and CLI for these providers:
 - Library of Congress
 - Internet Archive
 
+Current discovery search coverage:
+- `search_first`: Gallica, Internet Archive
+- `fallback`: Vaticana, Institut de France
+- `direct + search adapter`: Bodleian, e-codices
+- `direct only`: Heidelberg, Cambridge, Harvard, Library of Congress, generic direct manifest URLs
+
+Provider behavior summary:
+
+| Provider | Direct resolution | Free-text search | Notes |
+| --- | --- | --- | --- |
+| Vaticana | Yes | Yes | Hybrid flow: shelfmark heuristics first, DigiVatLib manuscripts search fallback for free text |
+| Gallica | Yes | Yes | Uses SRU search and optional type filter |
+| Institut de France | Yes | Yes | HTML search + manifest enrichment |
+| Bodleian | Yes | Yes | JSON-LD search surface |
+| Heidelberg | Yes | No | Direct resolver only for now |
+| Cambridge | Yes | No | Direct resolver only for now |
+| e-codices | Yes | Yes | HTML search surface |
+| Harvard | Yes | No | Direct resolver only for now |
+| Library of Congress | Yes | No | Direct resolver only; live manifest fetch may still be host-blocked in some environments |
+| Internet Archive | Yes | Yes | `advancedsearch.php` + IIIF manifest validation |
+| Altro / URL Diretto | Yes | No | Generic direct manifest resolution |
+
+Search result contract:
+- discovery providers return canonical `SearchResult` items with `manifest`, `library`, and `id`
+- providers should populate `viewer_url` when they know the source viewer URL
+- `raw` is still available for provider-specific metadata, but UI code should not depend on `raw["viewer_url"]` anymore
+
 ## Configuration
 
 Runtime configuration is read from `config.json` through `universal_iiif_core.config_manager`.

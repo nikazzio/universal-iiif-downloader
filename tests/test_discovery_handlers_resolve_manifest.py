@@ -223,6 +223,7 @@ def test_resolve_manifest_archive_search_results_list(monkeypatch):
                     "title": "Subject-index of the London Library",
                     "manifest": "https://iiif.archive.org/iiif/b29000427_0001/manifest.json",
                     "thumbnail": "https://iiif.archive.org/image/iiif/2/b29000427_0001%2F__ia_thumb.jpg/full/180,/0/default.jpg",
+                    "viewer_url": "https://archive.org/details/b29000427_0001",
                     "raw": {"viewer_url": "https://archive.org/details/b29000427_0001"},
                 }
             ],
@@ -249,6 +250,7 @@ def test_resolve_manifest_bodleian_results_include_provider_viewer_link(monkeypa
                     "title": "Divine Comedy.",
                     "manifest": "https://iiif.bodleian.ox.ac.uk/iiif/manifest/cb1df5f1-7435-468b-8860-d56db988b929.json",
                     "thumbnail": "https://iiif.bodleian.ox.ac.uk/iiif/image/test/full/255,/0/default.jpg",
+                    "viewer_url": "https://digital.bodleian.ox.ac.uk/objects/cb1df5f1-7435-468b-8860-d56db988b929/",
                     "raw": {
                         "viewer_url": "https://digital.bodleian.ox.ac.uk/objects/cb1df5f1-7435-468b-8860-d56db988b929/"
                     },
@@ -277,6 +279,7 @@ def test_resolve_manifest_ecodices_results_include_provider_viewer_link(monkeypa
                     "title": "Dante, Inferno e Purgatorio (Codex Guarneri)",
                     "manifest": "https://www.e-codices.unifr.ch/metadata/iiif/fmb-cb-0055/manifest.json",
                     "thumbnail": "https://www.e-codices.unifr.ch/loris/fmb/fmb-cb-0055/fmb-cb-0055_0021v.jp2/full/180,/0/default.jpg",
+                    "viewer_url": "https://www.e-codices.unifr.ch/en/fmb/cb-0055",
                     "raw": {"viewer_url": "https://www.e-codices.unifr.ch/en/fmb/cb-0055"},
                 }
             ],

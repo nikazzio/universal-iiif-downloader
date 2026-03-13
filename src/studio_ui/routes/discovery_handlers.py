@@ -28,6 +28,7 @@ from universal_iiif_core.config_manager import get_config_manager
 from universal_iiif_core.iiif_logic import total_canvases
 from universal_iiif_core.jobs import job_manager
 from universal_iiif_core.logger import get_logger
+from universal_iiif_core.providers import is_known_provider
 from universal_iiif_core.resolvers.discovery import resolve_provider_input
 from universal_iiif_core.resolvers.parsers import IIIFManifestParser
 from universal_iiif_core.services.storage.vault_manager import VaultManager
@@ -487,6 +488,8 @@ def resolve_manifest(library: str, shelfmark: str, gallica_type: str = "all"):
     try:
         if not shelfmark or not shelfmark.strip():
             return _with_feedback_toast("Input mancante", "Inserisci una segnatura o una parola chiave.", tone="danger")
+        if not is_known_provider(library):
+            raise ValueError("Biblioteca non valida.")
 
         logger.info("Resolving: lib=%s input=%s", library, shelfmark)
 

@@ -30,6 +30,65 @@ from studio_ui.library_options import library_options
 from universal_iiif_core.providers import iter_providers
 
 
+def _provider_viewer_fallback(library: str, doc_id: str, ark: str = "") -> str:
+    if library == "Gallica" and ark:
+        return f"https://gallica.bnf.fr/{ark}"
+    if library == "Gallica" and doc_id:
+        return f"https://gallica.bnf.fr/ark:/12148/{doc_id}"
+    if library == "Vaticana" and doc_id:
+        return f"https://digi.vatlib.it/view/{doc_id}"
+    if library == "Institut de France" and doc_id:
+        return f"https://bibnum.institutdefrance.fr/viewer/{doc_id}"
+    if library == "Bodleian" and doc_id:
+        return f"https://digital.bodleian.ox.ac.uk/objects/{doc_id}"
+    if library == "Archive.org" and doc_id:
+        return f"https://archive.org/details/{doc_id}"
+    return ""
+
+
+def _resolve_viewer_url(data: dict) -> str:
+    """Return the provider viewer URL from normalized result data.
+
+    Newer provider adapters should set `viewer_url` directly. The `raw["viewer_url"]`
+    fallback is kept for older adapters and manifest-parser paths that have not been
+    migrated yet.
+    """
+    viewer_url = str(data.get("viewer_url") or "").strip()
+    raw = data.get("raw")
+    if not viewer_url and isinstance(raw, dict):
+        viewer_url = str(raw.get("viewer_url") or "").strip()
+    if viewer_url:
+        return viewer_url
+    return _provider_viewer_fallback(
+        str(data.get("library") or ""),
+        str(data.get("id") or ""),
+        str(data.get("ark") or ""),
+    )
+
+
+def _build_discovery_hx_vals(manifest_url: str, doc_id: str, library: str, result_title: str) -> str:
+    return json.dumps(
+        {
+            "manifest_url": manifest_url,
+            "doc_id": doc_id,
+            "library": library,
+            "result_title": result_title,
+        },
+        ensure_ascii=True,
+    )
+
+
+def _build_pdf_badge(manifest_url: str, badge_id: str, *, cls: str) -> Div:
+    return Div(
+        "PDF: verifica automatica…",
+        id=badge_id,
+        hx_get=f"/api/discovery/pdf_capability?manifest_url={quote(manifest_url, safe='')}",
+        hx_trigger="load",
+        hx_swap="outerHTML",
+        cls=cls,
+    )
+
+
 def render_search_results_list(results: list) -> Div:
     """Render list of search results aligned with global app theme."""
     cards = []
@@ -39,42 +98,17 @@ def render_search_results_list(results: list) -> Div:
         date = str(item.get("date") or "")
         language = str(item.get("language") or "")
         publisher = str(item.get("publisher") or "")
-        ark = str(item.get("ark") or "")
         library = str(item.get("library") or "Gallica")
         description = str(item.get("description") or "")
         thumb = item.get("thumbnail")
         doc_id = str(item.get("id") or "")
         manifest_url = str(item.get("manifest") or "")
-        raw = item.get("raw")
-
-        viewer_url = str(raw.get("viewer_url") or "") if isinstance(raw, dict) else ""
-        if not viewer_url and library == "Gallica" and ark:
-            viewer_url = f"https://gallica.bnf.fr/{ark}"
-        elif not viewer_url and library == "Gallica" and doc_id:
-            viewer_url = f"https://gallica.bnf.fr/ark:/12148/{doc_id}"
-        elif not viewer_url and library == "Vaticana" and doc_id:
-            viewer_url = f"https://digi.vatlib.it/view/{doc_id}"
-        elif not viewer_url and library == "Institut de France" and doc_id:
-            viewer_url = f"https://bibnum.institutdefrance.fr/viewer/{doc_id}"
-        elif not viewer_url and library == "Archive.org" and doc_id:
-            viewer_url = f"https://archive.org/details/{doc_id}"
-
-        hx_vals = json.dumps(
-            {
-                "manifest_url": manifest_url,
-                "doc_id": doc_id,
-                "library": library,
-                "result_title": title,
-            },
-            ensure_ascii=True,
-        )
+        viewer_url = _resolve_viewer_url(item)
+        hx_vals = _build_discovery_hx_vals(manifest_url, doc_id, library, title)
         badge_id = f"pdf-badge-{(doc_id or 'item').replace(' ', '-').replace('/', '-')[:28]}"
-        pdf_badge = Div(
-            "PDF: verifica automatica…",
-            id=badge_id,
-            hx_get=f"/api/discovery/pdf_capability?manifest_url={quote(manifest_url, safe='')}",
-            hx_trigger="load",
-            hx_swap="outerHTML",
+        pdf_badge = _build_pdf_badge(
+            manifest_url,
+            badge_id,
             cls="app-chip app-chip-neutral text-[11px] tracking-wide",
         )
 
@@ -406,18 +440,7 @@ def render_preview(data: dict) -> Div:
         )
 
     # Link al viewer originale
-    raw = data.get("raw")
-    viewer_url = str(raw.get("viewer_url") or "") if isinstance(raw, dict) else ""
-    if not viewer_url and library == "Gallica":
-        viewer_url = f"https://gallica.bnf.fr/ark:/12148/{doc_id}"
-    elif not viewer_url and library == "Vaticana":
-        viewer_url = f"https://digi.vatlib.it/view/{doc_id}"
-    elif not viewer_url and library == "Institut de France":
-        viewer_url = f"https://bibnum.institutdefrance.fr/viewer/{doc_id}"
-    elif not viewer_url and library == "Bodleian":
-        viewer_url = f"https://digital.bodleian.ox.ac.uk/objects/{doc_id}"
-    elif not viewer_url and library == "Archive.org":
-        viewer_url = f"https://archive.org/details/{doc_id}"
+    viewer_url = _resolve_viewer_url(data)
 
     viewer_link = (
         A(
@@ -457,12 +480,9 @@ def render_preview(data: dict) -> Div:
         meta_items.append(Span("Solo immagini", cls="text-xs bg-amber-800 text-amber-100 px-2 py-1 rounded"))
     else:
         meta_items.append(
-            Div(
-                "PDF: verifica automatica…",
-                id="preview-pdf-badge",
-                hx_get=f"/api/discovery/pdf_capability?manifest_url={quote(str(manifest_url or ''), safe='')}",
-                hx_trigger="load",
-                hx_swap="outerHTML",
+            _build_pdf_badge(
+                str(manifest_url or ""),
+                "preview-pdf-badge",
                 cls="text-xs bg-slate-700 text-slate-300 px-2 py-1 rounded",
             )
         )
@@ -484,14 +504,11 @@ def render_preview(data: dict) -> Div:
         cls="flex-grow",
     )
 
-    hx_vals = json.dumps(
-        {
-            "manifest_url": str(manifest_url or ""),
-            "doc_id": str(doc_id or ""),
-            "library": str(library or ""),
-            "result_title": result_title,
-        },
-        ensure_ascii=True,
+    hx_vals = _build_discovery_hx_vals(
+        str(manifest_url or ""),
+        str(doc_id or ""),
+        str(library or ""),
+        result_title,
     )
     download_form = Div(
         Button(

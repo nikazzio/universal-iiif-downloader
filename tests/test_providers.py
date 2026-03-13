@@ -1,4 +1,10 @@
-from universal_iiif_core.providers import get_provider, provider_library_options, resolve_with_provider
+from universal_iiif_core.providers import (
+    get_provider,
+    is_known_provider,
+    iter_providers,
+    provider_library_options,
+    resolve_with_provider,
+)
 
 
 def test_get_provider_accepts_legacy_values_and_labels():
@@ -8,6 +14,13 @@ def test_get_provider_accepts_legacy_values_and_labels():
     assert get_provider("Bodleian (Oxford)").key == "Bodleian"
     assert get_provider("Altro / URL Diretto").key == "Unknown"
     assert get_provider("", fallback="DoesNotExist").key == "Unknown"
+
+
+def test_is_known_provider_distinguishes_invalid_values():
+    """Route handlers should be able to reject invalid provider names at the boundary."""
+    assert is_known_provider("Vaticana") is True
+    assert is_known_provider("Altro / URL Diretto") is True
+    assert is_known_provider("InvalidLibrary") is False
 
 
 def test_provider_library_options_exposes_new_direct_providers():
@@ -24,6 +37,13 @@ def test_provider_search_capabilities_cover_bodleian_and_ecodices():
     assert get_provider("Bodleian").supports_search() is True
     assert get_provider("e-codices").supports_search() is True
     assert get_provider("Cambridge").supports_search() is False
+
+
+def test_iter_providers_respects_explicit_sort_order():
+    """UI/CLI ordering should follow provider metadata rather than tuple declaration luck."""
+    ordered_keys = [provider.key for provider in iter_providers()]
+    assert ordered_keys[:5] == ["Vaticana", "Gallica", "Institut de France", "Bodleian", "Heidelberg"]
+    assert ordered_keys[-1] == "Unknown"
 
 
 def test_resolve_with_provider_uses_shared_registry_for_new_resolvers():

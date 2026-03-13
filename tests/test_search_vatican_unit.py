@@ -129,6 +129,7 @@ def test_search_vatican_uses_official_text_search_for_free_text(monkeypatch):
                 "manifest": "https://digi.vatlib.it/iiif/MSS_Arch.Cap.S.Pietro.H.14/manifest.json",
                 "thumbnail": "https://digi.vatlib.it/pub/digit/MSS_Arch.Cap.S.Pietro.H.14/cover/cover.jpg",
                 "thumb": "https://digi.vatlib.it/pub/digit/MSS_Arch.Cap.S.Pietro.H.14/cover/cover.jpg",
+                "viewer_url": "https://digi.vatlib.it/view/MSS_Arch.Cap.S.Pietro.H.14",
                 "library": "Vaticana",
                 "raw": {"viewer_url": "https://digi.vatlib.it/view/MSS_Arch.Cap.S.Pietro.H.14"},
             }
@@ -179,6 +180,7 @@ def test_build_vatican_html_result_parses_search_record():
     assert "Dante Alighieri" in result["description"]
     assert result["manifest"] == "https://digi.vatlib.it/iiif/MSS_Arch.Cap.S.Pietro.H.14/manifest.json"
     assert result["thumbnail"] == "https://digi.vatlib.it/pub/digit/MSS_Arch.Cap.S.Pietro.H.14/cover/cover.jpg"
+    assert result["viewer_url"] == "https://digi.vatlib.it/view/MSS_Arch.Cap.S.Pietro.H.14"
     assert result["raw"]["viewer_url"] == "https://digi.vatlib.it/view/MSS_Arch.Cap.S.Pietro.H.14"
 
 
