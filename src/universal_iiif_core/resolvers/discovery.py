@@ -34,6 +34,8 @@ INSTITUT_SEARCH_URL: Final = "https://bibnum.institutdefrance.fr/records/default
 INSTITUT_VIEWER_URL: Final = "https://bibnum.institutdefrance.fr/viewer/{doc_id}"
 BODLEIAN_SEARCH_URL: Final = "https://digital.bodleian.ox.ac.uk/search/"
 ECODICES_SEARCH_URL: Final = "https://www.e-codices.unifr.ch/en/search/all"
+VATICAN_HOME_URL: Final = "https://digi.vatlib.it/mss/"
+VATICAN_SEARCH_URL: Final = "https://digi.vatlib.it/mss/search"
 
 # HEADER REALI PER EVITARE IL BAN (Errore 500/403)
 # Gallica blocca le richieste se non sembrano provenire da un browser.
@@ -55,6 +57,26 @@ HTML_BROWSER_HEADERS = {
 _INSTITUT_RECORD_LINK_RE: Final = re.compile(
     r"<a[^>]+href=[\"'](?P<href>/records/item/(?P<id>\d+)[^\"']*)[\"'][^>]*>(?P<title>.*?)</a>",
     flags=re.IGNORECASE | re.DOTALL,
+)
+_VATICAN_RESULT_SPLIT_RE: Final = re.compile(
+    r'<div class="row-search-result-record[^"]*">',
+    flags=re.IGNORECASE,
+)
+_VATICAN_DOC_ID_RE: Final = re.compile(
+    r'href="(?P<href>/mss/edition/(?P<id>MSS_[^"/?#]+))"',
+    flags=re.IGNORECASE,
+)
+_VATICAN_TITLE_RE: Final = re.compile(
+    r'class="link-search-result-record-view">(?P<value>.*?)</a>',
+    flags=re.IGNORECASE | re.DOTALL,
+)
+_VATICAN_DETAIL_RE: Final = re.compile(
+    r'<div class="title">(?P<value>.*?)</div>',
+    flags=re.IGNORECASE | re.DOTALL,
+)
+_VATICAN_THUMB_RE: Final = re.compile(
+    r'<img src="(?P<value>/pub/digit/[^"]+/cover/cover\.jpg)"',
+    flags=re.IGNORECASE,
 )
 _ECODICES_RESULT_SPLIT_RE: Final = re.compile(r'<div class="search-result">', flags=re.IGNORECASE)
 _ECODICES_FACSIMILE_RE: Final = re.compile(
@@ -221,9 +243,10 @@ def resolve_provider_input(
                 )
         return ProviderResolution(provider=provider, status="not_found", not_found_hint=provider.not_found_hint)
 
-    manifest_url, doc_id = resolve_shelfmark(provider.key, text)
-    if manifest_url:
-        return ProviderResolution(provider=provider, status="manifest", manifest_url=manifest_url, doc_id=doc_id)
+    if provider.resolver().can_resolve(text):
+        manifest_url, doc_id = resolve_shelfmark(provider.key, text)
+        if manifest_url:
+            return ProviderResolution(provider=provider, status="manifest", manifest_url=manifest_url, doc_id=doc_id)
 
     if provider.supports_search():
         results = _search_with_provider(provider, text, filters=filter_payload)
@@ -792,6 +815,12 @@ def search_vatican(query: str, max_results: int = 5) -> list[SearchResult]:
     else:
         candidate_ids = _build_text_candidate_ids(normalized_query)
     _append_candidate_results(results, candidate_ids, resolver, max_results)
+    if len(results) >= max_results:
+        return results[:max_results]
+
+    if _query_can_use_vatican_text_search(normalized_query):
+        official_results = _search_vatican_official_site(normalized_query, max_results=max_results - len(results))
+        _append_unique_results(results, official_results, max_results)
 
     return results
 
@@ -841,8 +870,85 @@ def _append_candidate_results(results, candidate_ids: list[str], resolver, max_r
             results.append(result)
 
 
+def _append_unique_results(results: list[SearchResult], incoming: list[SearchResult], max_results: int) -> None:
+    seen_ids = {str(item.get("id") or "") for item in results}
+    for item in incoming:
+        item_id = str(item.get("id") or "")
+        if not item_id or item_id in seen_ids:
+            continue
+        results.append(item)
+        seen_ids.add(item_id)
+        if len(results) >= max_results:
+            return
+
+
 def _build_vatican_manifest_url(ms_id: str) -> str:
     return f"https://digi.vatlib.it/iiif/{ms_id}/manifest.json"
+
+
+def _query_can_use_vatican_text_search(query: str) -> bool:
+    stripped = (query or "").strip()
+    if not stripped:
+        return False
+    if stripped.isdigit():
+        return False
+    return not _query_contains_known_prefix(stripped)
+
+
+def _search_vatican_official_site(query: str, max_results: int = 5) -> list[SearchResult]:
+    """Use DigiVatLib's public manuscripts search flow for free-text queries."""
+    if not (q := (query or "").strip()):
+        return []
+
+    try:
+        with requests.Session() as session:
+            session.get(VATICAN_HOME_URL, headers=HTML_BROWSER_HEADERS, timeout=TIMEOUT_SECONDS)
+            response = session.get(
+                VATICAN_SEARCH_URL,
+                params={"k_f": "0", "k_v": q},
+                headers={**HTML_BROWSER_HEADERS, "Referer": VATICAN_HOME_URL},
+                timeout=TIMEOUT_SECONDS,
+            )
+            response.raise_for_status()
+    except (requests.RequestException, requests.Timeout) as exc:
+        logger.debug("Vatican official search failed for query %r: %s", q, exc)
+        return []
+
+    results: list[SearchResult] = []
+    for chunk in _VATICAN_RESULT_SPLIT_RE.split(response.text):
+        if not chunk.strip():
+            continue
+        if result := _build_vatican_html_result(chunk):
+            results.append(result)
+        if len(results) >= max_results:
+            break
+    return results
+
+
+def _build_vatican_html_result(chunk: str) -> SearchResult | None:
+    if not (doc_match := _VATICAN_DOC_ID_RE.search(chunk)):
+        return None
+
+    doc_id = str(doc_match.group("id") or "").strip()
+    if not doc_id:
+        return None
+
+    title = _regex_group_text(_VATICAN_TITLE_RE, chunk) or doc_id
+    description = _regex_group_text(_VATICAN_DETAIL_RE, chunk)
+    thumb_rel = _regex_group_text(_VATICAN_THUMB_RE, chunk)
+    thumb = f"https://digi.vatlib.it{thumb_rel}" if thumb_rel.startswith("/") else thumb_rel
+
+    return {
+        "id": doc_id,
+        "title": title[:200],
+        "author": "",
+        "description": description[:500],
+        "manifest": _build_vatican_manifest_url(doc_id),
+        "thumbnail": thumb,
+        "thumb": thumb,
+        "library": "Vaticana",
+        "raw": {"viewer_url": f"https://digi.vatlib.it/view/{doc_id}"},
+    }
 
 
 def _verify_vatican_manifest(manifest_url: str, ms_id: str, resolver) -> SearchResult | None:
