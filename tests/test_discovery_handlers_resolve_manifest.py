@@ -233,3 +233,57 @@ def test_resolve_manifest_archive_search_results_list(monkeypatch):
     result_str = repr(result)
     assert "Trovati 1 risultati" in result_str
     assert "Subject-index of the London Library" in result_str
+
+
+def test_resolve_manifest_bodleian_results_include_provider_viewer_link(monkeypatch):
+    """Bodleian search results should render the source viewer URL from provider data."""
+    monkeypatch.setattr(
+        discovery_handlers,
+        "resolve_provider_input",
+        lambda _library, _query, filters=None: ProviderResolution(
+            provider=get_provider("Bodleian"),
+            status="results",
+            results=[
+                {
+                    "id": "cb1df5f1-7435-468b-8860-d56db988b929",
+                    "title": "Divine Comedy.",
+                    "manifest": "https://iiif.bodleian.ox.ac.uk/iiif/manifest/cb1df5f1-7435-468b-8860-d56db988b929.json",
+                    "thumbnail": "https://iiif.bodleian.ox.ac.uk/iiif/image/test/full/255,/0/default.jpg",
+                    "raw": {
+                        "viewer_url": "https://digital.bodleian.ox.ac.uk/objects/cb1df5f1-7435-468b-8860-d56db988b929/"
+                    },
+                }
+            ],
+        ),
+    )
+
+    result = discovery_handlers.resolve_manifest("Bodleian", "dante")
+    result_str = repr(result)
+    assert "Apri viewer" in result_str
+    assert "https://digital.bodleian.ox.ac.uk/objects/cb1df5f1-7435-468b-8860-d56db988b929/" in result_str
+
+
+def test_resolve_manifest_ecodices_results_include_provider_viewer_link(monkeypatch):
+    """e-codices search results should render the source viewer URL from provider data."""
+    monkeypatch.setattr(
+        discovery_handlers,
+        "resolve_provider_input",
+        lambda _library, _query, filters=None: ProviderResolution(
+            provider=get_provider("e-codices"),
+            status="results",
+            results=[
+                {
+                    "id": "fmb-cb-0055",
+                    "title": "Dante, Inferno e Purgatorio (Codex Guarneri)",
+                    "manifest": "https://www.e-codices.unifr.ch/metadata/iiif/fmb-cb-0055/manifest.json",
+                    "thumbnail": "https://www.e-codices.unifr.ch/loris/fmb/fmb-cb-0055/fmb-cb-0055_0021v.jp2/full/180,/0/default.jpg",
+                    "raw": {"viewer_url": "https://www.e-codices.unifr.ch/en/fmb/cb-0055"},
+                }
+            ],
+        ),
+    )
+
+    result = discovery_handlers.resolve_manifest("e-codices", "dante")
+    result_str = repr(result)
+    assert "Apri viewer" in result_str
+    assert "https://www.e-codices.unifr.ch/en/fmb/cb-0055" in result_str

@@ -45,17 +45,18 @@ def render_search_results_list(results: list) -> Div:
         thumb = item.get("thumbnail")
         doc_id = str(item.get("id") or "")
         manifest_url = str(item.get("manifest") or "")
+        raw = item.get("raw")
 
-        viewer_url = None
-        if library == "Gallica" and ark:
+        viewer_url = str(raw.get("viewer_url") or "") if isinstance(raw, dict) else ""
+        if not viewer_url and library == "Gallica" and ark:
             viewer_url = f"https://gallica.bnf.fr/{ark}"
-        elif library == "Gallica" and doc_id:
+        elif not viewer_url and library == "Gallica" and doc_id:
             viewer_url = f"https://gallica.bnf.fr/ark:/12148/{doc_id}"
-        elif library == "Vaticana" and doc_id:
+        elif not viewer_url and library == "Vaticana" and doc_id:
             viewer_url = f"https://digi.vatlib.it/view/{doc_id}"
-        elif library == "Institut de France" and doc_id:
+        elif not viewer_url and library == "Institut de France" and doc_id:
             viewer_url = f"https://bibnum.institutdefrance.fr/viewer/{doc_id}"
-        elif library == "Archive.org" and doc_id:
+        elif not viewer_url and library == "Archive.org" and doc_id:
             viewer_url = f"https://archive.org/details/{doc_id}"
 
         hx_vals = json.dumps(
@@ -405,16 +406,17 @@ def render_preview(data: dict) -> Div:
         )
 
     # Link al viewer originale
-    viewer_url = None
-    if library == "Gallica":
+    raw = data.get("raw")
+    viewer_url = str(raw.get("viewer_url") or "") if isinstance(raw, dict) else ""
+    if not viewer_url and library == "Gallica":
         viewer_url = f"https://gallica.bnf.fr/ark:/12148/{doc_id}"
-    elif library == "Vaticana":
+    elif not viewer_url and library == "Vaticana":
         viewer_url = f"https://digi.vatlib.it/view/{doc_id}"
-    elif library == "Institut de France":
+    elif not viewer_url and library == "Institut de France":
         viewer_url = f"https://bibnum.institutdefrance.fr/viewer/{doc_id}"
-    elif library == "Bodleian":
+    elif not viewer_url and library == "Bodleian":
         viewer_url = f"https://digital.bodleian.ox.ac.uk/objects/{doc_id}"
-    elif library == "Archive.org":
+    elif not viewer_url and library == "Archive.org":
         viewer_url = f"https://archive.org/details/{doc_id}"
 
     viewer_link = (

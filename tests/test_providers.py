@@ -43,6 +43,11 @@ def test_resolve_with_provider_uses_shared_registry_for_new_resolvers():
     assert doc_id3 == "b29000427_0001"
     assert manifest_url3 == "https://iiif.archive.org/iiif/b29000427_0001/manifest.json"
 
+    manifest_url4, doc_id4, provider4 = resolve_with_provider("b29000427_0001")
+    assert provider4.key == "Archive.org"
+    assert doc_id4 == "b29000427_0001"
+    assert manifest_url4 == "https://iiif.archive.org/iiif/b29000427_0001/manifest.json"
+
 
 def test_resolve_with_provider_keeps_direct_manifest_when_loc_pattern_is_non_loc():
     """Non-LOC URLs with /item/ in the path must fall through to the generic resolver."""
@@ -58,3 +63,11 @@ def test_resolve_with_provider_prefers_ecodices_over_cambridge_for_compound_ids(
     assert provider.key == "e-codices"
     assert doc_id == "csg-0001"
     assert manifest_url == "https://www.e-codices.unifr.ch/metadata/iiif/csg-0001/manifest.json"
+
+
+def test_resolve_with_provider_does_not_misclassify_archive_free_text():
+    """Archive resolver must not steal generic one-word searches in shared detection."""
+    manifest_url, doc_id, provider = resolve_with_provider("dante")
+    assert provider.key == "Unknown"
+    assert doc_id is None
+    assert manifest_url is None
