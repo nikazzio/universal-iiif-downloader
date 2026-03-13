@@ -210,6 +210,15 @@ def resolve_provider_input(
         results = _search_with_provider(provider, text, filters=filter_payload)
         if results:
             return ProviderResolution(provider=provider, status="results", results=results)
+        if provider.resolver().can_resolve(text):
+            manifest_url, doc_id = resolve_shelfmark(provider.key, text)
+            if manifest_url:
+                return ProviderResolution(
+                    provider=provider,
+                    status="manifest",
+                    manifest_url=manifest_url,
+                    doc_id=doc_id,
+                )
         return ProviderResolution(provider=provider, status="not_found", not_found_hint=provider.not_found_hint)
 
     manifest_url, doc_id = resolve_shelfmark(provider.key, text)

@@ -8,6 +8,7 @@ from .base import BaseResolver
 _DETAILS_RE = re.compile(r"/details/(?P<identifier>[^/?#]+)", flags=re.IGNORECASE)
 _HELPER_RE = re.compile(r"/iiif/helper/(?P<identifier>[^/?#]+)", flags=re.IGNORECASE)
 _MANIFEST_RE = re.compile(r"/iiif/(?P<identifier>[^/?#]+)/manifest\.json$", flags=re.IGNORECASE)
+_BARE_IDENTIFIER_RE = re.compile(r"^[A-Za-z0-9._:-]*[0-9_-][A-Za-z0-9._:-]*$")
 
 
 class ArchiveOrgResolver(BaseResolver):
@@ -21,7 +22,7 @@ class ArchiveOrgResolver(BaseResolver):
         if not text:
             return False
         lowered = text.lower()
-        return "archive.org/" in lowered or "iiif.archive.org/" in lowered
+        return "archive.org/" in lowered or "iiif.archive.org/" in lowered or self._looks_like_bare_identifier(text)
 
     def get_manifest_url(self, url_or_id: str) -> tuple[str | None, str | None]:
         """Build the canonical Archive.org IIIF manifest URL."""
@@ -38,7 +39,13 @@ class ArchiveOrgResolver(BaseResolver):
     @staticmethod
     def _extract_identifier(value: str) -> str | None:
         direct = value.strip().strip("/")
-        if direct and "://" not in direct and "/" not in direct and " " not in direct:
+        if (
+            direct
+            and "://" not in direct
+            and "/" not in direct
+            and " " not in direct
+            and ArchiveOrgResolver._looks_like_bare_identifier(direct)
+        ):
             return direct
 
         parsed = urlparse(value)
@@ -50,3 +57,11 @@ class ArchiveOrgResolver(BaseResolver):
         if helper_match := _HELPER_RE.search(path):
             return helper_match.group("identifier")
         return None
+
+    @staticmethod
+    def _looks_like_bare_identifier(value: str) -> bool:
+        """Return True for IA-style bare identifiers, not generic free-text terms."""
+        token = (value or "").strip().strip("/")
+        if not token or "://" in token or "/" in token or " " in token:
+            return False
+        return bool(_BARE_IDENTIFIER_RE.fullmatch(token))

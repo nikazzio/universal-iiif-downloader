@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import requests
 
+from universal_iiif_core.providers import get_provider
 from universal_iiif_core.resolvers import discovery
+from universal_iiif_core.resolvers.archive_org import ArchiveOrgResolver
 
 
 class _Resp:
@@ -59,3 +61,47 @@ def test_search_archive_org_parses_advancedsearch_docs(monkeypatch):
     assert "archive.org/details/b29000427_0001" in first["raw"]["viewer_url"]
     assert first["thumbnail"].startswith("https://iiif.archive.org/image/iiif/2/")
 
+
+def test_archive_org_resolver_rejects_ambiguous_free_text():
+    """Generic free-text terms should not be misread as Archive identifiers."""
+    resolver = ArchiveOrgResolver()
+
+    assert resolver.can_resolve("dante") is False
+    assert resolver.get_manifest_url("dante") == (None, None)
+    assert resolver.can_resolve("b29000427_0001") is True
+
+
+def test_resolve_provider_input_archive_search_first_skips_bogus_direct_resolution(monkeypatch):
+    """Archive provider must not turn generic search terms into manifest URLs."""
+    provider = get_provider("Archive.org")
+
+    monkeypatch.setattr(discovery, "_search_with_provider", lambda *_args, **_kwargs: [])
+
+    def _fail_if_called(*_args, **_kwargs):
+        raise AssertionError("resolve_shelfmark should not be called for ambiguous free-text")
+
+    monkeypatch.setattr(discovery, "resolve_shelfmark", _fail_if_called)
+
+    result = discovery.resolve_provider_input("Archive.org", "dante")
+    assert result.provider == provider
+    assert result.status == "not_found"
+
+
+def test_resolve_provider_input_archive_search_first_falls_back_to_direct_url(monkeypatch):
+    """Archive provider should still resolve direct URLs after search misses."""
+    monkeypatch.setattr(discovery, "_search_with_provider", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(
+        discovery,
+        "resolve_shelfmark",
+        lambda library, text: (
+            "https://iiif.archive.org/iiif/b29000427_0001/manifest.json",
+            "b29000427_0001",
+        )
+        if library == "Archive.org" and text == "https://archive.org/details/b29000427_0001"
+        else (None, None),
+    )
+
+    result = discovery.resolve_provider_input("Archive.org", "https://archive.org/details/b29000427_0001")
+    assert result.status == "manifest"
+    assert result.doc_id == "b29000427_0001"
+    assert result.manifest_url == "https://iiif.archive.org/iiif/b29000427_0001/manifest.json"
