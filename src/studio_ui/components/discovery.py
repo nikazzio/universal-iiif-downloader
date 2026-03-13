@@ -55,6 +55,8 @@ def render_search_results_list(results: list) -> Div:
             viewer_url = f"https://digi.vatlib.it/view/{doc_id}"
         elif library == "Institut de France" and doc_id:
             viewer_url = f"https://bibnum.institutdefrance.fr/viewer/{doc_id}"
+        elif library == "Archive.org" and doc_id:
+            viewer_url = f"https://archive.org/details/{doc_id}"
 
         hx_vals = json.dumps(
             {
@@ -412,6 +414,8 @@ def render_preview(data: dict) -> Div:
         viewer_url = f"https://bibnum.institutdefrance.fr/viewer/{doc_id}"
     elif library == "Bodleian":
         viewer_url = f"https://digital.bodleian.ox.ac.uk/objects/{doc_id}"
+    elif library == "Archive.org":
+        viewer_url = f"https://archive.org/details/{doc_id}"
 
     viewer_link = (
         A(

@@ -83,6 +83,7 @@ Direct resolution is shared across web and CLI for these providers:
 - e-codices
 - Harvard
 - Library of Congress
+- Internet Archive
 
 ## Configuration
 

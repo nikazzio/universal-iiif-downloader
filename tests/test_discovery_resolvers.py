@@ -6,6 +6,7 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
+from universal_iiif_core.resolvers.archive_org import ArchiveOrgResolver
 from universal_iiif_core.resolvers.cambridge import CambridgeResolver
 from universal_iiif_core.resolvers.discovery import resolve_shelfmark
 from universal_iiif_core.resolvers.ecodices import EcodicesResolver
@@ -123,3 +124,20 @@ def test_loc_resolver_strips_span_suffix():
     manifest_url, doc_id = resolver.get_manifest_url("https://www.loc.gov/item/2021668145:sp1/")
     assert manifest_url == "https://www.loc.gov/item/2021668145/manifest.json"
     assert doc_id == "2021668145"
+
+
+def test_archive_org_resolver_identifier_details_and_manifest_url():
+    """Resolve Archive.org identifiers and URLs into canonical IIIF manifests."""
+    resolver = ArchiveOrgResolver()
+
+    manifest_url, doc_id = resolver.get_manifest_url("b29000427_0001")
+    assert manifest_url == "https://iiif.archive.org/iiif/b29000427_0001/manifest.json"
+    assert doc_id == "b29000427_0001"
+
+    manifest_url2, doc_id2 = resolver.get_manifest_url("https://archive.org/details/b29000427_0001")
+    assert manifest_url2 == "https://iiif.archive.org/iiif/b29000427_0001/manifest.json"
+    assert doc_id2 == "b29000427_0001"
+
+    manifest_url3, doc_id3 = resolver.get_manifest_url("https://iiif.archive.org/iiif/b29000427_0001/manifest.json")
+    assert manifest_url3 == "https://iiif.archive.org/iiif/b29000427_0001/manifest.json"
+    assert doc_id3 == "b29000427_0001"

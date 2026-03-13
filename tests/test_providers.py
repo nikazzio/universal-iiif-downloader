@@ -15,6 +15,7 @@ def test_provider_library_options_exposes_new_direct_providers():
     assert options["Universitaetsbibliothek Heidelberg"] == "Heidelberg"
     assert options["Cambridge University Digital Library"] == "Cambridge"
     assert options["e-codices"] == "e-codices"
+    assert options["Internet Archive"] == "Archive.org"
 
 
 def test_resolve_with_provider_uses_shared_registry_for_new_resolvers():
@@ -28,3 +29,8 @@ def test_resolve_with_provider_uses_shared_registry_for_new_resolvers():
     assert provider2.key == "Cambridge"
     assert doc_id2 == "MS-ADD-03996"
     assert manifest_url2 == "https://cudl.lib.cam.ac.uk/iiif/MS-ADD-03996"
+
+    manifest_url3, doc_id3, provider3 = resolve_with_provider("https://archive.org/details/b29000427_0001")
+    assert provider3.key == "Archive.org"
+    assert doc_id3 == "b29000427_0001"
+    assert manifest_url3 == "https://iiif.archive.org/iiif/b29000427_0001/manifest.json"

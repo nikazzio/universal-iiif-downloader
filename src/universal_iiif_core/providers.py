@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from universal_iiif_core.logger import get_logger
+from universal_iiif_core.resolvers.archive_org import ArchiveOrgResolver
 from universal_iiif_core.resolvers.base import BaseResolver
 from universal_iiif_core.resolvers.cambridge import CambridgeResolver
 from universal_iiif_core.resolvers.ecodices import EcodicesResolver
@@ -167,6 +168,15 @@ PROVIDERS: tuple[IIIFProvider, ...] = (
         not_found_hint="Incolla un URL loc.gov/item/... valido.",
         placeholder="es. https://www.loc.gov/item/2021668145/",
         sort_order=90,
+    ),
+    IIIFProvider(
+        key="Archive.org",
+        label="Internet Archive",
+        aliases=("archive.org", "internet archive", "archive"),
+        resolver_cls=ArchiveOrgResolver,
+        not_found_hint="Incolla un URL archive.org/details/... o un manifest iiif.archive.org valido.",
+        placeholder="es. https://archive.org/details/b29000427_0001",
+        sort_order=95,
     ),
     IIIFProvider(
         key="Unknown",
