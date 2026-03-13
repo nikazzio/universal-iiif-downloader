@@ -33,7 +33,8 @@ iiif-cli "https://digi.vatlib.it/iiif/MSS_Urb.lat.1779/manifest.json"
 
 - IIIF manifest resolution and page download pipeline
 - **Centralized HTTP client** with automatic retry, exponential backoff, and per-host rate limiting
-- Discovery with free-text search plus optional Gallica filters (`all`, `manuscripts`, `printed books`)
+- Discovery with shared provider registry for web + CLI
+- Discovery with free-text search plus provider-specific filters (currently Gallica type filter: `all`, `manuscripts`, `printed books`)
 - Native PDF-first workflow (configurable)
 - Canvas/image fallback with optional compiled PDF generation
 - Local Library + Studio workflow: select in Library, analyze in Studio
@@ -58,7 +59,7 @@ python3 src/studio_app.py
 ```
 
 Navigation model:
-- `Discovery` supports free text/shelfmark/ID/URL search and optional Gallica type filters.
+- `Discovery` supports free text/shelfmark/ID/URL search and provider-specific filters when available.
 - `Aggiungi item` in Discovery performs a light prefetch (`metadata.json` + `manifest.json`) without full scans.
 - `Library` is the canonical entrypoint for local documents.
 - `Studio` is a document workspace (`/studio?doc_id=...&library=...`).
@@ -71,6 +72,17 @@ Navigation model:
 ```bash
 iiif-cli "<manifest-url>"
 ```
+
+Direct resolution is shared across web and CLI for these providers:
+- Vaticana
+- Gallica
+- Institut de France
+- Bodleian
+- Heidelberg
+- Cambridge
+- e-codices
+- Harvard
+- Library of Congress
 
 ## Configuration
 

@@ -23,8 +23,9 @@ The application is strictly divided into two main layers. The **UI Layer** depen
 ### 2. Core Business Logic (`universal_iiif_core/`)
 
 * **Discovery Module**:
-  * **Resolvers**: Uses a Dispatcher pattern (`resolve_shelfmark`) to route inputs to specific implementations (`Vatican`, `Gallica`, `Oxford`, `Institut de France`).
-  * **Search**: Implements Gallica SRU parsing with optional type filtering (`all`, `manuscripts`, `printed books`) and fallback/stub logic where APIs are limited.
+  * **Provider Registry**: A shared provider catalog drives web Discovery, settings options, and CLI direct resolution from the same metadata source.
+  * **Resolvers**: Direct resolution still ends in provider-specific resolver classes, but registration happens through the provider registry rather than UI/CLI hardcoding.
+  * **Search**: Search remains provider-specific and optional. Today it includes Gallica SRU plus fallback search adapters where APIs are limited (`Vaticana`, `Institut de France`).
 * **Downloader Logic**:
   * Implements the **Golden Flow** (Native PDF check -> Extraction -> Fallback to IIIF).
   * Manages threading and DB updates.
@@ -53,10 +54,11 @@ The application is strictly divided into two main layers. The **UI Layer** depen
 
 1. **User Input**: The user enters free text, shelfmark (e.g., "Urb.lat.1779"), an ID, or a URL.
 2. **Dispatcher**: `resolve_shelfmark` detects the library signature and selects the correct strategy.
-3. **Normalization**: The resolver converts "dirty" inputs into a canonical IIIF Manifest URL.
-4. **Gallica Filter Stage**: Optional type filters are applied on parsed metadata (`dc:type`) to avoid SRU type-filter inconsistencies.
-5. **Preview**: The UI fetches basic metadata and lazy-checks native PDF availability.
-6. **Action Split**: From each result, the user can either add to local Library (`saved`) or add + enqueue download.
+3. **Provider Resolution**: The selected provider decides whether to try direct resolution first, search first, or direct resolution with search fallback.
+4. **Normalization**: The resolver converts "dirty" inputs into a canonical IIIF Manifest URL.
+5. **Provider Filter Stage**: Optional provider-specific filters are applied before preview rendering (for example Gallica type filters).
+6. **Preview**: The UI fetches basic metadata and lazy-checks native PDF availability.
+7. **Action Split**: From each result, the user can either add to local Library (`saved`) or add + enqueue download.
 
 ### 2. Download Manager + Golden Flow
 

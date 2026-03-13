@@ -3,13 +3,15 @@ from __future__ import annotations
 import re
 import unicodedata
 import xml.etree.ElementTree
+from dataclasses import dataclass, field
 from html import unescape
-from typing import Final
+from typing import Any, Final
 
 import requests
 
 from ..exceptions import ResolverError
 from ..logger import get_logger
+from ..providers import IIIFProvider, get_provider
 from ..utils import get_json
 from .gallica import GallicaResolver
 from .institut import InstitutResolver
@@ -59,6 +61,18 @@ _VATICAN_NUMERIC_COLLECTIONS: Final[list[str]] = [
     "Pal.gr",
 ]
 _VATICAN_TEXT_PREFIXES: Final[list[str]] = ["Urb.lat.", "Vat.lat.", "Pal.lat.", "Reg.lat.", "Barb.lat."]
+
+
+@dataclass
+class ProviderResolution:
+    """Normalized discovery outcome for a selected provider."""
+
+    provider: IIIFProvider
+    status: str
+    manifest_url: str | None = None
+    doc_id: str | None = None
+    results: list[SearchResult] = field(default_factory=list)
+    not_found_hint: str = ""
 
 
 def smart_search(input_text: str, *, gallica_type_filter: str = "all") -> list[SearchResult]:
@@ -124,6 +138,58 @@ def resolve_shelfmark(library: str, shelfmark: str) -> tuple[str | None, str | N
     except (requests.RequestException, requests.Timeout, ValueError, ResolverError) as exc:
         logger.error("Resolver crashed for %r/%r: %s", lib, s, exc, exc_info=True)
         return None, None
+
+
+def _search_with_provider(
+    provider: IIIFProvider,
+    query: str,
+    *,
+    filters: dict[str, Any] | None = None,
+) -> list[SearchResult]:
+    text = (query or "").strip()
+    if not text or not provider.supports_search():
+        return []
+
+    payload = dict(filters or {})
+    if provider.search_strategy == "gallica":
+        return smart_search(text, gallica_type_filter=str(payload.get("gallica_type") or "all"))
+    if provider.search_strategy == "vatican":
+        return search_vatican(text, max_results=5)
+    if provider.search_strategy == "institut":
+        return search_institut(text, max_results=10)
+    return []
+
+
+def resolve_provider_input(
+    library: str,
+    user_input: str,
+    *,
+    filters: dict[str, Any] | None = None,
+) -> ProviderResolution:
+    """Resolve a discovery request through the provider registry."""
+    text = (user_input or "").strip()
+    provider = get_provider(library, fallback="Unknown")
+    filter_payload = dict(filters or {})
+
+    if not text:
+        return ProviderResolution(provider=provider, status="not_found", not_found_hint=provider.not_found_hint)
+
+    if provider.search_mode == "search_first" and provider.supports_search():
+        results = _search_with_provider(provider, text, filters=filter_payload)
+        if results:
+            return ProviderResolution(provider=provider, status="results", results=results)
+        return ProviderResolution(provider=provider, status="not_found", not_found_hint=provider.not_found_hint)
+
+    manifest_url, doc_id = resolve_shelfmark(provider.key, text)
+    if manifest_url:
+        return ProviderResolution(provider=provider, status="manifest", manifest_url=manifest_url, doc_id=doc_id)
+
+    if provider.supports_search():
+        results = _search_with_provider(provider, text, filters=filter_payload)
+        if results:
+            return ProviderResolution(provider=provider, status="results", results=results)
+
+    return ProviderResolution(provider=provider, status="not_found", not_found_hint=provider.not_found_hint)
 
 
 def search_gallica_by_id(doc_id: str) -> list[SearchResult]:
@@ -503,6 +569,8 @@ def _verify_vatican_manifest(manifest_url: str, ms_id: str, resolver) -> SearchR
 
 
 __all__ = [
+    "ProviderResolution",
+    "resolve_provider_input",
     "resolve_shelfmark",
     "search_gallica",
     "search_gallica_by_id",

@@ -28,7 +28,7 @@ from universal_iiif_core.config_manager import get_config_manager
 from universal_iiif_core.iiif_logic import total_canvases
 from universal_iiif_core.jobs import job_manager
 from universal_iiif_core.logger import get_logger
-from universal_iiif_core.resolvers.discovery import resolve_shelfmark, search_institut, smart_search
+from universal_iiif_core.resolvers.discovery import resolve_provider_input
 from universal_iiif_core.resolvers.parsers import IIIFManifestParser
 from universal_iiif_core.services.storage.vault_manager import VaultManager
 from universal_iiif_core.utils import get_json, get_request_session, save_json
@@ -419,60 +419,6 @@ def _build_manifest_preview_data(manifest_info: dict, manifest_url: str, doc_id:
     }
 
 
-def _resolve_gallica_flow(shelfmark: str, *, gallica_type: str = "all"):
-    try:
-        results = smart_search(shelfmark, gallica_type_filter=gallica_type)
-    except ValueError as exc:
-        return _with_feedback_toast("Errore Gallica", str(exc), tone="danger")
-    except Exception:
-        logger.exception("Gallica search failed for shelfmark: %s", shelfmark)
-        return _with_feedback_toast(
-            "Errore Gallica",
-            "Ricerca temporaneamente non disponibile. Riprova più tardi.",
-            tone="danger",
-        )
-
-    if not results:
-        return _with_feedback_toast(
-            "Nessun risultato",
-            f"Nessun risultato trovato per '{shelfmark}' su Gallica.",
-            tone="info",
-        )
-
-    first = results[0]
-    is_direct = bool(first.get("raw", {}).get("_is_direct_match", False))
-    if len(results) == 1 and is_direct:
-        return render_preview(_build_item_preview_data(first, "Gallica", pages=0))
-    return render_search_results_list(results)
-
-
-def _resolve_manifest_direct(library: str, shelfmark: str) -> tuple[str | None, str | None]:
-    try:
-        return resolve_shelfmark(library, shelfmark)
-    except Exception as exc:
-        logger.debug("Direct resolution failed: %s", exc)
-        return None, None
-
-
-def _resolve_vatican_fallback(shelfmark: str):
-    from universal_iiif_core.resolvers.discovery import search_vatican
-
-    logger.info("Trying Vatican search for: %s", shelfmark)
-    try:
-        results = search_vatican(shelfmark, max_results=5)
-    except Exception as exc:
-        logger.warning("Vatican search failed: %s", exc)
-        return None
-
-    if not results:
-        return None
-    if len(results) == 1:
-        first = results[0]
-        pages = _page_count_from_result(first)
-        return render_preview(_build_item_preview_data(first, "Vaticana", pages=pages))
-    return render_search_results_list(results)
-
-
 def _page_count_from_result(item: dict) -> int:
     raw = item.get("raw")
     if not isinstance(raw, dict):
@@ -490,32 +436,6 @@ def _page_count_from_result(item: dict) -> int:
     except Exception:
         logger.debug("Failed to derive page count from manifest payload", exc_info=True)
         return 0
-
-
-def _resolve_institut_fallback(shelfmark: str):
-    logger.info("Trying Institut de France search for: %s", shelfmark)
-    try:
-        results = search_institut(shelfmark, max_results=10)
-    except Exception as exc:
-        logger.warning("Institut search failed: %s", exc)
-        return None
-
-    if not results:
-        return None
-    if len(results) == 1:
-        first = results[0]
-        pages = _page_count_from_result(first)
-        return render_preview(_build_item_preview_data(first, "Institut de France", pages=pages))
-    return render_search_results_list(results)
-
-
-def _build_not_found_hint(library: str) -> str:
-    hint = "Verifica la segnatura."
-    if library == "Vaticana":
-        hint += " Prova formati come 'Urb.lat.1779' o inserisci solo il numero (es. '1223')."
-    if library == "Institut de France":
-        hint += " Usa ID numerico (es. '17837'), URL viewer o una ricerca testuale."
-    return hint
 
 
 def _analyze_manifest_safe(manifest_url: str):
@@ -570,30 +490,30 @@ def resolve_manifest(library: str, shelfmark: str, gallica_type: str = "all"):
 
         logger.info("Resolving: lib=%s input=%s", library, shelfmark)
 
-        if "Gallica" in library:
-            return _resolve_gallica_flow(shelfmark, gallica_type=gallica_type)
+        resolution = resolve_provider_input(library, shelfmark, filters={"gallica_type": gallica_type})
+        provider = resolution.provider
 
-        manifest_url, doc_id = _resolve_manifest_direct(library, shelfmark)
-        if not manifest_url and library == "Vaticana" and (fallback_fragment := _resolve_vatican_fallback(shelfmark)):
-            return fallback_fragment
-        if (
-            not manifest_url
-            and library == "Institut de France"
-            and (fallback_fragment := _resolve_institut_fallback(shelfmark))
-        ):
-            return fallback_fragment
+        if resolution.status == "results":
+            first = resolution.results[0] if resolution.results else {}
+            is_direct = bool(first.get("raw", {}).get("_is_direct_match", False))
+            if len(resolution.results) == 1 and (is_direct or provider.search_mode == "fallback"):
+                pages = 0 if is_direct else _page_count_from_result(first)
+                return render_preview(_build_item_preview_data(first, provider.key, pages=pages))
+            return render_search_results_list(resolution.results)
 
-        if not manifest_url:
+        if resolution.status != "manifest" or not resolution.manifest_url:
             return _with_feedback_toast(
                 "Manoscritto non trovato",
-                f"Impossibile risolvere '{shelfmark}' per {library}. {_build_not_found_hint(library)}",
+                f"Impossibile risolvere '{shelfmark}' per {provider.key}. {resolution.not_found_hint}",
                 tone="danger",
             )
 
-        manifest_info, manifest_error = _analyze_manifest_safe(manifest_url)
+        manifest_info, manifest_error = _analyze_manifest_safe(resolution.manifest_url)
         if manifest_error:
             return manifest_error
-        return render_preview(_build_manifest_preview_data(manifest_info, manifest_url, doc_id, library))
+        return render_preview(
+            _build_manifest_preview_data(manifest_info, resolution.manifest_url, resolution.doc_id, provider.key)
+        )
 
     except ValueError as exc:
         logger.warning("Validation error in resolve_manifest: %s", exc)

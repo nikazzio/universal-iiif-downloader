@@ -1,0 +1,30 @@
+from universal_iiif_core.providers import get_provider, provider_library_options, resolve_with_provider
+
+
+def test_get_provider_accepts_legacy_values_and_labels():
+    """Provider normalization must preserve legacy stored library values."""
+    assert get_provider("Vaticana").key == "Vaticana"
+    assert get_provider("Vaticana (BAV)").key == "Vaticana"
+    assert get_provider("Bodleian (Oxford)").key == "Bodleian"
+    assert get_provider("Altro / URL Diretto").key == "Unknown"
+
+
+def test_provider_library_options_exposes_new_direct_providers():
+    """Discovery options should be generated from provider metadata."""
+    options = dict(provider_library_options())
+    assert options["Universitaetsbibliothek Heidelberg"] == "Heidelberg"
+    assert options["Cambridge University Digital Library"] == "Cambridge"
+    assert options["e-codices"] == "e-codices"
+
+
+def test_resolve_with_provider_uses_shared_registry_for_new_resolvers():
+    """CLI/web shared registry must resolve new providers consistently."""
+    manifest_url, doc_id, provider = resolve_with_provider("https://digi.ub.uni-heidelberg.de/diglit/cpg123")
+    assert provider.key == "Heidelberg"
+    assert doc_id == "cpg123"
+    assert manifest_url == "https://digi.ub.uni-heidelberg.de/diglit/iiif/cpg123/manifest.json"
+
+    manifest_url2, doc_id2, provider2 = resolve_with_provider("MS-ADD-03996")
+    assert provider2.key == "Cambridge"
+    assert doc_id2 == "MS-ADD-03996"
+    assert manifest_url2 == "https://cudl.lib.cam.ac.uk/iiif/MS-ADD-03996"

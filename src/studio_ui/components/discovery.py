@@ -27,6 +27,7 @@ from studio_ui.common.polling import (
 )
 from studio_ui.common.title_utils import resolve_preferred_title, truncate_title
 from studio_ui.library_options import library_options
+from universal_iiif_core.providers import iter_providers
 
 
 def render_search_results_list(results: list) -> Div:
@@ -216,6 +217,38 @@ def render_error_message(title: str, details: str = "") -> Div:
 def discovery_form() -> Div:
     """Form component for discovery searches."""
     libraries = library_options()
+    providers = [provider for provider in iter_providers(ui_only=True) if provider.key != "Unknown"]
+    provider_filter_map = {
+        provider.key: [provider_filter.key for provider_filter in provider.filters]
+        for provider in providers
+    }
+    rendered_filters = []
+    seen_filters: set[str] = set()
+    for provider in providers:
+        for provider_filter in provider.filters:
+            if provider_filter.key in seen_filters:
+                continue
+            seen_filters.add(provider_filter.key)
+            rendered_filters.append(
+                Div(
+                    Label(provider_filter.label, for_=provider_filter.key, cls="app-label mb-1"),
+                    Select(
+                        *[
+                            Option(
+                                option.label,
+                                value=option.value,
+                                selected=option.value == provider_filter.options[0].value,
+                            )
+                            for option in provider_filter.options
+                        ],
+                        id=provider_filter.key,
+                        name=provider_filter.key,
+                        cls="app-field",
+                    ),
+                    data_filter_key=provider_filter.key,
+                    cls="col-span-12 md:col-span-6 lg:col-span-4",
+                )
+            )
 
     return Div(
         H3("Ricerca", cls="text-xl font-semibold text-slate-900 dark:text-slate-100 mb-1"),
@@ -262,23 +295,7 @@ def discovery_form() -> Div:
                     ),
                     cls="col-span-12 md:col-span-6 lg:col-span-4",
                 ),
-                Div(
-                    Label(
-                        "Filtro (Gallica)",
-                        for_="gallica-type",
-                        cls="app-label mb-1",
-                    ),
-                    Select(
-                        Option("Tutti i materiali", value="all", selected=True),
-                        Option("Solo manoscritti", value="manuscrit"),
-                        Option("Solo libri a stampa", value="printed"),
-                        id="gallica-type",
-                        name="gallica_type",
-                        cls="app-field",
-                    ),
-                    id="gallica-filter-wrap",
-                    cls="col-span-12 md:col-span-6 lg:col-span-4",
-                ),
+                *rendered_filters,
                 cls="grid grid-cols-12 gap-4",
             ),
             hx_post="/api/resolve_manifest",
@@ -286,21 +303,30 @@ def discovery_form() -> Div:
             hx_indicator="#resolve-spinner",
         ),
         Script(
-            """
-            (function () {
+            f"""
+            (function () {{
                 const lib = document.getElementById('lib-select');
-                const wrap = document.getElementById('gallica-filter-wrap');
-                const select = document.getElementById('gallica-type');
-                if (!lib || !wrap || !select) return;
-                const sync = () => {
-                    const isGallica = (lib.value || '').toLowerCase().includes('gallica');
-                    wrap.style.display = isGallica ? '' : 'none';
-                    select.disabled = !isGallica;
-                    if (!isGallica) select.value = 'all';
-                };
+                const providerFilters = {json.dumps(provider_filter_map, ensure_ascii=True)};
+                const filterNodes = Array.from(document.querySelectorAll('[data-filter-key]'));
+                if (!lib || !filterNodes.length) return;
+                const sync = () => {{
+                    const activeFilters = new Set(providerFilters[lib.value || ''] || []);
+                    filterNodes.forEach((node) => {{
+                        const filterKey = node.getAttribute('data-filter-key');
+                        const select = node.querySelector('select');
+                        const visible = activeFilters.has(filterKey);
+                        node.style.display = visible ? '' : 'none';
+                        if (select) {{
+                            select.disabled = !visible;
+                            if (!visible && select.options.length > 0) {{
+                                select.value = select.options[0].value;
+                            }}
+                        }}
+                    }});
+                }};
                 lib.addEventListener('change', sync);
                 sync();
-            })();
+            }})();
             """
         ),
         # Spinner
