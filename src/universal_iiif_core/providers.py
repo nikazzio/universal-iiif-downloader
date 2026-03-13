@@ -206,7 +206,7 @@ def get_provider(value: str | None, fallback: str = "Vaticana") -> IIIFProvider:
     """Resolve a provider from canonical values, labels, or aliases."""
     text = str(value or "").strip()
     if not text:
-        return _PROVIDER_BY_KEY[fallback]
+        return _PROVIDER_BY_KEY.get(fallback, _PROVIDER_BY_KEY["Unknown"])
     if text in _PROVIDER_BY_KEY:
         return _PROVIDER_BY_KEY[text]
 

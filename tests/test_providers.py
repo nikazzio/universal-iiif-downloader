@@ -7,6 +7,7 @@ def test_get_provider_accepts_legacy_values_and_labels():
     assert get_provider("Vaticana (BAV)").key == "Vaticana"
     assert get_provider("Bodleian (Oxford)").key == "Bodleian"
     assert get_provider("Altro / URL Diretto").key == "Unknown"
+    assert get_provider("", fallback="DoesNotExist").key == "Unknown"
 
 
 def test_provider_library_options_exposes_new_direct_providers():
@@ -34,3 +35,19 @@ def test_resolve_with_provider_uses_shared_registry_for_new_resolvers():
     assert provider3.key == "Archive.org"
     assert doc_id3 == "b29000427_0001"
     assert manifest_url3 == "https://iiif.archive.org/iiif/b29000427_0001/manifest.json"
+
+
+def test_resolve_with_provider_keeps_direct_manifest_when_loc_pattern_is_non_loc():
+    """Non-LOC URLs with /item/ in the path must fall through to the generic resolver."""
+    manifest_url, doc_id, provider = resolve_with_provider("https://example.org/item/not-loc/manifest.json")
+    assert provider.key == "Unknown"
+    assert doc_id == "not-loc"
+    assert manifest_url == "https://example.org/item/not-loc/manifest.json"
+
+
+def test_resolve_with_provider_prefers_ecodices_over_cambridge_for_compound_ids():
+    """e-codices compound identifiers must not be misclassified as Cambridge."""
+    manifest_url, doc_id, provider = resolve_with_provider("csg-0001")
+    assert provider.key == "e-codices"
+    assert doc_id == "csg-0001"
+    assert manifest_url == "https://www.e-codices.unifr.ch/metadata/iiif/csg-0001/manifest.json"

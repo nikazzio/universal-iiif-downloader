@@ -4,7 +4,7 @@ import re
 
 from .base import BaseResolver
 
-_ID_RE = re.compile(r"\b([a-z]{2,6}\d{2,})\b", flags=re.IGNORECASE)
+_DIRECT_ID_RE = re.compile(r"(?P<id>(?:cpg|cpl)\d{2,})$", flags=re.IGNORECASE)
 
 
 class HeidelbergResolver(BaseResolver):
@@ -17,7 +17,7 @@ class HeidelbergResolver(BaseResolver):
         text = (url_or_id or "").strip()
         if not text:
             return False
-        return "digi.ub.uni-heidelberg.de" in text.lower() or bool(_ID_RE.search(text))
+        return "digi.ub.uni-heidelberg.de" in text.lower() or bool(_DIRECT_ID_RE.fullmatch(text))
 
     def get_manifest_url(self, url_or_id: str) -> tuple[str | None, str | None]:
         """Build the canonical Heidelberg manifest URL."""
@@ -33,6 +33,8 @@ class HeidelbergResolver(BaseResolver):
 
     @staticmethod
     def _extract_id(value: str) -> str | None:
-        if match := _ID_RE.search(value):
+        if match := _DIRECT_ID_RE.fullmatch(value.strip()):
+            return match.group(1).lower()
+        if match := _DIRECT_ID_RE.search(value):
             return match.group(1).lower()
         return None

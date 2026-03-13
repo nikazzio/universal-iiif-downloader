@@ -81,6 +81,9 @@ def test_heidelberg_resolver_id_and_viewer_url():
     assert manifest_url2 == "https://digi.ub.uni-heidelberg.de/diglit/iiif/cpl456/manifest.json"
     assert doc_id2 == "cpl456"
 
+    assert resolver.can_resolve("cpg123")
+    assert not resolver.can_resolve("abc123")
+
 
 def test_cambridge_resolver_id_and_viewer_url():
     """Resolve CUDL IDs and viewer URLs into canonical IIIF manifests."""
@@ -93,6 +96,7 @@ def test_cambridge_resolver_id_and_viewer_url():
     manifest_url2, doc_id2 = resolver.get_manifest_url("https://cudl.lib.cam.ac.uk/view/MS-ADD-03996")
     assert manifest_url2 == "https://cudl.lib.cam.ac.uk/iiif/MS-ADD-03996"
     assert doc_id2 == "MS-ADD-03996"
+    assert not resolver.can_resolve("csg-0001")
 
 
 def test_ecodices_resolver_compound_id_and_page_url():
@@ -124,6 +128,7 @@ def test_loc_resolver_strips_span_suffix():
     manifest_url, doc_id = resolver.get_manifest_url("https://www.loc.gov/item/2021668145:sp1/")
     assert manifest_url == "https://www.loc.gov/item/2021668145/manifest.json"
     assert doc_id == "2021668145"
+    assert not resolver.can_resolve("https://example.org/item/2021668145/")
 
 
 def test_archive_org_resolver_identifier_details_and_manifest_url():

@@ -309,12 +309,12 @@ def discovery_form() -> Div:
             (function () {{
                 const lib = document.getElementById('lib-select');
                 const providerFilters = {json.dumps(provider_filter_map, ensure_ascii=True)};
-                const filterNodes = Array.from(document.querySelectorAll('[data-filter-key]'));
+                const filterNodes = Array.from(document.querySelectorAll('[data-filter-key],[data_filter_key]'));
                 if (!lib || !filterNodes.length) return;
                 const sync = () => {{
                     const activeFilters = new Set(providerFilters[lib.value || ''] || []);
                     filterNodes.forEach((node) => {{
-                        const filterKey = node.getAttribute('data-filter-key');
+                        const filterKey = node.getAttribute('data-filter-key') || node.getAttribute('data_filter_key');
                         const select = node.querySelector('select');
                         const visible = activeFilters.has(filterKey);
                         node.style.display = visible ? '' : 'none';

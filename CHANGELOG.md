@@ -39,7 +39,6 @@ _This release is published under the MIT License._
 - Preserve gallica titles and add library delete modal ([`74b4875`](https://github.com/nikazzio/universal-iiif-studio/commit/74b487564b0ad24dd99d4e1fa71d45234de22324))
 
 ---
-
 **Detailed Changes**: [v0.22.2...v0.22.3](https://github.com/nikazzio/universal-iiif-studio/compare/v0.22.2...v0.22.3)
 
 ## v0.22.2 (2026-03-11)

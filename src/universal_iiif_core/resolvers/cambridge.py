@@ -4,7 +4,8 @@ import re
 
 from .base import BaseResolver
 
-_CAMBRIDGE_ID_RE = re.compile(r"([A-Za-z0-9]+(?:-[A-Za-z0-9]+)+)")
+_DIRECT_CAMBRIDGE_ID_RE = re.compile(r"(?=.*[A-Z])[A-Z0-9]+(?:-[A-Z0-9]+){2,}")
+_URL_CAMBRIDGE_ID_RE = re.compile(r"([A-Za-z0-9]+(?:-[A-Za-z0-9]+)+)")
 
 
 class CambridgeResolver(BaseResolver):
@@ -17,7 +18,7 @@ class CambridgeResolver(BaseResolver):
         text = (url_or_id or "").strip()
         if not text:
             return False
-        return "cudl.lib.cam.ac.uk" in text.lower() or bool(_CAMBRIDGE_ID_RE.fullmatch(text))
+        return "cudl.lib.cam.ac.uk" in text.lower() or bool(_DIRECT_CAMBRIDGE_ID_RE.fullmatch(text))
 
     def get_manifest_url(self, url_or_id: str) -> tuple[str | None, str | None]:
         """Build the canonical CUDL manifest URL from a URL or direct identifier."""
@@ -34,7 +35,8 @@ class CambridgeResolver(BaseResolver):
     @staticmethod
     def _extract_id(value: str) -> str | None:
         if "cudl.lib.cam.ac.uk" not in value.lower():
-            return value.strip() or None
+            candidate = value.strip()
+            return candidate if _DIRECT_CAMBRIDGE_ID_RE.fullmatch(candidate) else None
 
         trimmed = value.split("?", 1)[0].split("#", 1)[0].rstrip("/")
         parts = [part for part in trimmed.split("/") if part]
@@ -42,5 +44,5 @@ class CambridgeResolver(BaseResolver):
             return None
 
         candidate = parts[-1]
-        match = _CAMBRIDGE_ID_RE.fullmatch(candidate)
+        match = _URL_CAMBRIDGE_ID_RE.fullmatch(candidate)
         return match.group(1) if match else None
