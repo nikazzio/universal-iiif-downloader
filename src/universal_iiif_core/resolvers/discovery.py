@@ -4,16 +4,25 @@ import re
 import unicodedata
 import xml.etree.ElementTree
 from html import unescape
-from typing import Final
+from json import JSONDecodeError
+from typing import Any, Final
+from urllib.parse import quote, urlencode
 
 import requests
 
+from ..discovery.contracts import ProviderResolution
+from ..discovery.orchestrator import resolve_provider_input as resolve_provider_input_orchestrated
+from ..discovery.search_adapters import build_search_strategy_handlers
 from ..exceptions import ResolverError
 from ..logger import get_logger
+from ..providers import IIIFProvider
 from ..utils import get_json
+from .archive_org import ArchiveOrgResolver
+from .ecodices import EcodicesResolver
 from .gallica import GallicaResolver
 from .institut import InstitutResolver
 from .models import SearchResult
+from .oxford import OxfordResolver
 from .parsers import GallicaXMLParser, IIIFManifestParser
 from .registry import resolve_shelfmark as registry_resolve
 
@@ -22,11 +31,17 @@ logger = get_logger(__name__)
 # Constants
 TIMEOUT_SECONDS: Final = 20
 GALLICA_BASE_URL: Final = "https://gallica.bnf.fr/SRU"
+ARCHIVE_ADVANCEDSEARCH_URL: Final = "https://archive.org/advancedsearch.php"
 INSTITUT_SEARCH_URL: Final = "https://bibnum.institutdefrance.fr/records/default"
 INSTITUT_VIEWER_URL: Final = "https://bibnum.institutdefrance.fr/viewer/{doc_id}"
+BODLEIAN_SEARCH_URL: Final = "https://digital.bodleian.ox.ac.uk/search/"
+ECODICES_SEARCH_URL: Final = "https://www.e-codices.unifr.ch/en/search/all"
+VATICAN_HOME_URL: Final = "https://digi.vatlib.it/mss/"
+VATICAN_SEARCH_URL: Final = "https://digi.vatlib.it/mss/search"
+ARCHIVE_MANIFEST_PROBE_LIMIT: Final = 15
 
-# HEADER REALI PER EVITARE IL BAN (Errore 500/403)
-# Gallica blocca le richieste se non sembrano provenire da un browser.
+# Browser-like headers are required for several catalog/search surfaces that reject
+# generic scripted requests with 403/500 responses.
 REAL_BROWSER_HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -46,8 +61,55 @@ _INSTITUT_RECORD_LINK_RE: Final = re.compile(
     r"<a[^>]+href=[\"'](?P<href>/records/item/(?P<id>\d+)[^\"']*)[\"'][^>]*>(?P<title>.*?)</a>",
     flags=re.IGNORECASE | re.DOTALL,
 )
+_VATICAN_RESULT_SPLIT_RE: Final = re.compile(
+    r'<div class="row-search-result-record[^"]*">',
+    flags=re.IGNORECASE,
+)
+_VATICAN_DOC_ID_RE: Final = re.compile(
+    r'href="(?P<href>/mss/edition/(?P<id>MSS_[^"/?#]+))"',
+    flags=re.IGNORECASE,
+)
+_VATICAN_TITLE_RE: Final = re.compile(
+    r'class="link-search-result-record-view">(?P<value>.*?)</a>',
+    flags=re.IGNORECASE | re.DOTALL,
+)
+_VATICAN_DETAIL_RE: Final = re.compile(
+    r'<div class="title">(?P<value>.*?)</div>',
+    flags=re.IGNORECASE | re.DOTALL,
+)
+_VATICAN_THUMB_RE: Final = re.compile(
+    r'<img src="(?P<value>/pub/digit/[^"]+/cover/cover\.jpg)"',
+    flags=re.IGNORECASE,
+)
+_ECODICES_RESULT_SPLIT_RE: Final = re.compile(r'<div class="search-result">', flags=re.IGNORECASE)
+_ECODICES_FACSIMILE_RE: Final = re.compile(
+    r'<a href="(?P<href>https://www\.e-codices\.unifr\.ch/en/[a-z0-9]+/[a-z0-9._-]+)">Facsimile</a>',
+    flags=re.IGNORECASE,
+)
+_ECODICES_COLLECTION_RE: Final = re.compile(
+    r'<div class="collection-shelfmark">\s*(?P<value>.*?)\s*</div>',
+    flags=re.IGNORECASE | re.DOTALL,
+)
+_ECODICES_TITLE_RE: Final = re.compile(
+    r'<div class="document-headline">\s*(?P<value>.*?)\s*</div>',
+    flags=re.IGNORECASE | re.DOTALL,
+)
+_ECODICES_MS_TITLE_RE: Final = re.compile(
+    r'<div class="document-ms-title">\s*(?P<value>.*?)\s*</div>',
+    flags=re.IGNORECASE | re.DOTALL,
+)
+_ECODICES_SUMMARY_RE: Final = re.compile(
+    r'<p class="document-summary-search">\s*(?P<value>.*?)(?:<span class="summary-author"|</p>)',
+    flags=re.IGNORECASE | re.DOTALL,
+)
+_ECODICES_IMAGE_RE: Final = re.compile(
+    r'image-server-base-url="(?P<base>[^"]+)"\s+image-file-path="(?P<path>[^"]+)"',
+    flags=re.IGNORECASE,
+)
 _HTML_TAG_RE: Final = re.compile(r"<[^>]+>")
 _SPACE_RE: Final = re.compile(r"\s+")
+_SPACE_BEFORE_PUNCT_RE: Final = re.compile(r"\s+([,;:!?])")
+_SPACE_BEFORE_SINGLE_PERIOD_RE: Final = re.compile(r"(?<!\.)\s+\.(?!\.)")
 
 _VATICAN_NUMERIC_COLLECTIONS: Final[list[str]] = [
     "Urb.lat",
@@ -124,6 +186,46 @@ def resolve_shelfmark(library: str, shelfmark: str) -> tuple[str | None, str | N
     except (requests.RequestException, requests.Timeout, ValueError, ResolverError) as exc:
         logger.error("Resolver crashed for %r/%r: %s", lib, s, exc, exc_info=True)
         return None, None
+
+
+def _search_with_provider(
+    provider: IIIFProvider,
+    query: str,
+    filters: dict[str, Any] | None = None,
+) -> list[SearchResult]:
+    text = (query or "").strip()
+    if not text or not provider.supports_search():
+        return []
+
+    payload = dict(filters or {})
+    handler = _SEARCH_STRATEGY_HANDLERS.get(provider.search_strategy or "")
+    if not handler:
+        return []
+    return handler(text, payload)
+
+
+def _try_provider_direct_resolution(provider: IIIFProvider, text: str) -> tuple[str | None, str | None]:
+    resolver = provider.resolver()
+    if not resolver.can_resolve(text):
+        return None, None
+    return resolve_shelfmark(provider.key, text)
+
+
+def resolve_provider_input(
+    library: str,
+    user_input: str,
+    *,
+    filters: dict[str, Any] | None = None,
+) -> ProviderResolution:
+    """Resolve discovery input via the shared orchestrator module."""
+    return resolve_provider_input_orchestrated(
+        library,
+        user_input,
+        filters=filters,
+        search_handlers=_SEARCH_STRATEGY_HANDLERS,
+        resolve_shelfmark_fn=resolve_shelfmark,
+        search_with_provider_fn=_search_with_provider,
+    )
 
 
 def search_gallica_by_id(doc_id: str) -> list[SearchResult]:
@@ -276,6 +378,128 @@ def search_institut(query: str, max_results: int = 12) -> list[SearchResult]:
     return results
 
 
+def search_archive_org(query: str, max_results: int = 12) -> list[SearchResult]:
+    """Search Internet Archive advancedsearch and return IIIF-ready results."""
+    if not (q := (query or "").strip()):
+        return []
+
+    clean_q = q.replace('"', " ")
+    requested_results = max(1, min(max_results, 20))
+    fetch_rows = min(max(requested_results * 3, requested_results), 30)
+    params = {
+        "q": f"({clean_q}) AND mediatype:texts",
+        "fl[]": ["identifier", "title", "creator", "date", "mediatype"],
+        "rows": str(fetch_rows),
+        "page": "1",
+        "output": "json",
+    }
+
+    logger.debug("Searching Archive.org advancedsearch: %s", clean_q)
+    payload = get_json(
+        _build_archive_search_url(params),
+        headers=HTML_BROWSER_HEADERS,
+        retries=2,
+    )
+    if not isinstance(payload, dict):
+        logger.error("Archive.org search failed for query '%s': empty/invalid payload", clean_q)
+        return []
+
+    docs = payload.get("response", {}).get("docs", [])
+    resolver = ArchiveOrgResolver()
+    results: list[SearchResult] = []
+    manifest_probes = 0
+
+    for doc in docs:
+        manifest_url, doc_id, manifest_probes, should_stop = _resolve_archive_candidate(
+            doc,
+            resolver,
+            manifest_probes,
+        )
+        if should_stop:
+            break
+        if not manifest_url or not doc_id or not isinstance(doc, dict):
+            continue
+        result = _build_archive_result(doc, doc_id=doc_id, manifest_url=manifest_url)
+        results.append(result)
+        if len(results) >= requested_results:
+            break
+
+    return results[:requested_results]
+
+
+def search_bodleian(query: str, max_results: int = 12) -> list[SearchResult]:
+    """Search Digital Bodleian using its JSON-LD search representation."""
+    if not (q := (query or "").strip()):
+        return []
+
+    requested_results = max(1, min(max_results, 20))
+    try:
+        logger.debug("Searching Bodleian JSON-LD search surface: %s", q)
+        response = requests.get(
+            BODLEIAN_SEARCH_URL,
+            params={"q": q},
+            headers={**HTML_BROWSER_HEADERS, "Accept": "application/ld+json"},
+            timeout=TIMEOUT_SECONDS,
+        )
+        response.raise_for_status()
+        payload = response.json()
+    except (requests.RequestException, JSONDecodeError, ValueError) as exc:
+        logger.error("Bodleian search failed for query '%s': %s", q, exc, exc_info=True)
+        return []
+
+    members = payload.get("member", [])
+    resolver = OxfordResolver()
+    results: list[SearchResult] = []
+
+    for member in members:
+        if not isinstance(member, dict):
+            continue
+        if result := _build_bodleian_result(member, resolver):
+            results.append(result)
+        if len(results) >= requested_results:
+            break
+
+    return results
+
+
+def search_ecodices(query: str, max_results: int = 12) -> list[SearchResult]:
+    """Search e-codices HTML results and map them to IIIF manifests."""
+    if not (q := (query or "").strip()):
+        return []
+
+    requested_results = max(1, min(max_results, 20))
+    try:
+        logger.debug("Searching e-codices HTML search surface: %s", q)
+        response = requests.get(
+            ECODICES_SEARCH_URL,
+            params={
+                "sQueryString": q,
+                "sSearchField": "fullText",
+                "iResultsPerPage": str(requested_results),
+                "sSortField": "score",
+                "aSelectedFacets": "",
+            },
+            headers=HTML_BROWSER_HEADERS,
+            timeout=TIMEOUT_SECONDS,
+        )
+        response.raise_for_status()
+    except (requests.RequestException, requests.Timeout) as exc:
+        logger.error("e-codices search failed for query '%s': %s", q, exc, exc_info=True)
+        return []
+
+    resolver = EcodicesResolver()
+    results: list[SearchResult] = []
+    for chunk in _ECODICES_RESULT_SPLIT_RE.split(response.text):
+        if not chunk.strip():
+            continue
+        if result := _build_ecodices_result(chunk, resolver):
+            results.append(result)
+        if len(results) >= requested_results:
+            break
+
+    return results
+
+
 def _extract_institut_candidates(html: str, max_results: int) -> list[tuple[str, str]]:
     """Extract unique `(doc_id, title)` candidates from Institut HTML search page."""
     candidates: list[tuple[str, str]] = []
@@ -322,6 +546,7 @@ def _fetch_institut_manifest_result(
     if not parsed.get("title") or parsed.get("title") == doc_id:
         parsed["title"] = fallback_title
     parsed["library"] = "Institut de France"
+    parsed["viewer_url"] = INSTITUT_VIEWER_URL.format(doc_id=doc_id)
     parsed.setdefault("raw", {})
     parsed["raw"]["viewer_url"] = INSTITUT_VIEWER_URL.format(doc_id=doc_id)
     return parsed
@@ -335,6 +560,7 @@ def _fallback_institut_result(doc_id: str, title: str, manifest_url: str) -> Sea
         "manifest": manifest_url,
         "thumbnail": "",
         "thumb": "",
+        "viewer_url": INSTITUT_VIEWER_URL.format(doc_id=doc_id),
         "library": "Institut de France",
         "raw": {"viewer_url": INSTITUT_VIEWER_URL.format(doc_id=doc_id)},
     }
@@ -342,7 +568,199 @@ def _fallback_institut_result(doc_id: str, title: str, manifest_url: str) -> Sea
 
 def _clean_html_text(value: str) -> str:
     no_tags = _HTML_TAG_RE.sub(" ", value or "")
-    return _SPACE_RE.sub(" ", unescape(no_tags)).strip()
+    compact = _SPACE_RE.sub(" ", unescape(no_tags)).strip()
+    compact = _SPACE_BEFORE_PUNCT_RE.sub(r"\1", compact)
+    return _SPACE_BEFORE_SINGLE_PERIOD_RE.sub(".", compact)
+
+
+def _archive_scalar(value: Any) -> str:
+    if isinstance(value, list):
+        value = value[0] if value else ""
+    return str(value or "").strip()
+
+
+def _archive_thumbnail_url(identifier: str) -> str:
+    encoded = quote(f"{identifier}/__ia_thumb.jpg", safe="")
+    return f"https://iiif.archive.org/image/iiif/2/{encoded}/full/180,/0/default.jpg"
+
+
+def _archive_manifest_is_usable(manifest_url: str) -> bool:
+    """Quickly validate Archive.org manifests before exposing them in search results."""
+    payload = get_json(
+        manifest_url,
+        headers={**HTML_BROWSER_HEADERS, "Accept": "application/json"},
+        retries=1,
+    )
+    if payload is None:
+        logger.debug("Archive.org manifest probe failed for %s: empty payload", manifest_url)
+        return False
+
+    if not isinstance(payload, dict):
+        return False
+    if payload.get("type") == "Manifest" or payload.get("@type") == "sc:Manifest":
+        return True
+    return "items" in payload or "sequences" in payload
+
+
+def _build_archive_search_url(params: dict[str, Any]) -> str:
+    query = urlencode(params, doseq=True)
+    return f"{ARCHIVE_ADVANCEDSEARCH_URL}?{query}"
+
+
+def _resolve_archive_candidate(
+    doc: Any,
+    resolver: ArchiveOrgResolver,
+    manifest_probes: int,
+) -> tuple[str | None, str | None, int, bool]:
+    if not isinstance(doc, dict):
+        return None, None, manifest_probes, False
+    identifier = str(doc.get("identifier") or "").strip()
+    if not identifier:
+        return None, None, manifest_probes, False
+
+    manifest_url, doc_id = resolver.get_manifest_url(identifier)
+    if not manifest_url or not doc_id:
+        return None, None, manifest_probes, False
+    if manifest_probes >= ARCHIVE_MANIFEST_PROBE_LIMIT:
+        logger.debug("Archive.org manifest probe limit reached (%s)", ARCHIVE_MANIFEST_PROBE_LIMIT)
+        return None, None, manifest_probes, True
+    manifest_probes += 1
+    if not _archive_manifest_is_usable(manifest_url):
+        logger.debug("Skipping Archive.org result with unusable manifest: %s", manifest_url)
+        return None, None, manifest_probes, False
+    return manifest_url, doc_id, manifest_probes, False
+
+
+def _build_archive_result(doc: dict[str, Any], *, doc_id: str, manifest_url: str) -> SearchResult:
+    title = _archive_scalar(doc.get("title")) or doc_id
+    author = _archive_scalar(doc.get("creator")) or "Autore sconosciuto"
+    date = _archive_scalar(doc.get("date"))
+    mediatype = _archive_scalar(doc.get("mediatype")) or "texts"
+    thumb = _archive_thumbnail_url(doc_id)
+
+    result: SearchResult = {
+        "id": doc_id,
+        "title": title[:200],
+        "author": author[:100],
+        "manifest": manifest_url,
+        "thumbnail": thumb,
+        "thumb": thumb,
+        "viewer_url": f"https://archive.org/details/{doc_id}",
+        "library": "Archive.org",
+        "publisher": "Internet Archive",
+        "raw": {
+            "viewer_url": f"https://archive.org/details/{doc_id}",
+            "mediatype": mediatype,
+        },
+    }
+    if date:
+        result["date"] = date[:100]
+    return result
+
+
+def _first_text(values: Any) -> str:
+    if isinstance(values, list):
+        for value in values:
+            clean = _clean_html_text(str(value or ""))
+            if clean:
+                return clean
+        return ""
+    return _clean_html_text(str(values or ""))
+
+
+def _build_bodleian_result(member: dict[str, Any], resolver: OxfordResolver) -> SearchResult | None:
+    viewer_url = str(member.get("id") or "").strip()
+    manifest_url = str(member.get("manifest", {}).get("id") or "").strip()
+    _, doc_id = resolver.get_manifest_url(viewer_url)
+    if not manifest_url or not doc_id:
+        return None
+
+    display_fields = member.get("displayFields", {})
+    if not isinstance(display_fields, dict):
+        display_fields = {}
+
+    title = _first_text(display_fields.get("title")) or _first_text(member.get("shelfmark")) or doc_id
+    author = _first_text(display_fields.get("people")) or "Autore sconosciuto"
+    date = _first_text(display_fields.get("dateStatement"))
+    description = _first_text(display_fields.get("snippet"))
+    if not description:
+        surface_count = int(member.get("surfaceCount") or 0)
+        if surface_count > 0:
+            description = f"{surface_count} pagine"
+
+    thumbnail = _first_bodleian_thumbnail(member.get("thumbnail"))
+    result: SearchResult = {
+        "id": doc_id,
+        "title": title[:200],
+        "author": author[:150],
+        "description": description[:400],
+        "publisher": "Bodleian Libraries",
+        "manifest": manifest_url,
+        "thumbnail": thumbnail,
+        "thumb": thumbnail,
+        "viewer_url": viewer_url,
+        "library": "Bodleian",
+        "raw": {"viewer_url": viewer_url},
+    }
+    if date:
+        result["date"] = date[:100]
+    return result
+
+
+def _first_bodleian_thumbnail(value: Any) -> str:
+    if isinstance(value, list):
+        for item in value:
+            if isinstance(item, dict) and item.get("id"):
+                return str(item["id"]).strip()
+    if isinstance(value, dict) and value.get("id"):
+        return str(value["id"]).strip()
+    return ""
+
+
+def _build_ecodices_result(chunk: str, resolver: EcodicesResolver) -> SearchResult | None:
+    facsimile_match = _ECODICES_FACSIMILE_RE.search(chunk)
+    if not facsimile_match:
+        return None
+
+    viewer_url = facsimile_match.group("href")
+    manifest_url, doc_id = resolver.get_manifest_url(viewer_url)
+    if not manifest_url or not doc_id:
+        return None
+
+    title = _regex_group_text(_ECODICES_MS_TITLE_RE, chunk) or _regex_group_text(_ECODICES_TITLE_RE, chunk) or doc_id
+    collection = _regex_group_text(_ECODICES_COLLECTION_RE, chunk)
+    description = _regex_group_text(_ECODICES_SUMMARY_RE, chunk)
+    thumbnail = _build_ecodices_thumbnail(chunk)
+
+    return {
+        "id": doc_id,
+        "title": title[:200],
+        "author": "Autore sconosciuto",
+        "description": description[:500],
+        "publisher": collection[:200],
+        "manifest": manifest_url,
+        "thumbnail": thumbnail,
+        "thumb": thumbnail,
+        "viewer_url": viewer_url,
+        "library": "e-codices",
+        "raw": {"viewer_url": viewer_url},
+    }
+
+
+def _regex_group_text(pattern: re.Pattern[str], chunk: str) -> str:
+    if not (match := pattern.search(chunk)):
+        return ""
+    return _clean_html_text(match.group("value"))
+
+
+def _build_ecodices_thumbnail(chunk: str) -> str:
+    if not (match := _ECODICES_IMAGE_RE.search(chunk)):
+        return ""
+    base = str(match.group("base") or "").strip().rstrip("/")
+    path = str(match.group("path") or "").strip().lstrip("/")
+    if not base or not path:
+        return ""
+    return f"{base}/{path}/full/180,/0/default.jpg"
 
 
 def get_manifest_details(manifest_url: str) -> SearchResult | None:
@@ -368,13 +786,14 @@ def get_manifest_details(manifest_url: str) -> SearchResult | None:
 
 
 def search_vatican(query: str, max_results: int = 5) -> list[SearchResult]:
-    """Search Vatican Library by generating shelfmark variants.
+    """Search Vatican Library through a hybrid strategy.
 
-    Since Vatican doesn't have a public search API, we try common shelfmark
-    patterns and verify which manifests actually exist.
+    We first try direct shelfmark normalization and a few historical heuristics for
+    common manuscript patterns. If that fails and the query looks like free text, we
+    fall back to DigiVatLib's public manuscripts search flow.
 
     Args:
-        query: User input (e.g., "1223", "Urb lat 1223", "Vat.gr.123")
+        query: User input (e.g., "1223", "Urb lat 1223", "Vat.gr.123", "dante")
         max_results: Maximum number of results to return
 
     Returns:
@@ -398,6 +817,12 @@ def search_vatican(query: str, max_results: int = 5) -> list[SearchResult]:
     else:
         candidate_ids = _build_text_candidate_ids(normalized_query)
     _append_candidate_results(results, candidate_ids, resolver, max_results)
+    if len(results) >= max_results:
+        return results[:max_results]
+
+    if _query_can_use_vatican_text_search(normalized_query):
+        official_results = _search_vatican_official_site(normalized_query, max_results=max_results - len(results))
+        _append_unique_results(results, official_results, max_results)
 
     return results
 
@@ -447,8 +872,90 @@ def _append_candidate_results(results, candidate_ids: list[str], resolver, max_r
             results.append(result)
 
 
+def _append_unique_results(results: list[SearchResult], incoming: list[SearchResult], max_results: int) -> None:
+    seen_ids = {str(item.get("id") or "") for item in results}
+    for item in incoming:
+        item_id = str(item.get("id") or "")
+        if not item_id or item_id in seen_ids:
+            continue
+        results.append(item)
+        seen_ids.add(item_id)
+        if len(results) >= max_results:
+            return
+
+
 def _build_vatican_manifest_url(ms_id: str) -> str:
     return f"https://digi.vatlib.it/iiif/{ms_id}/manifest.json"
+
+
+def _query_can_use_vatican_text_search(query: str) -> bool:
+    stripped = (query or "").strip()
+    if not stripped:
+        return False
+    if stripped.isdigit():
+        return False
+    return not _query_contains_known_prefix(stripped)
+
+
+def _search_vatican_official_site(query: str, max_results: int = 5) -> list[SearchResult]:
+    """Use DigiVatLib's public manuscripts search flow for free-text queries.
+
+    The result page rejects cold requests from non-browser clients, so we first prime the
+    session on the manuscripts landing page and then send the actual search with a referer.
+    """
+    if not (q := (query or "").strip()):
+        return []
+
+    try:
+        with requests.Session() as session:
+            session.get(VATICAN_HOME_URL, headers=HTML_BROWSER_HEADERS, timeout=TIMEOUT_SECONDS)
+            response = session.get(
+                VATICAN_SEARCH_URL,
+                params={"k_f": "0", "k_v": q},
+                headers={**HTML_BROWSER_HEADERS, "Referer": VATICAN_HOME_URL},
+                timeout=TIMEOUT_SECONDS,
+            )
+            response.raise_for_status()
+    except (requests.RequestException, requests.Timeout) as exc:
+        logger.debug("Vatican official search failed for query %r: %s", q, exc)
+        return []
+
+    results: list[SearchResult] = []
+    for chunk in _VATICAN_RESULT_SPLIT_RE.split(response.text):
+        if not chunk.strip():
+            continue
+        if result := _build_vatican_html_result(chunk):
+            results.append(result)
+        if len(results) >= max_results:
+            break
+    return results
+
+
+def _build_vatican_html_result(chunk: str) -> SearchResult | None:
+    if not (doc_match := _VATICAN_DOC_ID_RE.search(chunk)):
+        return None
+
+    doc_id = str(doc_match.group("id") or "").strip()
+    if not doc_id:
+        return None
+
+    title = _regex_group_text(_VATICAN_TITLE_RE, chunk) or doc_id
+    description = _regex_group_text(_VATICAN_DETAIL_RE, chunk)
+    thumb_rel = _regex_group_text(_VATICAN_THUMB_RE, chunk)
+    thumb = f"https://digi.vatlib.it{thumb_rel}" if thumb_rel.startswith("/") else thumb_rel
+
+    return {
+        "id": doc_id,
+        "title": title[:200],
+        "author": "",
+        "description": description[:500],
+        "manifest": _build_vatican_manifest_url(doc_id),
+        "thumbnail": thumb,
+        "thumb": thumb,
+        "viewer_url": f"https://digi.vatlib.it/view/{doc_id}",
+        "library": "Vaticana",
+        "raw": {"viewer_url": f"https://digi.vatlib.it/view/{doc_id}"},
+    }
 
 
 def _verify_vatican_manifest(manifest_url: str, ms_id: str, resolver) -> SearchResult | None:
@@ -489,6 +996,7 @@ def _verify_vatican_manifest(manifest_url: str, ms_id: str, resolver) -> SearchR
             "manifest": manifest_url,
             "thumbnail": thumb_url or "",
             "thumb": thumb_url or "",
+            "viewer_url": f"https://digi.vatlib.it/view/{ms_id}",
             "library": "Vaticana",
             "language": meta_map.get("language", ""),
             "publisher": meta_map.get("publisher", meta_map.get("source", "")),
@@ -502,13 +1010,28 @@ def _verify_vatican_manifest(manifest_url: str, ms_id: str, resolver) -> SearchR
         return None
 
 
+_SEARCH_STRATEGY_HANDLERS: Final[dict[str, Any]] = build_search_strategy_handlers(
+    smart_search_fn=smart_search,
+    search_vatican_fn=search_vatican,
+    search_institut_fn=search_institut,
+    search_archive_org_fn=search_archive_org,
+    search_bodleian_fn=search_bodleian,
+    search_ecodices_fn=search_ecodices,
+)
+
+
 __all__ = [
+    "ProviderResolution",
+    "resolve_provider_input",
     "resolve_shelfmark",
     "search_gallica",
     "search_gallica_by_id",
     "search_institut",
     "search_vatican",
     "get_manifest_details",
+    "search_archive_org",
+    "search_bodleian",
+    "search_ecodices",
     "smart_search",
     "TIMEOUT_SECONDS",
 ]
