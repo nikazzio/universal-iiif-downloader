@@ -228,7 +228,7 @@ def resolve_manifest(library: str, shelfmark: str, gallica_type: str = "all"):
         logger.info("Resolving: lib=%s input=%s", library, shelfmark)
 
         cm = get_config_manager()
-        max_results = cm.data.get("settings", {}).get("discovery", {}).get("max_results_per_provider", 12)
+        max_results = cm.data.get("settings", {}).get("discovery", {}).get("max_results_per_provider", 20)
 
         resolution = resolve_provider_input(
             library, shelfmark, filters={"gallica_type": gallica_type, "max_results": max_results}
@@ -242,7 +242,18 @@ def resolve_manifest(library: str, shelfmark: str, gallica_type: str = "all"):
             if len(resolution.results) == 1 and has_manifest and (is_direct or provider.search_mode == "fallback"):
                 pages = 0 if is_direct else _page_count_from_result(first)
                 return render_preview(_build_item_preview_data(first, provider.key, pages=pages))
-            return render_search_results_list(resolution.results)
+
+            has_more = _provider_supports_pagination(provider) and len(resolution.results) >= max_results
+            return render_search_results_list(
+                resolution.results,
+                pagination={
+                    "library": library,
+                    "shelfmark": shelfmark,
+                    "gallica_type": gallica_type,
+                    "page": 1,
+                    "has_more": has_more,
+                },
+            )
 
         if resolution.status != "manifest" or not resolution.manifest_url:
             return _with_feedback_toast(
@@ -296,6 +307,51 @@ def probe_manifest(manifest_url: str, result_id: str = ""):
         Span("✗ Manifesto non disponibile", cls="text-xs text-red-500 dark:text-red-400 font-medium"),
         id=f"probe-{result_id}",
     )
+
+
+# Providers whose external API supports page/offset pagination.
+_PAGINATABLE_STRATEGIES = frozenset({"archive_org", "loc", "harvard", "gallica"})
+
+
+def _provider_supports_pagination(provider) -> bool:
+    return (provider.search_strategy or "") in _PAGINATABLE_STRATEGIES
+
+
+def load_more_results(library: str, shelfmark: str, page: int = 2, gallica_type: str = "all"):
+    """Return the next page of search results as an HTMX fragment."""
+    from studio_ui.components.discovery import render_load_more_fragment
+
+    try:
+        if not shelfmark or not shelfmark.strip() or not is_known_provider(library):
+            return ""
+
+        cm = get_config_manager()
+        max_results = cm.data.get("settings", {}).get("discovery", {}).get("max_results_per_provider", 20)
+        page = max(1, int(page))
+
+        resolution = resolve_provider_input(
+            library,
+            shelfmark,
+            filters={"gallica_type": gallica_type, "max_results": max_results, "page": page},
+        )
+
+        if resolution.status != "results" or not resolution.results:
+            return render_load_more_fragment([], has_more=False)
+
+        has_more = _provider_supports_pagination(resolution.provider) and len(resolution.results) >= max_results
+        return render_load_more_fragment(
+            resolution.results,
+            has_more=has_more,
+            pagination={
+                "library": library,
+                "shelfmark": shelfmark,
+                "gallica_type": gallica_type,
+                "page": page,
+            },
+        )
+    except Exception:
+        logger.exception("Error loading more results (page %s)", page)
+        return ""
 
 
 def add_to_library(manifest_url: str, doc_id: str, library: str, result_title: str = ""):

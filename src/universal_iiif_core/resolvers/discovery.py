@@ -334,7 +334,9 @@ def _matches_gallica_type_filter(item: SearchResult, normalized_filter: str) -> 
     return True
 
 
-def search_gallica(query: str, max_records: int = 15, *, gallica_type_filter: str = "all") -> list[SearchResult]:
+def search_gallica(
+    query: str, max_records: int = 20, *, page: int = 1, gallica_type_filter: str = "all"
+) -> list[SearchResult]:
     """Search Gallica SRU and return parsed SearchResult entries.
 
     Network errors are logged here; parser returns structured results or
@@ -351,13 +353,14 @@ def search_gallica(query: str, max_records: int = 15, *, gallica_type_filter: st
     requested_records = max(1, min(max_records, 50))
     fetch_records = 50 if normalized_filter != "all" else requested_records
     maximum_records = str(fetch_records)
+    start_record = (max(1, page) - 1) * requested_records + 1
     resolver = GallicaResolver()
     params = {
         "operation": "searchRetrieve",
         "version": "1.2",
         "query": cql,
         "maximumRecords": maximum_records,
-        "startRecord": "1",
+        "startRecord": str(start_record),
         "collapsing": "true",  # Raggruppa versioni simili
     }
     try:
@@ -376,7 +379,7 @@ def search_gallica(query: str, max_records: int = 15, *, gallica_type_filter: st
     return filtered[:requested_records]
 
 
-def search_institut(query: str, max_results: int = 12) -> list[SearchResult]:
+def search_institut(query: str, max_results: int = 20, page: int = 1) -> list[SearchResult]:
     """Search Institut de France (Bibnum) records page and return IIIF entries."""
     if not (q := (query or "").strip()):
         return []
@@ -408,7 +411,7 @@ def search_institut(query: str, max_results: int = 12) -> list[SearchResult]:
     return results
 
 
-def search_archive_org(query: str, max_results: int = 12) -> list[SearchResult]:
+def search_archive_org(query: str, max_results: int = 20, page: int = 1) -> list[SearchResult]:
     """Search Internet Archive advancedsearch and return IIIF-ready results.
 
     Manifest probing is NOT performed inline — results are returned immediately
@@ -425,7 +428,7 @@ def search_archive_org(query: str, max_results: int = 12) -> list[SearchResult]:
         "q": f"({clean_q}) AND mediatype:texts",
         "fl[]": ["identifier", "title", "creator", "date", "mediatype", "description", "volume", "language"],
         "rows": str(fetch_rows),
-        "page": "1",
+        "page": str(max(1, page)),
         "output": "json",
     }
 
@@ -461,7 +464,7 @@ def search_archive_org(query: str, max_results: int = 12) -> list[SearchResult]:
     return results[:requested_results]
 
 
-def search_bodleian(query: str, max_results: int = 12) -> list[SearchResult]:
+def search_bodleian(query: str, max_results: int = 20, page: int = 1) -> list[SearchResult]:
     """Search Digital Bodleian using its JSON-LD search representation."""
     if not (q := (query or "").strip()):
         return []
@@ -496,7 +499,7 @@ def search_bodleian(query: str, max_results: int = 12) -> list[SearchResult]:
     return results
 
 
-def search_ecodices(query: str, max_results: int = 12) -> list[SearchResult]:
+def search_ecodices(query: str, max_results: int = 20, page: int = 1) -> list[SearchResult]:
     """Search e-codices HTML results and map them to IIIF manifests."""
     if not (q := (query or "").strip()):
         return []
@@ -534,7 +537,7 @@ def search_ecodices(query: str, max_results: int = 12) -> list[SearchResult]:
     return results
 
 
-def search_cambridge(query: str, max_results: int = 12) -> list[SearchResult]:
+def search_cambridge(query: str, max_results: int = 20, page: int = 1) -> list[SearchResult]:
     """Search Cambridge Digital Library and map viewer hits to IIIF manifests."""
     if not (q := (query or "").strip()):
         return []
@@ -641,13 +644,15 @@ def _build_cambridge_browser_handoff_result(query: str) -> SearchResult:
     }
 
 
-def search_harvard(query: str, max_results: int = 12) -> list[SearchResult]:
+def search_harvard(query: str, max_results: int = 20, page: int = 1) -> list[SearchResult]:
     """Search Harvard metadata surface and extract IIIF manifest references when present."""
     if not (q := (query or "").strip()):
         return []
 
     requested_results = max(1, min(max_results, 20))
-    params = {"q": q, "limit": str(min(requested_results * 10, 100))}
+    api_limit = min(requested_results * 10, 100)
+    start_offset = (max(1, page) - 1) * api_limit
+    params = {"q": q, "limit": str(api_limit), "start": str(start_offset)}
     payload = get_json(HARVARD_API_URL + "?" + urlencode(params), headers=HTML_BROWSER_HEADERS, retries=2)
     collected = _extract_harvard_results(payload) if isinstance(payload, dict) else []
 
@@ -676,13 +681,13 @@ def search_harvard(query: str, max_results: int = 12) -> list[SearchResult]:
     return deduped
 
 
-def search_loc(query: str, max_results: int = 12) -> list[SearchResult]:
+def search_loc(query: str, max_results: int = 20, page: int = 1) -> list[SearchResult]:
     """Search Library of Congress JSON API and keep results that map to IIIF manifests."""
     if not (q := (query or "").strip()):
         return []
 
     requested_results = max(1, min(max_results, 20))
-    params = {"q": q, "fo": "json", "sp": "1", "c": str(min(requested_results * 5, 100))}
+    params = {"q": q, "fo": "json", "sp": str(max(1, page)), "c": str(min(requested_results * 5, 100))}
     payload = get_json(_build_loc_search_url(params), headers=HTML_BROWSER_HEADERS, retries=2)
     if not isinstance(payload, dict):
         logger.error("LOC search failed for query '%s': empty/invalid payload", q)
@@ -720,7 +725,7 @@ def search_loc(query: str, max_results: int = 12) -> list[SearchResult]:
     return results
 
 
-def search_heidelberg(query: str, max_results: int = 12) -> list[SearchResult]:
+def search_heidelberg(query: str, max_results: int = 20, page: int = 1) -> list[SearchResult]:
     """Search Heidelberg website and map diglit hits to IIIF manifests when discoverable."""
     if not (q := (query or "").strip()):
         return []
@@ -1262,7 +1267,7 @@ def get_manifest_details(manifest_url: str) -> SearchResult | None:
         return None
 
 
-def search_vatican(query: str, max_results: int = 5) -> list[SearchResult]:
+def search_vatican(query: str, max_results: int = 5, page: int = 1) -> list[SearchResult]:
     """Search Vatican Library through a hybrid strategy.
 
     We first try direct shelfmark normalization and a few historical heuristics for
@@ -1272,6 +1277,7 @@ def search_vatican(query: str, max_results: int = 5) -> list[SearchResult]:
     Args:
         query: User input (e.g., "1223", "Urb lat 1223", "Vat.gr.123", "dante")
         max_results: Maximum number of results to return
+        page: Page number (unused — Vatican search is not paginated)
 
     Returns:
         List of SearchResult for manifests that exist

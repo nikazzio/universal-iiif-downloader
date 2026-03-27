@@ -6,9 +6,9 @@ from typing import Any
 from universal_iiif_core.resolvers.models import SearchResult
 
 # Default used when max_results is not provided via config/payload.
-_DEFAULT_MAX_RESULTS = 12
+_DEFAULT_MAX_RESULTS = 20
 
-SearchWithLimitFn = Callable[[str, int], list[SearchResult]]
+SearchWithLimitFn = Callable[[str, int, int], list[SearchResult]]
 SmartSearchFn = Callable[..., list[SearchResult]]
 
 
@@ -23,13 +23,29 @@ def _max_results_from_payload(payload: dict[str, Any]) -> int:
     return _DEFAULT_MAX_RESULTS
 
 
+def _page_from_payload(payload: dict[str, Any]) -> int:
+    """Read page number from the adapter payload (1-based, default 1)."""
+    raw = payload.get("page")
+    if raw is not None:
+        try:
+            return max(1, int(raw))
+        except (TypeError, ValueError):
+            pass
+    return 1
+
+
 def _search_gallica_provider(
     query: str,
     _payload: dict[str, Any],
     *,
     smart_search_fn: SmartSearchFn,
 ) -> list[SearchResult]:
-    return smart_search_fn(query, gallica_type_filter=str(_payload.get("gallica_type") or "all"))
+    return smart_search_fn(
+        query,
+        max_records=_max_results_from_payload(_payload),
+        page=_page_from_payload(_payload),
+        gallica_type_filter=str(_payload.get("gallica_type") or "all"),
+    )
 
 
 def _search_vatican_provider(
@@ -38,7 +54,7 @@ def _search_vatican_provider(
     *,
     search_vatican_fn: SearchWithLimitFn,
 ) -> list[SearchResult]:
-    return search_vatican_fn(query, _max_results_from_payload(_payload))
+    return search_vatican_fn(query, _max_results_from_payload(_payload), _page_from_payload(_payload))
 
 
 def _search_institut_provider(
@@ -47,7 +63,7 @@ def _search_institut_provider(
     *,
     search_institut_fn: SearchWithLimitFn,
 ) -> list[SearchResult]:
-    return search_institut_fn(query, _max_results_from_payload(_payload))
+    return search_institut_fn(query, _max_results_from_payload(_payload), _page_from_payload(_payload))
 
 
 def _search_archive_provider(
@@ -56,7 +72,7 @@ def _search_archive_provider(
     *,
     search_archive_org_fn: SearchWithLimitFn,
 ) -> list[SearchResult]:
-    return search_archive_org_fn(query, _max_results_from_payload(_payload))
+    return search_archive_org_fn(query, _max_results_from_payload(_payload), _page_from_payload(_payload))
 
 
 def _search_bodleian_provider(
@@ -65,7 +81,7 @@ def _search_bodleian_provider(
     *,
     search_bodleian_fn: SearchWithLimitFn,
 ) -> list[SearchResult]:
-    return search_bodleian_fn(query, _max_results_from_payload(_payload))
+    return search_bodleian_fn(query, _max_results_from_payload(_payload), _page_from_payload(_payload))
 
 
 def _search_ecodices_provider(
@@ -74,7 +90,7 @@ def _search_ecodices_provider(
     *,
     search_ecodices_fn: SearchWithLimitFn,
 ) -> list[SearchResult]:
-    return search_ecodices_fn(query, _max_results_from_payload(_payload))
+    return search_ecodices_fn(query, _max_results_from_payload(_payload), _page_from_payload(_payload))
 
 
 def _search_cambridge_provider(
@@ -83,7 +99,7 @@ def _search_cambridge_provider(
     *,
     search_cambridge_fn: SearchWithLimitFn,
 ) -> list[SearchResult]:
-    return search_cambridge_fn(query, _max_results_from_payload(_payload))
+    return search_cambridge_fn(query, _max_results_from_payload(_payload), _page_from_payload(_payload))
 
 
 def _search_harvard_provider(
@@ -92,7 +108,7 @@ def _search_harvard_provider(
     *,
     search_harvard_fn: SearchWithLimitFn,
 ) -> list[SearchResult]:
-    return search_harvard_fn(query, _max_results_from_payload(_payload))
+    return search_harvard_fn(query, _max_results_from_payload(_payload), _page_from_payload(_payload))
 
 
 def _search_loc_provider(
@@ -101,7 +117,7 @@ def _search_loc_provider(
     *,
     search_loc_fn: SearchWithLimitFn,
 ) -> list[SearchResult]:
-    return search_loc_fn(query, _max_results_from_payload(_payload))
+    return search_loc_fn(query, _max_results_from_payload(_payload), _page_from_payload(_payload))
 
 
 def _search_heidelberg_provider(
@@ -110,7 +126,7 @@ def _search_heidelberg_provider(
     *,
     search_heidelberg_fn: SearchWithLimitFn,
 ) -> list[SearchResult]:
-    return search_heidelberg_fn(query, _max_results_from_payload(_payload))
+    return search_heidelberg_fn(query, _max_results_from_payload(_payload), _page_from_payload(_payload))
 
 
 def build_search_strategy_handlers(
