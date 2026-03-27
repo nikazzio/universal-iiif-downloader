@@ -45,7 +45,6 @@ CAMBRIDGE_SEARCH_URL: Final = "https://cudl.lib.cam.ac.uk/search"
 HARVARD_API_URL: Final = "https://api.lib.harvard.edu/v2/items.json"
 LOC_SEARCH_URL: Final = "https://www.loc.gov/search/"
 HEIDELBERG_SITE_SEARCH_URL: Final = "https://www.ub.uni-heidelberg.de/cgi-bin/search.cgi"
-ARCHIVE_MANIFEST_PROBE_LIMIT: Final = 5
 
 # Browser-like headers are required for several catalog/search surfaces that reject
 # generic scripted requests with 403/500 responses.
@@ -410,13 +409,18 @@ def search_institut(query: str, max_results: int = 12) -> list[SearchResult]:
 
 
 def search_archive_org(query: str, max_results: int = 12) -> list[SearchResult]:
-    """Search Internet Archive advancedsearch and return IIIF-ready results."""
+    """Search Internet Archive advancedsearch and return IIIF-ready results.
+
+    Manifest probing is NOT performed inline — results are returned immediately
+    with ``manifest_status="pending"`` and validated asynchronously via the
+    ``/api/discovery/probe_manifest`` HTMX endpoint.
+    """
     if not (q := (query or "").strip()):
         return []
 
     clean_q = q.replace('"', " ")
-    requested_results = max(1, min(max_results, 20))
-    fetch_rows = min(max(requested_results * 3, requested_results), 30)
+    requested_results = max(1, min(max_results, 50))
+    fetch_rows = min(max(requested_results * 3, 20), 60)
     params = {
         "q": f"({clean_q}) AND mediatype:texts",
         "fl[]": ["identifier", "title", "creator", "date", "mediatype", "description", "volume", "language"],
@@ -438,19 +442,18 @@ def search_archive_org(query: str, max_results: int = 12) -> list[SearchResult]:
     docs = payload.get("response", {}).get("docs", [])
     resolver = ArchiveOrgResolver()
     results: list[SearchResult] = []
-    manifest_probes = 0
 
     for doc in docs:
-        manifest_url, doc_id, manifest_probes, should_stop = _resolve_archive_candidate(
-            doc,
-            resolver,
-            manifest_probes,
-        )
-        if should_stop:
-            break
-        if not manifest_url or not doc_id or not isinstance(doc, dict):
+        if not isinstance(doc, dict):
+            continue
+        identifier = str(doc.get("identifier") or "").strip()
+        if not identifier:
+            continue
+        manifest_url, doc_id = resolver.get_manifest_url(identifier)
+        if not manifest_url or not doc_id:
             continue
         result = _build_archive_result(doc, doc_id=doc_id, manifest_url=manifest_url)
+        result["manifest_status"] = "pending"
         results.append(result)
         if len(results) >= requested_results:
             break
@@ -909,11 +912,11 @@ def _archive_thumbnail_url(identifier: str) -> str:
     return f"https://iiif.archive.org/image/iiif/2/{encoded}/full/180,/0/default.jpg"
 
 
-def _archive_manifest_is_usable(manifest_url: str) -> bool:
-    """Quickly validate Archive.org manifests before exposing them in search results.
+def archive_manifest_is_usable(manifest_url: str) -> bool:
+    """Validate whether a IIIF manifest URL resolves to an actual manifest.
 
-    Uses retries=0 and a short timeout to keep per-probe latency bounded;
-    combined with ARCHIVE_MANIFEST_PROBE_LIMIT this caps total blocking time.
+    Uses retries=0 and a short timeout to keep per-probe latency bounded.
+    Called from the async probe endpoint for individual result cards.
     """
     payload = get_json(
         manifest_url,
@@ -1080,30 +1083,6 @@ def _build_generic_harvard_results(payload: Any) -> list[SearchResult]:
             }
         )
     return results
-
-
-def _resolve_archive_candidate(
-    doc: Any,
-    resolver: ArchiveOrgResolver,
-    manifest_probes: int,
-) -> tuple[str | None, str | None, int, bool]:
-    if not isinstance(doc, dict):
-        return None, None, manifest_probes, False
-    identifier = str(doc.get("identifier") or "").strip()
-    if not identifier:
-        return None, None, manifest_probes, False
-
-    manifest_url, doc_id = resolver.get_manifest_url(identifier)
-    if not manifest_url or not doc_id:
-        return None, None, manifest_probes, False
-    if manifest_probes >= ARCHIVE_MANIFEST_PROBE_LIMIT:
-        logger.debug("Archive.org manifest probe limit reached (%s)", ARCHIVE_MANIFEST_PROBE_LIMIT)
-        return None, None, manifest_probes, True
-    manifest_probes += 1
-    if not _archive_manifest_is_usable(manifest_url):
-        logger.debug("Skipping Archive.org result with unusable manifest: %s", manifest_url)
-        return None, None, manifest_probes, False
-    return manifest_url, doc_id, manifest_probes, False
 
 
 def _archive_strip_description(raw: str) -> str:

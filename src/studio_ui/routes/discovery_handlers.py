@@ -28,6 +28,7 @@ from studio_ui.routes.discovery_persistence import (
     resolve_saved_entry_title,
     upsert_saved_entry,
 )
+from universal_iiif_core.config_manager import get_config_manager
 from universal_iiif_core.iiif_logic import total_canvases
 from universal_iiif_core.jobs import job_manager
 from universal_iiif_core.logger import get_logger
@@ -226,7 +227,12 @@ def resolve_manifest(library: str, shelfmark: str, gallica_type: str = "all"):
 
         logger.info("Resolving: lib=%s input=%s", library, shelfmark)
 
-        resolution = resolve_provider_input(library, shelfmark, filters={"gallica_type": gallica_type})
+        cm = get_config_manager()
+        max_results = cm.data.get("settings", {}).get("discovery", {}).get("max_results_per_provider", 12)
+
+        resolution = resolve_provider_input(
+            library, shelfmark, filters={"gallica_type": gallica_type, "max_results": max_results}
+        )
         provider = resolution.provider
 
         if resolution.status == "results":
@@ -262,6 +268,34 @@ def resolve_manifest(library: str, shelfmark: str, gallica_type: str = "all"):
             "Si è verificato un errore imprevisto. Riprova più tardi.",
             tone="danger",
         )
+
+
+def probe_manifest(manifest_url: str, result_id: str = ""):
+    """Validate a single IIIF manifest URL and return an HTML status fragment.
+
+    Called by HTMX lazy-load on search result cards with ``manifest_status=pending``.
+    """
+    from fasthtml.common import Div, Span
+
+    from universal_iiif_core.resolvers.discovery import archive_manifest_is_usable
+
+    manifest_url = (manifest_url or "").strip()
+    if not manifest_url:
+        return Div(
+            Span("Non disponibile", cls="text-xs text-red-500 font-medium"),
+            id=f"probe-{result_id}",
+        )
+
+    ok = archive_manifest_is_usable(manifest_url)
+    if ok:
+        return Div(
+            Span("✓ Manifesto disponibile", cls="text-xs text-emerald-600 dark:text-emerald-400 font-medium"),
+            id=f"probe-{result_id}",
+        )
+    return Div(
+        Span("✗ Manifesto non disponibile", cls="text-xs text-red-500 dark:text-red-400 font-medium"),
+        id=f"probe-{result_id}",
+    )
 
 
 def add_to_library(manifest_url: str, doc_id: str, library: str, result_title: str = ""):

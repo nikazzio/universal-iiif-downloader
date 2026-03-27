@@ -63,12 +63,12 @@ def test_search_adapters_use_expected_provider_result_limits():
     handlers["loc"]("q", {})
     handlers["heidelberg"]("q", {})
 
-    assert captured["vatican"] == 5
-    assert captured["institut"] == 10
-    assert captured["archive"] == 10
-    assert captured["bodleian"] == 10
-    assert captured["ecodices"] == 10
-    assert captured["cambridge"] == 10
-    assert captured["harvard"] == 10
-    assert captured["loc"] == 10
-    assert captured["heidelberg"] == 10
+    assert captured["vatican"] == 12
+    assert captured["institut"] == 12
+    assert captured["archive"] == 12
+    assert captured["bodleian"] == 12
+    assert captured["ecodices"] == 12
+    assert captured["cambridge"] == 12
+    assert captured["harvard"] == 12
+    assert captured["loc"] == 12
+    assert captured["heidelberg"] == 12

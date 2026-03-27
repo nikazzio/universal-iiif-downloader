@@ -74,19 +74,50 @@ def render_search_results_list(results: list) -> Div:
         thumb = item.get("thumbnail")
         doc_id = str(item.get("id") or "")
         manifest_url = str(item.get("manifest") or "")
-        is_downloadable = bool(manifest_url)
+        manifest_status = str(item.get("manifest_status") or "ok")
+        is_downloadable = bool(manifest_url) and manifest_status != "unavailable"
         viewer_url = _resolve_viewer_url(item)
         hx_vals = _build_discovery_hx_vals(manifest_url, doc_id, library, title)
-        badge_id = f"pdf-badge-{(doc_id or 'item').replace(' ', '-').replace('/', '-')[:28]}"
+        safe_id = (doc_id or "item").replace(" ", "-").replace("/", "-")[:28]
+        badge_id = f"pdf-badge-{safe_id}"
+        probe_id = f"probe-{safe_id}"
+
+        # Manifest status badge: pending results get a lazy-loaded probe
+        if manifest_status == "pending" and manifest_url:
+            probe_badge = Div(
+                Span("⏳ Verifica manifest…", cls="text-[11px] text-slate-500 animate-pulse"),
+                id=probe_id,
+                hx_post="/api/discovery/probe_manifest",
+                hx_vals=json.dumps({"manifest_url": manifest_url, "result_id": safe_id}),
+                hx_trigger="load",
+                hx_swap="outerHTML",
+            )
+        else:
+            probe_badge = None
+
         pdf_badge = (
             _build_pdf_badge(
                 manifest_url,
                 badge_id,
                 cls="app-chip app-chip-neutral text-[11px] tracking-wide",
             )
-            if is_downloadable
+            if is_downloadable and manifest_status != "pending"
             else Span("Solo consultazione online", cls="app-chip app-chip-warning text-[11px] tracking-wide")
+            if not is_downloadable and manifest_status != "pending"
+            else None
         )
+
+        chip_row_items = [
+            Span(library, cls="app-chip app-chip-primary text-[11px] tracking-wide"),
+            Span(
+                (doc_id[:40] + "...") if len(doc_id) > 40 else doc_id,
+                cls="app-chip app-chip-neutral text-[11px] font-mono",
+            ),
+        ]
+        if pdf_badge:
+            chip_row_items.append(pdf_badge)
+        if probe_badge:
+            chip_row_items.append(probe_badge)
 
         meta_line = []
         if author and author != "Autore sconosciuto":
@@ -119,12 +150,7 @@ def render_search_results_list(results: list) -> Div:
                     Div(
                         H3(title[:140], cls="text-base font-semibold text-slate-900 dark:text-slate-100 leading-tight"),
                         Div(
-                            Span(library, cls="app-chip app-chip-primary text-[11px] tracking-wide"),
-                            Span(
-                                (doc_id[:40] + "...") if len(doc_id) > 40 else doc_id,
-                                cls="app-chip app-chip-neutral text-[11px] font-mono",
-                            ),
-                            pdf_badge,
+                            *chip_row_items,
                             cls="flex flex-wrap items-center gap-2",
                         ),
                         cls="flex flex-col gap-2",
