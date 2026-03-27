@@ -153,7 +153,9 @@ _VATICAN_NUMERIC_COLLECTIONS: Final[list[str]] = [
 _VATICAN_TEXT_PREFIXES: Final[list[str]] = ["Urb.lat.", "Vat.lat.", "Pal.lat.", "Reg.lat.", "Barb.lat."]
 
 
-def smart_search(input_text: str, *, gallica_type_filter: str = "all") -> list[SearchResult]:
+def smart_search(
+    input_text: str, *, max_records: int = 20, page: int = 1, gallica_type_filter: str = "all"
+) -> list[SearchResult]:
     """PUNTO DI INGRESSO PRINCIPALE (Logica Ibrida).
 
     Logica:
@@ -193,7 +195,7 @@ def smart_search(input_text: str, *, gallica_type_filter: str = "all") -> list[S
 
     # 2. RICERCA TESTUALE (FALLBACK)
     logger.info("Input '%s' interpretato come ricerca SRU.", text)
-    return search_gallica(text, gallica_type_filter=gallica_type_filter)
+    return search_gallica(text, max_records=max_records, page=page, gallica_type_filter=gallica_type_filter)
 
 
 def resolve_shelfmark(library: str, shelfmark: str) -> tuple[str | None, str | None]:

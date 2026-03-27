@@ -272,11 +272,12 @@ def resolve_manifest(library: str, shelfmark: str, gallica_type: str = "all"):
     except ValueError as exc:
         logger.warning("Validation error in resolve_manifest: %s", exc)
         return _with_feedback_toast("Errore Input", str(exc), tone="danger")
-    except Exception:
+    except Exception as exc:
         logger.exception("Unexpected error in resolve_manifest")
+        short_detail = str(exc)[:200] if str(exc).strip() else "Errore sconosciuto"
         return _with_feedback_toast(
-            "Errore Interno",
-            "Si è verificato un errore imprevisto. Riprova più tardi.",
+            "Errore nella ricerca",
+            f"La ricerca per '{shelfmark}' su {library} ha generato un errore: {short_detail}",
             tone="danger",
         )
 
