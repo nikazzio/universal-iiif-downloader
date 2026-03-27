@@ -249,7 +249,7 @@
       }
     },
     "discovery": {
-      "max_results_per_provider": 12
+      "max_results_per_provider": 20
     }
   }
 }
