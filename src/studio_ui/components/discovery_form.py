@@ -13,8 +13,7 @@ def discovery_form() -> Div:
     libraries = library_options()
     providers = [provider for provider in iter_providers(ui_only=True) if provider.key != "Unknown"]
     provider_filter_map = {
-        provider.key: [provider_filter.key for provider_filter in provider.filters]
-        for provider in providers
+        provider.key: [provider_filter.key for provider_filter in provider.filters] for provider in providers
     }
     provider_placeholder_map = {provider.key: provider.placeholder for provider in providers}
     provider_helper_map = {provider.key: provider.metadata.get("helper_text", "") for provider in providers}

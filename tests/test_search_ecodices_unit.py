@@ -64,5 +64,8 @@ def test_search_ecodices_maps_html_results(monkeypatch):
     assert first["description"] == "Manuscript mentioning Dante."
     assert first["publisher"] == "St. Gallen, Stiftsbibliothek, Cod. Sang. 573"
     assert first["manifest"] == "https://www.e-codices.unifr.ch/metadata/iiif/csg-0573/manifest.json"
-    assert first["thumbnail"] == "https://www.e-codices.unifr.ch/loris/csg/csg-0573/csg-0573_002.jp2/full/180,/0/default.jpg"
+    assert (
+        first["thumbnail"]
+        == "https://www.e-codices.unifr.ch/loris/csg/csg-0573/csg-0573_002.jp2/full/180,/0/default.jpg"
+    )
     assert first["raw"]["viewer_url"] == "https://www.e-codices.unifr.ch/en/csg/0573"

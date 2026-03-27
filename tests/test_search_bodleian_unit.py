@@ -75,4 +75,6 @@ def test_search_bodleian_maps_jsonld_member_results(monkeypatch):
     assert first["publisher"] == "Bodleian Libraries"
     assert first["manifest"] == "https://iiif.bodleian.ox.ac.uk/iiif/manifest/cb1df5f1-7435-468b-8860-d56db988b929.json"
     assert first["thumbnail"].startswith("https://iiif.bodleian.ox.ac.uk/iiif/image/")
-    assert first["raw"]["viewer_url"] == "https://digital.bodleian.ox.ac.uk/objects/cb1df5f1-7435-468b-8860-d56db988b929/"
+    assert (
+        first["raw"]["viewer_url"] == "https://digital.bodleian.ox.ac.uk/objects/cb1df5f1-7435-468b-8860-d56db988b929/"
+    )

@@ -8,6 +8,8 @@ _DIRECT_CAMBRIDGE_ID_RE = re.compile(r"(?=.*[A-Z])[A-Z0-9]+(?:-[A-Z0-9]+){2,}")
 _URL_CAMBRIDGE_ID_RE = re.compile(r"([A-Za-z0-9]+(?:-[A-Za-z0-9]+)+)")
 _CAMBRIDGE_SHELFMARK_TOKEN_RE = re.compile(r"[A-Za-z0-9]+")
 _CAMBRIDGE_SHELFMARK_PREFIX_RE = re.compile(r"^\s*MS\b", flags=re.IGNORECASE)
+# Splits a mixed alpha-numeric token like "FF1" into its alpha and numeric parts.
+_ALPHANUM_SPLIT_RE = re.compile(r"^(?P<alpha>[A-Za-z]+)(?P<num>\d+)$")
 
 
 class CambridgeResolver(BaseResolver):
@@ -68,6 +70,17 @@ class CambridgeResolver(BaseResolver):
     def _canonicalize_ms_shelfmark(tokens: list[str]) -> str | None:
         if not tokens or tokens[0] != "MS" or len(tokens) < 3:
             return None
+        # Expand mixed alpha-numeric collection tokens (e.g. "FF1" → ["FF", "1"])
+        # so that shelfmarks like "MS Ff1.27" are handled identically to "MS Ff.1.27".
+        expanded: list[str] = [tokens[0]]
+        for token in tokens[1:]:
+            m = _ALPHANUM_SPLIT_RE.fullmatch(token)
+            if m:
+                expanded.append(m.group("alpha").upper())
+                expanded.append(m.group("num"))
+            else:
+                expanded.append(token)
+        tokens = expanded
         if not tokens[1].isalpha():
             return None
         suffix = tokens[2:]

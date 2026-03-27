@@ -23,6 +23,7 @@ def test_orchestrator_search_first_prefers_search_results():
 
 def test_orchestrator_fallback_tries_direct_then_search():
     """Fallback providers should search when direct resolution does not match."""
+
     def _resolve_shelfmark(_library: str, _value: str):
         return None, None
 
@@ -39,6 +40,7 @@ def test_orchestrator_fallback_tries_direct_then_search():
 
 def test_orchestrator_returns_manifest_when_direct_resolution_hits():
     """Direct-capable providers should return a manifest resolution when can_resolve matches."""
+
     def _resolve_shelfmark(_library: str, _value: str):
         return "https://example.org/m.json", "DOC42"
 

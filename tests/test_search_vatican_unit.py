@@ -111,6 +111,7 @@ def test_search_vatican_skips_text_variants_when_prefix_already_present(monkeypa
 
 def test_search_vatican_uses_official_text_search_for_free_text(monkeypatch):
     """Free-text Vatican queries should fall back to the official DigiVatLib search flow."""
+
     def raise_normalize(_q):
         raise ValueError("cannot normalize")
 

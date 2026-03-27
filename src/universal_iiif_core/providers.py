@@ -101,8 +101,7 @@ PROVIDERS: tuple[IIIFProvider, ...] = (
         search_strategy="vatican",
         search_mode="fallback",
         not_found_hint=(
-            "Verifica la segnatura. Prova formati come 'Urb.lat.1779' "
-            "o inserisci solo il numero (es. '1223')."
+            "Verifica la segnatura. Prova formati come 'Urb.lat.1779' o inserisci solo il numero (es. '1223')."
         ),
         placeholder="es. Urb.lat.1779",
         sort_order=10,

@@ -6,4 +6,3 @@ __all__ = [
     "ResolutionStatus",
     "resolve_provider_input",
 ]
-

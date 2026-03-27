@@ -29,4 +29,3 @@ __all__ = [
     "render_search_results_list",
     "render_studio_export_job_row",
 ]
-

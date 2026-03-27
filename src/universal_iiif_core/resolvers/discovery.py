@@ -45,7 +45,7 @@ CAMBRIDGE_SEARCH_URL: Final = "https://cudl.lib.cam.ac.uk/search"
 HARVARD_API_URL: Final = "https://api.lib.harvard.edu/v2/items.json"
 LOC_SEARCH_URL: Final = "https://www.loc.gov/search/"
 HEIDELBERG_SITE_SEARCH_URL: Final = "https://www.ub.uni-heidelberg.de/cgi-bin/search.cgi"
-ARCHIVE_MANIFEST_PROBE_LIMIT: Final = 15
+ARCHIVE_MANIFEST_PROBE_LIMIT: Final = 5
 
 # Browser-like headers are required for several catalog/search surfaces that reject
 # generic scripted requests with 403/500 responses.
@@ -130,7 +130,7 @@ _HARVARD_ALMA_CATALOG_URL_RE: Final = re.compile(
     flags=re.IGNORECASE,
 )
 _HEIDELBERG_DIGILIT_LINK_RE: Final = re.compile(
-    r'https://digi\.ub\.uni-heidelberg\.de/diglit/(?P<id>[a-z]{3}\d{2,})',
+    r"https://digi\.ub\.uni-heidelberg\.de/diglit/(?P<id>[a-z]{3}\d{2,})",
     flags=re.IGNORECASE,
 )
 _HEIDELBERG_INLINE_ID_RE: Final = re.compile(r"\b(?P<id>(?:cpg|cpl)\d{2,})\b", flags=re.IGNORECASE)
@@ -802,8 +802,7 @@ def _build_heidelberg_browser_handoff_result(query: str) -> SearchResult:
     # Heidelberg search can be useful for humans even when the automated hit extraction does not
     # surface a stable diglit record. Keep the user in-flow with a consult-only browser handoff.
     search_url = (
-        f"{HEIDELBERG_SITE_SEARCH_URL}?"
-        f"{urlencode({'query': query, 'q': 'homepage', 'sprache': 'ger', 'wo': 'w'})}"
+        f"{HEIDELBERG_SITE_SEARCH_URL}?{urlencode({'query': query, 'q': 'homepage', 'sprache': 'ger', 'wo': 'w'})}"
     )
     return {
         "id": f"heidelberg-search:{query[:80]}",
@@ -909,11 +908,15 @@ def _archive_thumbnail_url(identifier: str) -> str:
 
 
 def _archive_manifest_is_usable(manifest_url: str) -> bool:
-    """Quickly validate Archive.org manifests before exposing them in search results."""
+    """Quickly validate Archive.org manifests before exposing them in search results.
+
+    Uses retries=0 to avoid long waits per probe — the probe limit is already kept
+    low (ARCHIVE_MANIFEST_PROBE_LIMIT) to bound total latency.
+    """
     payload = get_json(
         manifest_url,
         headers={**HTML_BROWSER_HEADERS, "Accept": "application/json"},
-        retries=1,
+        retries=0,
     )
     if payload is None:
         logger.debug("Archive.org manifest probe failed for %s: empty payload", manifest_url)

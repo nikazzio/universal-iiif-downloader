@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import re
 
-from ..exceptions import ResolverError
 from .base import BaseResolver
 
 _DRS_RE = re.compile(r"drs:(?P<id>\d{6,12})", flags=re.IGNORECASE)
@@ -30,7 +29,7 @@ class HarvardResolver(BaseResolver):
 
         drs_id = self._extract_drs_id(text)
         if not drs_id:
-            raise ResolverError("Cannot extract Harvard DRS ID from input.")
+            return None, None
 
         return f"{self.manifest_root}/drs:{drs_id}", drs_id
 
