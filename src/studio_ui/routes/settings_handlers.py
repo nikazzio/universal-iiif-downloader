@@ -449,6 +449,9 @@ async def save_settings(request):
         backup_path = None
         if hasattr(cm, "normalize_runtime_settings"):
             cm.normalize_runtime_settings()
+        from universal_iiif_core.http_client import reset_http_client
+
+        reset_http_client()
         if hasattr(cm, "prune_obsolete_settings"):
             removed_obsolete, backup_path = cm.prune_obsolete_settings(create_backup=True)
         cm.save()

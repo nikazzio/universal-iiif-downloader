@@ -924,3 +924,36 @@ class HTTPClient:
             # Log preview for debugging
             self.logger.debug(f"Response preview: {response.text[:200]}")
             return None
+
+
+_http_client_lock = threading.Lock()
+_http_client_instance: HTTPClient | None = None
+
+
+def get_http_client() -> HTTPClient:
+    """Get or create the module-level HTTPClient singleton.
+
+    Thread-safe lazy initialization using the current network policy settings.
+    """
+    global _http_client_instance
+    if _http_client_instance is None:
+        with _http_client_lock:
+            if _http_client_instance is None:
+                from .config_manager import get_config_manager
+
+                cm = get_config_manager()
+                network_policy = cm.data.get("settings", {}).get("network", {})
+                _http_client_instance = HTTPClient(network_policy=network_policy)
+    return _http_client_instance
+
+
+def reset_http_client() -> None:
+    """Invalidate the cached HTTPClient so the next call rebuilds it.
+
+    Call this after network settings change (e.g. from the Studio settings UI)
+    so that updated timeouts, retries, and library policies take effect
+    without restarting the process.
+    """
+    global _http_client_instance
+    with _http_client_lock:
+        _http_client_instance = None
