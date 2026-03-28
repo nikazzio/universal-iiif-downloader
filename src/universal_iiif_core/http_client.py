@@ -942,3 +942,14 @@ def get_http_client() -> HTTPClient:
         network_policy = cm.data.get("settings", {}).get("network", {})
         _http_client_instance = HTTPClient(network_policy=network_policy)
     return _http_client_instance
+
+
+def reset_http_client() -> None:
+    """Invalidate the cached HTTPClient so the next call rebuilds it.
+
+    Call this after network settings change (e.g. from the Studio settings UI)
+    so that updated timeouts, retries, and library policies take effect
+    without restarting the process.
+    """
+    global _http_client_instance
+    _http_client_instance = None
