@@ -926,6 +926,7 @@ class HTTPClient:
             return None
 
 
+_http_client_lock = threading.Lock()
 _http_client_instance: HTTPClient | None = None
 
 
@@ -936,11 +937,13 @@ def get_http_client() -> HTTPClient:
     """
     global _http_client_instance
     if _http_client_instance is None:
-        from .config_manager import get_config_manager
+        with _http_client_lock:
+            if _http_client_instance is None:
+                from .config_manager import get_config_manager
 
-        cm = get_config_manager()
-        network_policy = cm.data.get("settings", {}).get("network", {})
-        _http_client_instance = HTTPClient(network_policy=network_policy)
+                cm = get_config_manager()
+                network_policy = cm.data.get("settings", {}).get("network", {})
+                _http_client_instance = HTTPClient(network_policy=network_policy)
     return _http_client_instance
 
 
@@ -952,4 +955,5 @@ def reset_http_client() -> None:
     without restarting the process.
     """
     global _http_client_instance
-    _http_client_instance = None
+    with _http_client_lock:
+        _http_client_instance = None

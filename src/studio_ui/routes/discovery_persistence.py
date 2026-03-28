@@ -183,8 +183,6 @@ def _thumbnail_url_from_manifest(manifest_payload: dict, *, manifest_url: str = 
 
 
 def _stream_thumbnail_bytes(url: str, *, max_bytes: int) -> BytesIO | None:
-    from universal_iiif_core.http_client import get_http_client
-
     client = get_http_client()
     response = client.get(url, timeout=(10, 15), stream=True)
     try:
